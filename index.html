@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1115">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Голосовой диктатор конспектов: диктует материал кусками, мгновенно останавливается по команде «стоп» и отвечает на вопросы.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Диктор конспектов</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Диктор конспектов</h1>
+    <span id="micState" class="mic off" title="Микрофон">🎙</span>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button data-tab="load" class="active">Материал</button>
+    <button data-tab="plan">План</button>
+    <button data-tab="dictate">Диктовка</button>
+    <button data-tab="settings">⚙</button>
+  </nav>
+
+  <main>
+    <!-- ===== МАТЕРИАЛ ===== -->
+    <section id="tab-load" class="tab active">
+      <div id="resumeCard" class="card accent hidden">
+        <div id="resumeText"></div>
+        <div class="row">
+          <button id="resumeGo" class="btn primary">Продолжить диктовку</button>
+          <button id="resumePlan" class="btn">Открыть план</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Конспекты</h2>
+        <ul id="sourceList" class="sources"></ul>
+        <p id="sourcesEmpty" class="muted">Добавьте один или несколько конспектов.</p>
+        <div class="grid3">
+          <button id="addTextBtn" class="btn big">✍️<span>Текст</span></button>
+          <button id="addFileBtn" class="btn big">📄<span>Файлы</span></button>
+          <button id="addPhotoBtn" class="btn big">📷<span>Фото</span></button>
+        </div>
+        <input id="fileInput" type="file" multiple accept=".txt,.md,.markdown,.pdf,.docx,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+        <input id="photoInput" type="file" multiple accept="image/*" hidden>
+        <p class="hint">Поддерживаются .txt, .md, .pdf, .docx и фото страниц (распознаёт Gemini).</p>
+        <div id="pastePanel" class="paste hidden">
+          <input id="pasteTitle" type="text" placeholder="Название (необязательно)">
+          <textarea id="pasteText" rows="8" placeholder="Вставьте текст конспекта"></textarea>
+          <div class="row">
+            <button id="pasteAdd" class="btn primary">Добавить</button>
+            <button id="pasteCancel" class="btn">Отмена</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Сколько у меня времени</h2>
+        <div class="time-row">
+          <label><input id="hours" type="number" min="0" max="24" inputmode="numeric" value="2"> ч</label>
+          <label><input id="minutes" type="number" min="0" max="59" step="5" inputmode="numeric" value="0"> мин</label>
+        </div>
+        <div class="chips" id="timeChips">
+          <button data-min="30">30 мин</button><button data-min="60">1 ч</button>
+          <button data-min="90">1,5 ч</button><button data-min="120">2 ч</button><button data-min="180">3 ч</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Приоритет</h2>
+        <div class="seg" id="prioritySeg">
+          <label><input type="radio" name="priority" value="hard"><span>Сначала сложное</span></label>
+          <label><input type="radio" name="priority" value="easy"><span>Сначала простое</span></label>
+          <label><input type="radio" name="priority" value="original" checked><span>Как в конспектах</span></label>
+        </div>
+      </div>
+
+      <button id="analyzeBtn" class="btn primary huge">Анализировать</button>
+      <div id="analyzeCard" class="card hidden">
+        <div class="progress"><div id="analyzeBar"></div></div>
+        <div id="analyzeStatus" class="status"></div>
+        <ol id="analyzeLog" class="log"></ol>
+      </div>
+    </section>
+
+    <!-- ===== ПЛАН ===== -->
+    <section id="tab-plan" class="tab">
+      <div id="planEmpty" class="card muted">Сначала загрузите материал и нажмите «Анализировать».</div>
+      <div id="planBody" class="hidden">
+        <div class="card">
+          <div id="planSummary"></div>
+          <div id="genStatus" class="status"></div>
+          <div class="row wrap">
+            <button id="fitPauseBtn" class="btn">Подогнать паузу под время</button>
+            <button id="reorderBtn" class="btn">Пересчитать порядок</button>
+          </div>
+          <div class="seg small" id="planPrioritySeg">
+            <label><input type="radio" name="planPriority" value="hard"><span>Сложное</span></label>
+            <label><input type="radio" name="planPriority" value="easy"><span>Простое</span></label>
+            <label><input type="radio" name="planPriority" value="original"><span>Как в конспектах</span></label>
+          </div>
+        </div>
+        <ol id="planList" class="plan"></ol>
+        <button id="startBtn" class="btn primary huge">Начать диктовку</button>
+      </div>
+    </section>
+
+    <!-- ===== ДИКТОВКА ===== -->
+    <section id="tab-dictate" class="tab">
+      <div id="srWarn" class="card warn hidden"></div>
+      <div class="card tip" id="headphonesTip">🎧 Используйте наушники: так микрофон не слышит синтезатор, и голосовые команды срабатывают надёжнее. Кнопка «СТОП / ВОПРОС» работает всегда.</div>
+
+      <div class="card">
+        <div class="topic-head">
+          <div>
+            <div class="muted small" id="topicNum"></div>
+            <h2 id="topicTitle">—</h2>
+          </div>
+          <button id="toggleText" class="btn icon" title="Скрыть/показать текст">👁</button>
+        </div>
+        <div class="progress thin"><div id="topicBar"></div></div>
+        <div class="meta"><span id="chunkNum"></span><span id="topicTime"></span></div>
+        <div id="chunkBox" class="chunk"><span id="chunkKind" class="kind"></span><p id="chunkText"></p></div>
+        <div class="progress gap"><div id="gapBar"></div></div>
+        <div id="dictState" class="state">Готов к диктовке</div>
+        <div id="dictMsg" class="muted small"></div>
+        <div id="heard" class="heard"></div>
+      </div>
+
+      <div class="controls">
+        <button id="playBtn" class="btn primary">▶<span>Старт</span></button>
+        <button id="repeatBtn" class="btn">⟲<span>Повтори</span></button>
+        <button id="nextBtn" class="btn">⏭<span>Дальше</span></button>
+        <button id="repeatTopicBtn" class="btn">⏮<span>Тему заново</span></button>
+        <button id="skipTopicBtn" class="btn">⏩<span>След. тема</span></button>
+        <button id="retryTopicBtn" class="btn hidden">↻<span>Повторить подготовку</span></button>
+        <button id="slowerBtn" class="btn">🐢<span>Медленнее</span></button>
+        <button id="fasterBtn" class="btn">🐇<span>Быстрее</span></button>
+      </div>
+
+      <div id="qaPanel" class="card qa">
+        <h2>Вопрос</h2>
+        <div id="answer" class="answer hidden"></div>
+        <div class="ask-row">
+          <textarea id="questionInput" rows="2" placeholder="Напишите вопрос или скажите его вслух после «стоп»"></textarea>
+          <button id="askBtn" class="btn primary">Спросить</button>
+        </div>
+        <button id="continueBtn" class="btn ok huge hidden">▶ Продолжить диктовку</button>
+      </div>
+
+      <div class="card">
+        <div class="meta"><span>Общий прогресс</span><span id="overallText"></span></div>
+        <div class="progress"><div id="overallBar"></div></div>
+        <div class="meta"><span id="timeText"></span><span id="remainText"></span></div>
+      </div>
+
+      <details class="card">
+        <summary>Голосовые команды</summary>
+        <ul class="cmds">
+          <li><b>«стоп»</b> — мгновенная остановка и вопрос; <b>«пауза»</b> — просто пауза</li>
+          <li><b>«продолжай»</b> — продолжить с прерванного куска</li>
+          <li><b>«дальше»</b> — следующий кусок; <b>«повтори»</b> — повторить кусок</li>
+          <li><b>«повтори тему»</b>, <b>«пропусти тему»</b></li>
+          <li><b>«медленнее»</b>, <b>«быстрее»</b></li>
+          <li>Можно сразу задать вопрос: <b>«почему…»</b>, <b>«что такое…»</b>, <b>«вопрос: …»</b></li>
+          <li>После ответа: <b>«да»</b> / <b>«дальше»</b> — продолжить</li>
+        </ul>
+      </details>
+
+      <details class="card" id="historyCard">
+        <summary>История вопросов</summary>
+        <div id="qaHistory"></div>
+      </details>
+    </section>
+
+    <!-- ===== НАСТРОЙКИ ===== -->
+    <section id="tab-settings" class="tab">
+      <div class="card">
+        <h2>Gemini API</h2>
+        <label class="field">Ключ API
+          <div class="row">
+            <input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
+            <button id="showKey" class="btn icon" title="Показать">👁</button>
+          </div>
+        </label>
+        <label class="field">Модель
+          <input id="model" type="text" list="modelList" spellcheck="false">
+          <datalist id="modelList">
+            <option value="gemini-2.5-flash"></option>
+            <option value="gemini-2.5-flash-lite"></option>
+            <option value="gemini-2.5-pro"></option>
+            <option value="gemini-flash-latest"></option>
+          </datalist>
+        </label>
+        <button id="checkKey" class="btn">Проверить ключ и загрузить список моделей</button>
+        <div id="keyStatus" class="status"></div>
+        <p class="hint">Ключ хранится только в этом браузере (localStorage) и отправляется напрямую в Google.</p>
+      </div>
+
+      <div class="card">
+        <h2>Голос</h2>
+        <label class="field">Голос
+          <div class="row">
+            <select id="voice"></select>
+            <button id="testVoice" class="btn icon" title="Проба">🔊</button>
+          </div>
+        </label>
+        <label class="field">Скорость речи: <b id="rateVal"></b>
+          <input id="rate" type="range" min="0.5" max="2" step="0.1">
+        </label>
+        <label class="field">Базовая пауза между кусками: <b id="pauseVal"></b>
+          <input id="pause" type="range" min="1" max="15" step="0.5">
+        </label>
+        <label class="check"><input id="scalePause" type="checkbox"> Длиннее пауза для сложных тем и длинных кусков</label>
+      </div>
+
+      <div class="card">
+        <h2>Режим</h2>
+        <div class="seg">
+          <label><input type="radio" name="mode" value="all"><span>Диктовать всё подряд</span></label>
+          <label><input type="radio" name="mode" value="topic"><span>По теме с вопросами после каждой</span></label>
+        </div>
+        <label class="check"><input id="voiceCommands" type="checkbox"> Голосовые команды во время диктовки</label>
+        <label class="check"><input id="bargeIn" type="checkbox"> Прерывать при любой моей речи (только в наушниках)</label>
+        <label class="check"><input id="coverageCheck" type="checkbox"> Проверка полноты кусков (дольше, но надёжнее)</label>
+      </div>
+
+      <div class="card">
+        <h2>Данные</h2>
+        <div class="row wrap">
+          <button id="resetProgress" class="btn">Сбросить прогресс</button>
+          <button id="deleteProject" class="btn danger">Удалить проект</button>
+        </div>
+        <p class="hint" id="appInfo"></p>
+      </div>
+    </section>
+  </main>
+
+  <div id="stopBar" class="stopbar">
+    <button id="stopBtn" class="stop">СТОП / ВОПРОС</button>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
