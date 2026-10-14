@@ -1,16 +1,19 @@
 // Service worker: оболочка приложения работает офлайн, библиотеки с CDN кэшируются при первом использовании.
-// Запросы к Gemini API никогда не кэшируются.
+// Запросы к API нейросетей никогда не кэшируются.
 
-const VERSION = 'kd-v1';
+const VERSION = 'kd-v2';
 const SHELL = [
   './',
   'index.html',
   'css/styles.css',
   'js/app.js',
+  'js/ai.js',
   'js/analyze.js',
+  'js/anthropic.js',
   'js/dictation.js',
   'js/extract.js',
   'js/gemini.js',
+  'js/openai.js',
   'js/speech.js',
   'js/storage.js',
   'manifest.webmanifest',

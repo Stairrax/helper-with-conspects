@@ -4,7 +4,7 @@ import {
   speak, stopSpeaking, isEcho, ttsRecentlyActive, matchCommand, isYes, isNo, looksLikeQuestion, stripCue, norm,
   Recognizer, srSupported, keepAwake,
 } from './speech.js';
-import { stream } from './gemini.js';
+import { stream, conn } from './ai.js';
 import { activeSeq, pauseFor } from './analyze.js';
 
 const DICTATING = ['speaking', 'gap', 'waiting'];
@@ -500,7 +500,7 @@ ${prevQa ? `\nПРЕДЫДУЩИЕ ВОПРОСЫ В ЭТОЙ СЕССИИ:\n${p
     })();
     try {
       await stream({
-        apiKey: s.apiKey, model: s.model, signal: ctrl.signal,
+        ...conn(s), effort: 'low', signal: ctrl.signal,
         system: 'Ты — репетитор, который помогает студенту во время диктовки конспекта. Отвечай по-русски, кратко (2–6 предложений), ' +
           'простыми словами, так, чтобы ответ было удобно слушать: без markdown, списков, таблиц и спецсимволов; формулы и обозначения — словами. ' +
           'Опирайся на конспект и на то, что уже продиктовано. Если в конспекте ответа нет — скажи об этом и дай короткий ответ из общих знаний.',

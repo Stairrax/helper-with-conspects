@@ -5,7 +5,7 @@ import { fileToSource } from './extract.js';
 import {
   analyze, generateTopicChunks, orderTopics, activeSeq, estimateTopicSec, allocateBudget, fitPause,
 } from './analyze.js';
-import { listModels } from './gemini.js';
+import { listModels, conn, PROVIDERS, providerName } from './ai.js';
 import { loadVoices, getVoices, speak, stopSpeaking, srSupported, ttsSupported } from './speech.js';
 import { Dictation, STATE_TEXT } from './dictation.js';
 
@@ -253,7 +253,7 @@ function logLine(msg, cls = '') {
 }
 
 $('analyzeBtn').addEventListener('click', async () => {
-  if (!settings.apiKey) { toast('Укажите ключ Gemini API в настройках'); return switchTab('settings'); }
+  if (!settings.apiKey) { toast(`Укажите ключ API (${providerName(settings)}) в настройках`); return switchTab('settings'); }
   if (!sources.length) return toast('Добавьте хотя бы один конспект');
   const budgetMin = getBudget();
   if (!budgetMin) return toast('Укажите, сколько у вас времени');
@@ -545,7 +545,7 @@ $('toggleText').addEventListener('click', () => { settings.showText = !settings.
 function sendQuestion() {
   const q = $('questionInput').value.trim();
   if (!q) return;
-  if (!settings.apiKey) { toast('Укажите ключ Gemini API в настройках'); return; }
+  if (!settings.apiKey) { toast(`Укажите ключ API (${providerName(settings)}) в настройках`); return; }
   $('questionInput').value = '';
   $('questionInput').blur();
   dict.ask(q);
@@ -567,9 +567,28 @@ function renderVoices() {
   sel.value = settings.voiceURI;
 }
 
+let modelsLoaded = false;
+const PROVIDER_HINTS = {
+  openrouter: 'Один ключ — доступ к моделям Google, Anthropic, DeepSeek и других; работает из России. Бесплатные модели оканчиваются на «:free» (нажмите «Проверить ключ» — они будут в начале списка), но у них низкие дневные лимиты.',
+  anthropic: 'Claude напрямую. Нужен отдельный ключ API с оплатой в console.anthropic.com — подписка claude.ai (Pro/Max) не даёт доступа к API. Из России API не работает (блокировка по стране); Claude доступен и через OpenRouter.',
+  gemini: 'Бесплатный ключ в Google AI Studio. Из России Google блокирует запросы — нужен VPN или свой прокси (поле «Адрес API»).',
+  deepseek: 'Недорогая модель, работает из России. Фото страниц не распознаёт — для фото выберите другого провайдера.',
+  mistral: 'Европейский провайдер, есть бесплатный тестовый тариф.',
+  custom: 'Любой сервис с OpenAI-совместимым API (/chat/completions): укажите адрес, ключ и модель.',
+};
+
 function renderSettings() {
+  const prov = PROVIDERS[settings.provider] || PROVIDERS.gemini;
+  $('provider').value = settings.provider;
   $('apiKey').value = settings.apiKey;
+  $('apiKey').placeholder = prov.keyHint || 'ключ API';
   $('model').value = settings.model;
+  $('model').placeholder = prov.model || 'название модели';
+  $('baseUrl').value = settings.baseUrl;
+  $('baseUrl').placeholder = prov.base || 'https://…/v1';
+  if (!modelsLoaded) $('modelList').innerHTML = (prov.models || []).map((m) => `<option value="${esc(m)}"></option>`).join('');
+  $('providerHint').innerHTML = (PROVIDER_HINTS[settings.provider] || '') +
+    (prov.keyUrl ? ` Ключ: <a href="${prov.keyUrl}" target="_blank" rel="noopener">${esc(prov.keyUrl.replace('https://', ''))}</a>` : '');
   $('rate').value = settings.rate;
   $('rateVal').textContent = Number(settings.rate).toFixed(1);
   $('pause').value = settings.pause;
@@ -591,7 +610,27 @@ function bind(id, key, parse = (v) => v, ev = 'change') {
   });
 }
 bind('apiKey', 'apiKey', (v) => v.trim());
-bind('model', 'model', (v) => v.trim().replace(/^models\//, '') || 'gemini-2.5-flash');
+bind('model', 'model', (v) => v.trim().replace(/^models\//, '') || (PROVIDERS[settings.provider]?.model ?? ''));
+bind('baseUrl', 'baseUrl', (v) => v.trim());
+
+$('provider').innerHTML = Object.entries(PROVIDERS).map(([id, p]) => `<option value="${id}">${esc(p.name)}</option>`).join('');
+$('provider').addEventListener('change', (e) => {
+  // ключ/модель/адрес у каждого провайдера свои — сохраняем текущие и подставляем сохранённые
+  const prev = settings.provider;
+  settings.profiles = settings.profiles || {};
+  settings.profiles[prev] = { apiKey: settings.apiKey, model: settings.model, baseUrl: settings.baseUrl };
+  const next = e.target.value;
+  const saved = settings.profiles[next] || {};
+  settings.provider = next;
+  settings.apiKey = saved.apiKey || '';
+  settings.model = saved.model || PROVIDERS[next].model;
+  settings.baseUrl = saved.baseUrl || '';
+  modelsLoaded = false;
+  $('keyStatus').textContent = '';
+  saveSettings(settings);
+  renderSettings();
+  if (project && !gen.running && gen.pick(project)) gen.loop();
+});
 bind('rate', 'rate', Number, 'input');
 bind('pause', 'pause', Number, 'input');
 bind('scalePause', 'scalePause');
@@ -623,9 +662,10 @@ $('checkKey').addEventListener('click', async () => {
   saveSettings(settings);
   $('keyStatus').textContent = 'Проверяю…';
   try {
-    const models = await listModels(key);
-    const gem = models.filter((m) => /gemini/i.test(m) && !/embedding|tts|image|live|audio/i.test(m));
+    const models = await listModels(conn(settings));
+    const gem = models.filter((m) => !/embedding|tts|image-gen|imagen|live|audio|whisper|moderation|ocr/i.test(m));
     $('modelList').innerHTML = gem.map((m) => `<option value="${esc(m)}"></option>`).join('');
+    modelsLoaded = true;
     const ok = gem.includes(settings.model);
     $('keyStatus').textContent = `✓ Ключ работает. Доступно моделей: ${gem.length}.` +
       (ok ? '' : ` Модель «${settings.model}» не найдена — выберите из списка (нажмите на поле «Модель»).`);

@@ -1,6 +1,7 @@
 // Клиент Gemini API (REST, без SDK): повторы, лимиты, JSON, потоковые ответы.
 
 const BASE = 'https://generativelanguage.googleapis.com/v1beta';
+const base = (u) => String(u || '').trim().replace(/\/+$/, '') || BASE;
 
 export class GeminiError extends Error {
   constructor(message, { status = 0, code = '', retryable = false } = {}) {
@@ -36,6 +37,9 @@ function parseRetryDelay(err) {
 function humanError(status, body) {
   const msg = body?.error?.message || '';
   if (status === 400 && /API key/i.test(msg)) return 'Неверный ключ Gemini API. Проверьте его в настройках.';
+  if (/location is not supported|unsupported.*(country|region|location)/i.test(msg)) {
+    return 'Gemini недоступен из вашей страны (Google блокирует по IP). Выберите в настройках другого провайдера, например OpenRouter, или укажите свой адрес-прокси для Gemini.';
+  }
   if (status === 403) return 'Доступ запрещён (403): ключ недействителен или API не включён. ' + msg;
   if (status === 404) return 'Модель не найдена (404). Выберите другую модель в настройках. ' + msg;
   if (status === 429) return 'Превышен лимит запросов Gemini (429). ' + msg;
@@ -70,7 +74,7 @@ function extractText(data) {
  * opts: apiKey, model, system, parts, json, temperature, maxOutputTokens, onStatus, retries, signal
  */
 export async function generate(opts) {
-  const { apiKey, model, onStatus = () => {}, retries = 5, signal } = opts;
+  const { apiKey, model, onStatus = () => {}, retries = 5, signal, baseUrl } = opts;
   if (!apiKey) throw new GeminiError('Не задан ключ Gemini API (Настройки).', { code: 'NO_KEY' });
   const body = JSON.stringify(buildBody({ temperature: 0.3, ...opts }));
   let attempt = 0;
@@ -79,7 +83,7 @@ export async function generate(opts) {
     let res, data;
     try {
       await waitOnline();
-      res = await fetch(`${BASE}/${modelPath(model)}:generateContent`, {
+      res = await fetch(`${base(baseUrl)}/${modelPath(model)}:generateContent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
         body,
@@ -144,12 +148,12 @@ export async function generateJSON(opts) {
  * Если поток не удался до первого текста — откат на обычный запрос.
  */
 export async function stream(opts) {
-  const { apiKey, model, onText, signal, onStatus = () => {} } = opts;
+  const { apiKey, model, onText, signal, onStatus = () => {}, baseUrl } = opts;
   if (!apiKey) throw new GeminiError('Не задан ключ Gemini API (Настройки).', { code: 'NO_KEY' });
   let got = false;
   try {
     await waitOnline();
-    const res = await fetch(`${BASE}/${modelPath(model)}:streamGenerateContent?alt=sse`, {
+    const res = await fetch(`${base(baseUrl)}/${modelPath(model)}:streamGenerateContent?alt=sse`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify(buildBody({ temperature: 0.4, ...opts })),
@@ -195,8 +199,8 @@ export async function stream(opts) {
 }
 
 /** Список моделей, поддерживающих generateContent. */
-export async function listModels(apiKey) {
-  const res = await fetch(`${BASE}/models?pageSize=200`, { headers: { 'x-goog-api-key': apiKey } });
+export async function listModels(apiKey, baseUrl) {
+  const res = await fetch(`${base(baseUrl)}/models?pageSize=200`, { headers: { 'x-goog-api-key': apiKey } });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new GeminiError(humanError(res.status, data), { status: res.status });
   return (data.models || [])

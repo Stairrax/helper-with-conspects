@@ -4,8 +4,11 @@ const LS_SETTINGS = 'kd.settings';
 const LS_PROGRESS = 'kd.progress';
 
 export const DEFAULT_SETTINGS = {
-  apiKey: '',
-  model: 'gemini-2.5-flash',
+  provider: 'openrouter', // см. PROVIDERS в ai.js
+  apiKey: '',             // ключ, модель и адрес текущего провайдера
+  model: 'google/gemini-2.5-flash',
+  baseUrl: '',            // пусто — адрес провайдера по умолчанию
+  profiles: {},           // сохранённые ключ/модель/адрес остальных провайдеров
   rate: 1,
   pause: 3,
   voiceURI: '',
@@ -18,11 +21,14 @@ export const DEFAULT_SETTINGS = {
 };
 
 export function loadSettings() {
-  try {
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(LS_SETTINGS) || '{}') };
-  } catch {
-    return { ...DEFAULT_SETTINGS };
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(LS_SETTINGS) || '{}'); } catch { /* ignore */ }
+  // настройки до появления выбора провайдера относились к Gemini
+  if (saved.apiKey !== undefined && !saved.provider) {
+    saved.provider = 'gemini';
+    if (!saved.model) saved.model = 'gemini-2.5-flash';
   }
+  return { ...DEFAULT_SETTINGS, profiles: {}, ...saved };
 }
 
 export function saveSettings(s) {

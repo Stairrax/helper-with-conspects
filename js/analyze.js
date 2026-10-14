@@ -1,6 +1,6 @@
 // Анализ конспектов: распознавание фото, разбиение на темы, план, генерация кусков с проверкой полноты.
 
-import { generate, generateJSON, GeminiError } from './gemini.js';
+import { generate, generateJSON, conn, AIError as GeminiError } from './ai.js';
 
 const PART_CHARS = 12000;     // размер части для разбиения на темы
 const SECTION_CHARS = 5000;   // размер секции для генерации кусков
@@ -77,10 +77,11 @@ const SYS_DICTATION = 'Ты готовишь учебный конспект к 
   '6) ответ — строго JSON.';
 
 // ---------- Распознавание фото ----------
+// (фото отправляются выбранной нейросети как изображения)
 
 export async function ocrImage(img, settings, onStatus) {
   return generate({
-    apiKey: settings.apiKey, model: settings.model, onStatus, temperature: 0.1,
+    ...conn(settings), onStatus, temperature: 0.1,
     system: 'Ты точно переписываешь учебные материалы с фотографий.',
     parts: [
       { text: 'Перепиши ВЕСЬ текст с этой страницы конспекта дословно, сохраняя структуру: заголовки начинай с «# », списки с «- ». ' +
@@ -110,7 +111,7 @@ ${prevTitle ? `Предыдущий фрагмент закончился тем
 ${numbered}`;
   let topics = [];
   try {
-    const res = await generateJSON({ apiKey: settings.apiKey, model: settings.model, system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.2 });
+    const res = await generateJSON({ ...conn(settings), system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.2 });
     topics = Array.isArray(res.topics) ? res.topics : [];
   } catch (e) {
     if (!(e instanceof GeminiError) || e.code !== 'BAD_JSON') throw e;
@@ -164,7 +165,7 @@ async function planTopics(topics, settings, onStatus) {
 
 ${JSON.stringify(list)}`;
   try {
-    const res = await generateJSON({ apiKey: settings.apiKey, model: settings.model, system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.2 });
+    const res = await generateJSON({ ...conn(settings), system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.2 });
     const map = new Map((res.topics || []).map((x) => [x.id, x]));
     const ids = new Set(topics.map((t) => t.id));
     for (const t of topics) {
@@ -371,10 +372,10 @@ ${text}
 3. В сложных местах${topic.difficulty >= 3 ? ' (в этой теме их, вероятно, много)' : ''} добавь отдельные куски с типом "k":"explain" (начинаются словами «Пояснение:») — короткое пояснение простыми словами, и/или "k":"example" (начинаются словами «Например:») — короткий пример. Это дополнение, а не замена содержания.
 4. У каждого пункта "c" — номера кусков (с нуля), в которых он передан.
 Ответ JSON: {"points":[{"p":"…","c":[0]}],"chunks":[{"t":"…","k":"content"}]}`;
-  const res = await generateJSON({ apiKey: settings.apiKey, model: settings.model, system: SYS_DICTATION, parts: [{ text: prompt }], onStatus, temperature: 0.3 });
+  const res = await generateJSON({ ...conn(settings), system: SYS_DICTATION, parts: [{ text: prompt }], onStatus, temperature: 0.3 });
   const chunks = (res.chunks || []).map((c) => ({ t: String(c.t || c.text || '').trim(), k: ['explain', 'example'].includes(c.k) ? c.k : 'content' })).filter((c) => c.t);
   const points = (res.points || []).map((p) => ({ p: String(p.p || p.point || '').trim(), c: (p.c || []).map(Number).filter((n) => n >= 0 && n < chunks.length) })).filter((p) => p.p);
-  if (!chunks.length) throw new GeminiError('Gemini не вернул куски для темы', { code: 'EMPTY' });
+  if (!chunks.length) throw new GeminiError('Нейросеть не вернула куски для темы', { code: 'EMPTY' });
   return { chunks, points };
 }
 
@@ -393,7 +394,7 @@ ${points.map((p, i) => `(${i}) ${p.p}`).join('\n')}
 1. "checks": для каждого пункта i укажи "c" — номера кусков, где он передан ПОЛНОСТЬЮ и верно (пустой список, если не передан или искажён).
 2. "missing": информация из исходного текста, которой нет ни в одном пункте списка (каждый элемент — короткий пункт). Пустой список, если всё учтено.
 Ответ JSON: {"checks":[{"i":0,"c":[0,1]}],"missing":["…"]}`;
-  const res = await generateJSON({ apiKey: settings.apiKey, model: settings.model, system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.1 });
+  const res = await generateJSON({ ...conn(settings), system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.1 });
   const checks = new Map((res.checks || []).map((x) => [Number(x.i), (x.c || []).map(Number).filter((n) => n >= 0 && n < chunks.length)]));
   points.forEach((p, i) => { if (checks.has(i)) p.c = checks.get(i); });
   const missing = (res.missing || []).map((m) => String(m).trim()).filter(Boolean);
@@ -415,7 +416,7 @@ ${chunks.map((c, i) => `[${i}] ${c.t}`).join('\n')}
 Сгенерируй дополнительные куски (1–3 предложения, для устной речи, формулы словами), полностью передающие эти пункты.
 Для каждого куска укажи "after" — номер существующего куска, после которого его вставить по смыслу (-1 — в самое начало), и "p" — номера пунктов, которые он покрывает.
 Ответ JSON: {"chunks":[{"t":"…","k":"content","after":3,"p":[0]}]}`;
-  const res = await generateJSON({ apiKey: settings.apiKey, model: settings.model, system: SYS_DICTATION, parts: [{ text: prompt }], onStatus, temperature: 0.3 });
+  const res = await generateJSON({ ...conn(settings), system: SYS_DICTATION, parts: [{ text: prompt }], onStatus, temperature: 0.3 });
   return (res.chunks || []).map((c) => ({
     t: String(c.t || '').trim(),
     k: ['explain', 'example'].includes(c.k) ? c.k : 'content',

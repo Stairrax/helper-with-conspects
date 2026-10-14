@@ -210,3 +210,4 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 36px; }
   .controls .btn span { font-size: 12px; }
   .stop { font-size: 24px; }
 }
+#providerHint { margin: -4px 0 14px; }
