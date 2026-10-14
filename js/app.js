@@ -12,7 +12,6 @@ import { Dictation, STATE_TEXT } from './dictation.js';
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Math.random().toString(36).slice(2, 10);
-const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 let settings = loadSettings();
 let sources = [];
@@ -61,14 +60,17 @@ function toast(msg, ms = 2600) {
 // ---------- Вкладки ----------
 
 let activeTab = 'load';
+const TITLES = { load: 'Материал', plan: 'План', dictate: 'Диктовка', settings: 'Настройки' };
 function switchTab(name) {
   activeTab = name;
-  document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+  document.body.dataset.tab = name;
+  $('screenTitle').textContent = TITLES[name];
+  document.querySelectorAll('.navbar button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab').forEach((s) => s.classList.toggle('active', s.id === 'tab-' + name));
   window.scrollTo({ top: 0 });
   render();
 }
-document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+document.querySelectorAll('.navbar button').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
 // ---------- Фоновая генерация кусков ----------
 
@@ -161,10 +163,10 @@ function renderSources() {
   const ul = $('sourceList');
   ul.innerHTML = sources.map((s) => `
     <li>
-      <span>${s.kind === 'images' ? '📷' : '📄'}</span>
+      <svg><use href="#i-${s.kind === 'images' ? 'camera' : 'doc'}"/></svg>
       <span class="name">${esc(s.name)}</span>
       <span class="size">${s.kind === 'images' ? `${s.images.length} стр.` : fmtChars((s.text || '').length)}</span>
-      <button data-del="${s.id}" aria-label="Удалить">✕</button>
+      <button class="icon-btn small" data-del="${s.id}" aria-label="Удалить"><svg><use href="#i-close"/></svg></button>
     </li>`).join('');
   $('sourcesEmpty').classList.toggle('hidden', sources.length > 0);
 }
@@ -233,13 +235,19 @@ $('photoInput').addEventListener('change', async (e) => {
 
 // ---------- Время и приоритет ----------
 
-$('timeChips').addEventListener('click', (e) => {
-  const m = +e.target.dataset.min;
-  if (!m) return;
-  $('hours').value = Math.floor(m / 60);
-  $('minutes').value = m % 60;
-});
-const getBudget = () => (Math.max(0, +$('hours').value || 0) * 60) + Math.max(0, +$('minutes').value || 0);
+let budgetMin = 120;
+function renderBudget() {
+  const h = Math.floor(budgetMin / 60), m = budgetMin % 60;
+  $('timeValue').textContent = (h ? `${h} ч` : '') + (h && m ? ' ' : '') + (m ? `${m} мин` : '');
+}
+const stepBudget = (d) => {
+  const step = (d < 0 ? budgetMin <= 60 : budgetMin < 60) ? 15 : 30;
+  budgetMin = Math.max(15, Math.min(12 * 60, budgetMin + Math.sign(d) * step));
+  renderBudget();
+};
+$('timeMinus').addEventListener('click', () => stepBudget(-1));
+$('timePlus').addEventListener('click', () => stepBudget(1));
+const getBudget = () => budgetMin;
 const getPriority = () => document.querySelector('input[name=priority]:checked')?.value || 'original';
 
 // ---------- Анализ ----------
@@ -263,6 +271,7 @@ $('analyzeBtn').addEventListener('click', async () => {
   $('analyzeCard').classList.remove('hidden');
   $('analyzeLog').innerHTML = '';
   $('analyzeBar').style.width = '2%';
+  $('analyzeStatus').textContent = 'Начинаю…';
   let lastStep = '';
   try {
     const p = await analyze({
@@ -271,7 +280,7 @@ $('analyzeBtn').addEventListener('click', async () => {
         if (frac !== undefined) {
           $('analyzeBar').style.width = Math.round(frac * 100) + '%';
           if (msg !== lastStep) { logLine(msg); lastStep = msg; }
-          $('analyzeStatus').textContent = '';
+          $('analyzeStatus').textContent = msg;
         } else $('analyzeStatus').textContent = msg;
       },
     });
@@ -286,7 +295,7 @@ $('analyzeBtn').addEventListener('click', async () => {
     gen.loop();
   } catch (e) {
     logLine('Ошибка: ' + (e.message || e), 'err');
-    $('analyzeStatus').textContent = 'Анализ не завершён. Исправьте проблему и нажмите «Анализировать» ещё раз.';
+    $('analyzeStatus').innerHTML = `<span style="color:var(--danger)">${esc(e.message || e)}</span>`;
   } finally {
     btn.disabled = false;
   }
@@ -294,7 +303,9 @@ $('analyzeBtn').addEventListener('click', async () => {
 
 // ---------- План ----------
 
+let openTopic = null;
 let openPoints = new Set();
+const dots = (d) => '●'.repeat(d) + '○'.repeat(5 - d);
 
 function renderPlan() {
   const has = !!project;
@@ -307,13 +318,16 @@ function renderPlan() {
   const total = seq.reduce((s, t) => s + estimateTopicSec(t, settings), 0);
   const budget = project.budgetMin * 60;
   const ready = seq.filter((t) => t.status === 'ready').length;
-  let summary = `<b>${seq.length}</b> тем к диктовке из ${project.topics.length} · ` +
-    `бюджет <b>${fmtDur(budget)}</b> · оценка диктовки <b>≈${fmtDur(total)}</b> (пауза ${settings.pause} с, скорость ${settings.rate})`;
-  if (total > budget * 1.05) summary += `<div class="status" style="color:var(--warn)">Не укладываемся на ≈${fmtDur(total - budget)}. Пропустите часть тем, уменьшите паузу или увеличьте скорость.</div>`;
-  else if (total < budget * 0.8) summary += `<div class="status">Есть запас ≈${fmtDur(budget - total)} — можно увеличить паузы («Подогнать паузу под время»).</div>`;
-  summary += `<div class="status">Подготовлено тем: ${ready} из ${seq.length}</div>`;
-  $('planSummary').innerHTML = summary;
-  $('genStatus').textContent = gen.running ? '⏳ ' + gen.status : '';
+  let line = '';
+  if (total > budget * 1.05) line = `<span class="warn">Не укладываемся на ≈${fmtDur(total - budget)} — пропустите часть тем или уменьшите паузу.</span>`;
+  else if (total < budget * 0.8) line = `Есть запас ≈${fmtDur(budget - total)}.`;
+  else line = 'Укладываемся в отведённое время.';
+  $('planSummary').innerHTML = `<div class="plan-sum"><span class="big">${seq.length} тем · ≈${fmtDur(total)}</span>` +
+    `<span class="muted">из ${fmtDur(budget)}. ${line}</span></div>`;
+  $('fitPauseBtn').classList.toggle('hidden', !(total > budget * 1.05 || total < budget * 0.8));
+  $('genStatus').textContent = ready < seq.length
+    ? `Подготовлено ${ready} из ${seq.length}${gen.running && gen.status ? ' · ' + gen.status : ''}`
+    : '';
   document.querySelectorAll('input[name=planPriority]').forEach((r) => { r.checked = r.value === project.priority; });
 
   const pos = new Map(project.plan.order.map((id, i) => [id, i]));
@@ -323,44 +337,56 @@ function renderPlan() {
     if (!t) return '';
     const skipped = !!project.plan.skipped[id];
     if (!skipped) n++;
-    const prereq = (t.prereq || []).map((p) => {
-      const pt = byId.get(p);
-      if (!pt) return '';
-      const bad = pos.get(p) > i || project.plan.skipped[p];
-      return `<span class="${bad ? 'bad' : ''}">«${esc(pt.title)}»${bad ? (project.plan.skipped[p] ? ' (пропущена)' : ' (идёт позже!)') : ''}</span>`;
-    }).filter(Boolean).join(', ');
-    let st = '';
-    if (t.status === 'ready') {
-      const c = t.coverage || { total: 0, covered: 0 };
-      st = `${t.chunks.length} кусков · покрытие ${c.covered}/${c.total}${c.covered === c.total ? ' ✓' : ' ⚠'}${c.checked ? '' : ' (без проверки)'}`;
-    } else if (t.status === 'generating') st = '⏳ готовится…';
-    else if (t.status === 'error') st = `<span class="bad">⚠ ${esc(t.error)}</span>`;
-    else st = 'в очереди на подготовку';
-    const est = estimateTopicSec(t, settings);
     const isCur = progress?.topicId === id;
     const done = progress?.done?.[id];
-    const points = openPoints.has(id) && t.points?.length
-      ? `<ol class="points">${t.points.map((p) => `<li class="${p.c.length ? '' : 'miss'}">${esc(p.p)} <i>${p.c.length ? '→ куски ' + p.c.map((x) => x + 1).join(', ') : '— не покрыт'}</i></li>`).join('')}</ol>`
-      : '';
+    const est = estimateTopicSec(t, settings);
+    let st = '', stCls = '';
+    if (t.status === 'ready') {
+      const c = t.coverage || { total: 0, covered: 0 };
+      st = c.covered === c.total ? '✓' : '⚠'; stCls = c.covered === c.total ? 'ok' : 'err';
+    } else if (t.status === 'generating') st = '⏳';
+    else if (t.status === 'error') { st = '⚠'; stCls = 'err'; }
+    let detail = '';
+    if (openTopic === id) {
+      const prereq = (t.prereq || []).map((p) => {
+        const pt = byId.get(p);
+        if (!pt) return '';
+        const bad = pos.get(p) > i || project.plan.skipped[p];
+        return `<span class="${bad ? 'bad' : ''}">«${esc(pt.title)}»${bad ? (project.plan.skipped[p] ? ' (пропущена)' : ' (идёт позже)') : ''}</span>`;
+      }).filter(Boolean).join(', ');
+      let stLong = '';
+      if (t.status === 'ready') {
+        const c = t.coverage || { total: 0, covered: 0 };
+        stLong = `${t.chunks.length} кусков · покрыто пунктов ${c.covered} из ${c.total}${c.checked ? '' : ' (без проверки)'}`;
+      } else if (t.status === 'generating') stLong = 'Готовится…';
+      else if (t.status === 'error') stLong = `<span class="bad">${esc(t.error)}</span>`;
+      else stLong = 'В очереди на подготовку';
+      const points = openPoints.has(id) && t.points?.length
+        ? `<ol class="points">${t.points.map((p) => `<li class="${p.c.length ? '' : 'miss'}">${esc(p.p)} <i>${p.c.length ? '→ ' + p.c.map((x) => x + 1).join(', ') : '— не покрыт'}</i></li>`).join('')}</ol>`
+        : '';
+      detail = `<div class="pdetail">
+        ${t.summary ? `<p>${esc(t.summary)}</p>` : ''}
+        ${prereq ? `<p>Нужно знать: ${prereq}</p>` : ''}
+        <p>${stLong}${skipped ? '' : ` · по бюджету ${fmtDur(alloc[id] || 0)}`}</p>
+        <div class="pactions">
+          <button class="icon-btn" data-act="up" aria-label="Выше"><svg><use href="#i-up"/></svg></button>
+          <button class="icon-btn" data-act="down" aria-label="Ниже"><svg><use href="#i-down"/></svg></button>
+          <button class="btn" data-act="skip">${skipped ? 'Вернуть' : 'Пропустить'}</button>
+          ${skipped ? '' : '<button class="btn tonal" data-act="from">Начать отсюда</button>'}
+          ${t.points?.length ? `<button class="btn" data-act="points">${openPoints.has(id) ? 'Скрыть пункты' : 'Пункты'}</button>` : ''}
+          ${t.status === 'error' ? '<button class="btn" data-act="retry">Повторить</button>' : ''}
+        </div>
+        ${points}
+      </div>`;
+    }
     return `<li class="${skipped ? 'skipped' : ''} ${isCur ? 'current' : ''} ${done ? 'done' : ''}" data-id="${id}">
-      <div class="phead">
-        <span class="pnum">${skipped ? '–' : n}</span>
-        <span class="ptitle">${esc(t.title)}</span>
-        <span class="pmove"><button data-act="up" aria-label="Выше">↑</button><button data-act="down" aria-label="Ниже">↓</button></span>
-      </div>
-      <div class="pinfo">
-        <span class="stars" title="Сложность">${stars(t.difficulty || 3)}</span> · ${fmtChars(t.chars)} · ≈${fmtDur(est)}${skipped ? '' : ` (по бюджету ${fmtDur(alloc[id] || 0)})`}
-        ${t.summary ? `<br>${esc(t.summary)}` : ''}
-        ${prereq ? `<br>Нужно знать: ${prereq}` : ''}
-        <br>${st}
-      </div>
-      <div class="pactions">
-        <button class="btn" data-act="skip">${skipped ? 'Вернуть' : 'Пропустить'}</button>
-        ${skipped ? '' : '<button class="btn" data-act="from">Начать с этой темы</button>'}
-        ${t.points?.length ? `<button class="btn" data-act="points">Пункты (${t.points.length})</button>` : ''}
-        ${t.status === 'error' ? '<button class="btn" data-act="retry">Повторить</button>' : ''}
-      </div>
-      ${points}
+      <button class="phead" data-act="open">
+        <span class="pnum">${skipped ? '–' : done ? '✓' : n}</span>
+        <span class="pbody"><span class="ptitle">${esc(t.title)}</span>
+          <span class="pmeta"><span class="dots">${dots(t.difficulty || 3)}</span> · ≈${fmtDur(est)}</span></span>
+        <span class="pstate ${stCls}">${st}</span>
+      </button>
+      ${detail}
     </li>`;
   }).join('');
 }
@@ -373,6 +399,7 @@ $('planList').addEventListener('click', (e) => {
   const order = project.plan.order;
   const i = order.indexOf(id);
   switch (btn.dataset.act) {
+    case 'open': openTopic = openTopic === id ? null : id; break;
     case 'up': if (i > 0) [order[i - 1], order[i]] = [order[i], order[i - 1]]; break;
     case 'down': if (i < order.length - 1) [order[i + 1], order[i]] = [order[i], order[i + 1]]; break;
     case 'skip':
@@ -401,14 +428,14 @@ $('planList').addEventListener('click', (e) => {
   render();
 });
 
-$('reorderBtn').addEventListener('click', () => {
+document.querySelectorAll('input[name=planPriority]').forEach((r) => r.addEventListener('change', () => {
   if (!project) return;
-  project.priority = document.querySelector('input[name=planPriority]:checked')?.value || project.priority;
+  project.priority = r.value;
   project.plan.order = orderTopics(project.topics, project.priority);
   saveProject();
   render();
   toast('Порядок пересчитан с учётом зависимостей');
-});
+}));
 
 $('fitPauseBtn').addEventListener('click', () => {
   if (!project) return;
@@ -416,7 +443,7 @@ $('fitPauseBtn').addEventListener('click', () => {
   saveSettings(settings);
   renderSettings();
   render();
-  toast(`Базовая пауза: ${settings.pause} с`);
+  toast(`Пауза между кусками: ${settings.pause} с`);
 });
 
 $('startBtn').addEventListener('click', () => { switchTab('dictate'); dict.start(); });
@@ -433,49 +460,63 @@ function displayedChunk() {
   return { t, chunk: t.chunks[Math.max(0, idx)], idx: Math.max(0, idx) };
 }
 
+const PAUSED = ['paused', 'listening', 'confirm', 'topicEnd'];
+const DICTATING = ['speaking', 'gap', 'waiting'];
+
 function renderDictation() {
   const st = dict.state;
   const seq = project ? activeSeq(project) : [];
   const topicId = dict.resumePos && st !== 'topicEnd' ? dict.resumePos.topicId : progress?.topicId;
   const t = project?.topics.find((x) => x.id === topicId) || (project ? dict.currentTopic() : null);
   const ti = t ? seq.findIndex((x) => x.id === t.id) : -1;
-  $('topicNum').textContent = t ? `Тема ${ti + 1} из ${seq.length} · ${stars(t.difficulty || 3)}` : '';
-  $('topicTitle').textContent = t ? t.title : (project ? 'Нажмите «Старт»' : 'Нет плана');
+  $('topicNum').textContent = t ? `Тема ${ti + 1} из ${seq.length}` : '';
+  $('topicTitle').textContent = t ? t.title : (project ? 'Всё продиктовано' : 'Сначала составьте план');
   const { chunk, idx } = project ? displayedChunk() : { chunk: null, idx: -1 };
   const n = t?.chunks?.length || 0;
   const doneChunks = t && t.status === 'ready' ? Math.min(n, (st === 'topicEnd' ? n : progress.chunk)) : 0;
   $('topicBar').style.width = n ? `${(doneChunks / n) * 100}%` : '0';
-  $('chunkNum').textContent = n ? `Кусок ${Math.min(idx + 1, n)} из ${n}` : (t?.status === 'generating' ? 'Тема готовится…' : '');
-  $('topicTime').textContent = t ? `осталось по теме ≈${fmtDur(estimateTopicSec(t, settings, t.chunks?.length ? progress.chunk : 0))}` : '';
+  $('chunkNum').textContent = n ? `${Math.min(idx + 1, n)} / ${n}` : '';
   const kinds = { explain: 'Пояснение', example: 'Пример', content: '' };
   $('chunkKind').textContent = chunk ? kinds[chunk.k] || '' : '';
-  $('chunkKind').className = 'kind ' + (chunk?.k || '');
-  $('chunkText').textContent = chunk ? chunk.t : (st === 'waiting' ? 'Готовлю куски для этой темы…' : '');
-  $('chunkBox').classList.toggle('hidden-text', !settings.showText);
-  $('toggleText').textContent = settings.showText ? '👁' : '🙈';
+  let text = chunk ? chunk.t : '';
+  if (!text) {
+    if (!project) text = 'Добавьте конспект на вкладке «Материал».';
+    else if (st === 'waiting' || t?.status === 'generating' || t?.status === 'pending') text = 'Готовлю эту тему…';
+    else if (st === 'idle') text = 'Нажмите ▶, чтобы начать.';
+  }
+  $('chunkText').textContent = text;
+  $('chunkBox').classList.toggle('hidden-text', !settings.showText && !!chunk);
+  $('toggleText').textContent = settings.showText ? 'Скрыть текст' : 'Показать текст';
 
-  const stateEl = $('dictState');
-  stateEl.textContent = STATE_TEXT[st] || st;
-  stateEl.className = 'state s-' + st;
+  $('dictState').textContent = STATE_TEXT[st] || st;
+  $('stateDot').className = 'dot s-' + st;
   $('dictMsg').textContent = dict.message || '';
-  $('heard').textContent = dict.heard ? `«${dict.heard}»` : '';
+  $('heard').textContent = dict.heard && st !== 'idle' ? `«${dict.heard}»` : '';
 
-  const dictating = ['speaking', 'gap', 'waiting'].includes(st);
-  const pausedLike = ['paused', 'listening', 'confirm', 'topicEnd'].includes(st);
-  const play = $('playBtn');
-  play.innerHTML = dictating ? '⏸<span>Пауза</span>' : pausedLike ? '▶<span>Продолжить</span>' : st === 'finished' ? '↻<span>Сначала</span>' : '▶<span>Старт</span>';
-  play.disabled = !project;
-  $('continueBtn').classList.toggle('hidden', !pausedLike && !['thinking', 'answering'].includes(st));
-  $('continueBtn').textContent = st === 'topicEnd' ? '▶ Следующая тема' : '▶ Продолжить диктовку';
+  const dictating = DICTATING.includes(st);
+  const pausedLike = PAUSED.includes(st);
+  $('playIcon').setAttribute('href', dictating ? '#i-pause' : '#i-play');
+  $('playBtn').setAttribute('aria-label', dictating ? 'Пауза' : 'Продолжить');
+  ['playBtn', 'repeatBtn', 'nextBtn', 'moreBtn'].forEach((id) => { $(id).disabled = !project; });
   $('stopBtn').classList.toggle('listening', st === 'listening');
-  const errTopic = st === 'waiting' && t?.status === 'error';
-  $('retryTopicBtn').classList.toggle('hidden', !errTopic);
+  $('retryTopicBtn').classList.toggle('hidden', !(st === 'waiting' && t?.status === 'error'));
 
-  // ответ
-  const last = progress?.qa?.[progress.qa.length - 1];
-  const showAnswer = last && !dictating && st !== 'idle';
+  // панель вопроса — только когда диктовка остановлена
+  const qaOpen = pausedLike || ['thinking', 'answering'].includes(st) || (st === 'finished' && progress?.qa?.length);
+  $('qaPanel').classList.toggle('hidden', !qaOpen);
+  $('tab-dictate').classList.toggle('qa-open', !!qaOpen);
+  $('continueBtn').classList.toggle('hidden', !pausedLike && !['thinking', 'answering'].includes(st));
+  $('continueBtn').textContent = st === 'topicEnd' ? 'Следующая тема' : 'Продолжить диктовку';
+  const qa = progress?.qa || [];
+  const last = qa[qa.length - 1];
+  const showAnswer = last && (['thinking', 'answering', 'confirm'].includes(st) || (pausedLike && Date.now() - last.t < 10 * 60000));
   $('answer').classList.toggle('hidden', !showAnswer);
-  if (showAnswer) $('answer').innerHTML = `<div class="q">Вопрос: ${esc(last.q)}</div>${esc(last.a || '…')}`;
+  if (showAnswer) $('answer').innerHTML = `<div class="q">${esc(last.q)}</div>${esc(last.a || '…')}`;
+  const older = showAnswer ? qa.slice(0, -1) : qa;
+  $('historyCard').classList.toggle('hidden', !older.length);
+  $('historyTitle').textContent = `Предыдущие вопросы (${older.length})`;
+  $('qaHistory').innerHTML = older.slice().reverse()
+    .map((x) => `<div class="item"><div class="q">${esc(x.q)}</div><div class="a">${esc(x.a)}</div></div>`).join('');
 
   // общий прогресс
   if (project) {
@@ -490,18 +531,13 @@ function renderDictation() {
     });
     if (st === 'finished') remain = 0;
     const frac = total ? 1 - remain / total : 0;
-    const doneTopics = seq.filter((x) => progress.done?.[x.id]).length;
     $('overallBar').style.width = `${Math.max(0, Math.min(1, frac)) * 100}%`;
-    $('overallText').textContent = `тем ${doneTopics} из ${seq.length} · ${Math.round(frac * 100)}%`;
-    $('timeText').textContent = `Прошло ${fmtClock(progress.elapsedMs || 0)} из ${fmtClock(project.budgetMin * 60000)}`;
-    $('remainText').textContent = `осталось ≈${fmtDur(remain)}`;
+    $('timeText').textContent = `${fmtClock(progress.elapsedMs || 0)} из ${fmtClock(project.budgetMin * 60000)}`;
+    $('remainText').textContent = `${Math.round(frac * 100)}% · осталось ≈${fmtDur(remain)}`;
+  } else {
+    $('timeText').textContent = '';
+    $('remainText').textContent = '';
   }
-
-  // история
-  $('qaHistory').innerHTML = (progress?.qa || []).slice().reverse()
-    .map((x) => `<div class="item"><div class="q">${esc(x.q)}</div><div class="a">${esc(x.a)}</div></div>`).join('') || '<p class="muted">Пока нет вопросов.</p>';
-
-  $('micState').classList.toggle('on', !!dict.micOn);
 }
 
 // пауза между кусками — плавная полоса
@@ -515,23 +551,29 @@ function renderDictation() {
 
 function onStop(e) {
   e?.preventDefault();
-  if (!project && dict.state === 'idle') { toast('Сначала загрузите материал'); return; }
+  if (!project && dict.state === 'idle') { toast('Сначала составьте план'); return; }
+  navigator.vibrate?.(30);
   dict.interrupt('question');
   if (activeTab !== 'dictate') switchTab('dictate');
   if (!srSupported || dict.micError) $('questionInput').focus();
-  else toast('Слушаю вопрос… Можно и написать его.', 2000);
 }
 $('stopBtn').addEventListener('pointerdown', onStop);
 $('stopBtn').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') onStop(e); });
 
 $('playBtn').addEventListener('click', () => {
-  const st = dict.state;
-  if (['speaking', 'gap', 'waiting'].includes(st)) dict.interrupt('pause');
+  if (DICTATING.includes(dict.state)) dict.interrupt('pause');
   else dict.start();
 });
 $('continueBtn').addEventListener('click', () => dict.resume());
 $('repeatBtn').addEventListener('click', () => dict.repeat());
 $('nextBtn').addEventListener('click', () => dict.next());
+
+// меню «ещё»
+const openSheet = (on) => $('sheet').classList.toggle('hidden', !on);
+$('moreBtn').addEventListener('click', () => openSheet(true));
+$('sheet').addEventListener('click', (e) => {
+  if (e.target.closest('[data-close]') || e.target.closest('.sheet-item')) openSheet(false);
+});
 $('repeatTopicBtn').addEventListener('click', () => dict.repeatTopic());
 $('skipTopicBtn').addEventListener('click', () => dict.skipTopic());
 $('slowerBtn').addEventListener('click', () => dict.changeRate(-0.1));
@@ -540,13 +582,29 @@ $('retryTopicBtn').addEventListener('click', () => {
   const t = dict.currentTopic();
   if (t) { t.status = 'pending'; t.errors = 0; gen.loop(); }
 });
-$('toggleText').addEventListener('click', () => { settings.showText = !settings.showText; saveSettings(settings); render(); });
+const toggleText = () => { settings.showText = !settings.showText; saveSettings(settings); render(); };
+$('toggleText').addEventListener('click', toggleText);
+$('chunkBox').addEventListener('click', toggleText);
+
+// подсказка про наушники — до первого закрытия
+const tipHidden = () => { try { return localStorage.getItem('kd.tipHidden') === '1'; } catch { return false; } };
+$('tipClose').addEventListener('click', () => {
+  try { localStorage.setItem('kd.tipHidden', '1'); } catch { /* ignore */ }
+  $('headphonesTip').classList.add('hidden');
+});
+
+// поле вопроса растёт вместе с текстом
+$('questionInput').addEventListener('input', (e) => {
+  e.target.style.height = 'auto';
+  e.target.style.height = Math.min(120, e.target.scrollHeight) + 'px';
+});
 
 function sendQuestion() {
   const q = $('questionInput').value.trim();
   if (!q) return;
   if (!settings.apiKey) { toast(`Укажите ключ API (${providerName(settings)}) в настройках`); return; }
   $('questionInput').value = '';
+  $('questionInput').style.height = '';
   $('questionInput').blur();
   dict.ask(q);
 }
@@ -613,7 +671,7 @@ bind('apiKey', 'apiKey', (v) => v.trim());
 bind('model', 'model', (v) => v.trim().replace(/^models\//, '') || (PROVIDERS[settings.provider]?.model ?? ''));
 bind('baseUrl', 'baseUrl', (v) => v.trim());
 
-$('provider').innerHTML = Object.entries(PROVIDERS).map(([id, p]) => `<option value="${id}">${esc(p.name)}</option>`).join('');
+$('provider').innerHTML = Object.entries(PROVIDERS).map(([id, p]) => `<option value="${id}">${esc(p.name.replace(/ \(.*\)$/, ''))}</option>`).join('');
 $('provider').addEventListener('change', (e) => {
   // ключ/модель/адрес у каждого провайдера свои — сохраняем текущие и подставляем сохранённые
   const prev = settings.provider;
@@ -706,12 +764,11 @@ function renderResume() {
   const t = project.topics.find((x) => x.id === progress.topicId);
   const seq = activeSeq(project);
   const done = seq.filter((x) => progress.done?.[x.id]).length;
-  $('resumeText').innerHTML = t
-    ? `Есть незавершённая диктовка: тема «${esc(t.title)}», кусок ${progress.chunk + 1}. Пройдено тем: ${done} из ${seq.length}.`
-    : `Диктовка: пройдено тем ${done} из ${seq.length}.`;
+  $('resumeText').textContent = t
+    ? `«${t.title}» · пройдено тем ${done} из ${seq.length}`
+    : `Пройдено тем ${done} из ${seq.length}`;
 }
-$('resumeGo').addEventListener('click', () => { switchTab('dictate'); dict.start(); });
-$('resumePlan').addEventListener('click', () => switchTab('plan'));
+$('resumeCard').addEventListener('click', () => { switchTab('dictate'); dict.start(); });
 
 // ---------- Общий рендер ----------
 
@@ -720,22 +777,24 @@ function render() {
   if (activeTab === 'dictate') renderDictation();
   if (activeTab === 'load') renderResume();
   $('micState').classList.toggle('on', !!dict.micOn);
+  // СТОП: всегда на экране диктовки, на других — пока идёт диктовка
+  const active = !['idle', 'finished'].includes(dict.state);
+  const showStop = !!project && (activeTab === 'dictate' || active);
+  $('stopBar').classList.toggle('hidden', !showStop);
+  document.body.classList.toggle('has-stop', showStop);
+  $('headphonesTip').classList.toggle('hidden', tipHidden() || !srSupported || !project);
 }
 
 function renderWarnings() {
   const warn = [];
   if (!ttsSupported) warn.push('Этот браузер не поддерживает синтез речи. Откройте приложение в Chrome на Android.');
   if (!srSupported) {
-    warn.push(isIOS
-      ? 'На iPhone/iPad распознавание речи в Safari недоступно или работает нестабильно (особенно в режиме приложения с главного экрана). Голосовые команды отключены: используйте большую кнопку «СТОП / ВОПРОС», а вопросы задавайте текстом. Для полной функциональности — Chrome на Android.'
-      : 'Этот браузер не поддерживает распознавание речи. Голосовые команды недоступны — используйте кнопку «СТОП / ВОПРОС» и текстовые вопросы. Рекомендуется Chrome на Android.');
-  } else if (isIOS) {
-    warn.push('На iOS распознавание речи может работать нестабильно. Если голосовые команды не срабатывают — пользуйтесь кнопкой «СТОП / ВОПРОС».');
+    warn.push('Этот браузер не распознаёт речь — голосовые команды недоступны. Откройте приложение в Chrome; пока можно пользоваться кнопкой «СТОП / ВОПРОС» и писать вопросы.');
   }
   if (location.protocol !== 'https:' && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
     warn.push('Страница открыта не по HTTPS — микрофон и установка приложения работать не будут. Разместите приложение на GitHub Pages или Netlify.');
   }
-  $('srWarn').innerHTML = warn.map(esc).join('<br><br>');
+  $('srWarn').innerHTML = warn.map(esc).join('<br>');
   $('srWarn').classList.toggle('hidden', !warn.length);
 }
 
@@ -754,13 +813,13 @@ async function init() {
   if (project) {
     project.topics.forEach((t) => { if (t.status === 'generating') t.status = 'pending'; });
     if (!progress || progress.projectId !== project.id) progress = freshProgress(project.id);
-    $('hours').value = Math.floor(project.budgetMin / 60);
-    $('minutes').value = project.budgetMin % 60;
+    budgetMin = project.budgetMin;
     const r = document.querySelector(`input[name=priority][value=${project.priority}]`);
     if (r) r.checked = true;
     gen.loop();
   }
   renderSources();
+  renderBudget();
   render();
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
