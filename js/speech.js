@@ -1,4 +1,7 @@
-// Синтез речи (SpeechSynthesis), распознавание (SpeechRecognition), команды и защита от эха.
+// Синтез речи (системный SpeechSynthesis или нейросетевой Piper), распознавание (SpeechRecognition),
+// команды и защита от эха.
+
+import * as neural from './neural.js';
 
 const synth = window.speechSynthesis;
 export const ttsSupported = !!synth && 'SpeechSynthesisUtterance' in window;
@@ -39,8 +42,76 @@ export function isSpeaking() {
   return !!current || (ttsSupported && synth.speaking);
 }
 
+// ---------- Выбор движка ----------
+
+let engine = 'system';        // 'system' | 'neural'
+let neuralVoice = 'irina';
+let onNeuralError = () => {};
+
+export function setEngine(kind, voice, onError) {
+  engine = kind === 'neural' ? 'neural' : 'system';
+  if (voice) neuralVoice = voice;
+  if (onError) onNeuralError = onError;
+}
+
+/** Готовит следующие куски заранее (только для нейроголоса — системному не нужно). */
+export function prefetch(texts, { rate = 1 } = {}) {
+  if (engine !== 'neural') return;
+  for (const t of texts) if (t) neural.synth(t, { voice: neuralVoice, rate }).catch(() => {});
+}
+
 /** Произносит текст. Promise -> 'end' | 'cancel' | 'error'. */
-export function speak(text, { rate = 1, voiceURI = '', onStart, echoTail = 900 } = {}) {
+export function speak(text, opts = {}) {
+  return engine === 'neural' ? speakNeural(text, opts) : speakSystem(text, opts);
+}
+
+function remember(text, echoTail) {
+  const rec = { text, start: Date.now(), end: 0, tail: echoTail };
+  recent.push(rec);
+  while (recent.length > 4) recent.shift();
+  return rec;
+}
+
+function speakNeural(text, opts) {
+  const { rate = 1, onStart, echoTail = 900 } = opts;
+  const myEpoch = epoch;
+  return new Promise((resolve) => {
+    const rec = remember(text, echoTail);
+    let done = false, src = null, wd = null;
+    const fin = (r) => {
+      if (done) return;
+      done = true;
+      clearTimeout(wd);
+      rec.end = Date.now();
+      if (current?.fin === fin) current = null;
+      try { src?.stop(); } catch { /* уже остановлен */ }
+      resolve(r);
+    };
+    current = { fin, text };
+    neural.synth(text, { voice: neuralVoice, rate }).then((buf) => {
+      if (done || myEpoch !== epoch) return fin('cancel');
+      const ac = neural.audioContext();
+      src = ac.createBufferSource();
+      src.buffer = buf;
+      src.connect(ac.destination);
+      src.onended = () => fin('end');
+      onStart?.();
+      src.start();
+      // если звук не пошёл (контекст заблокирован) — сообщаем об ошибке, а не висим
+      wd = setTimeout(() => fin(ac.state === 'running' ? 'end' : 'error'), buf.duration * 1000 + 4000);
+    }).catch((err) => {
+      if (done || myEpoch !== epoch) return fin('cancel');
+      // нейроголос не сработал — говорим системным, чтобы диктовка не останавливалась
+      done = true;
+      if (current?.fin === fin) current = null;
+      recent.splice(recent.indexOf(rec), 1);
+      onNeuralError(err);
+      speakSystem(text, opts).then(resolve);
+    });
+  });
+}
+
+function speakSystem(text, { rate = 1, voiceURI = '', onStart, echoTail = 900 } = {}) {
   if (!ttsSupported) return Promise.resolve('error');
   const myEpoch = epoch;
   return new Promise((resolve) => {
@@ -51,9 +122,7 @@ export function speak(text, { rate = 1, voiceURI = '', onStart, echoTail = 900 }
       const v = pickVoice(voiceURI);
       try { if (v) u.voice = v; } catch { /* голос недоступен */ }
       u.rate = rate;
-      const rec = { text, start: Date.now(), end: 0, tail: echoTail };
-      recent.push(rec);
-      while (recent.length > 4) recent.shift();
+      const rec = remember(text, echoTail);
       let done = false, seen = false;
       const started = Date.now();
       const maxMs = 8000 + (text.length / (8 * rate)) * 1000;
@@ -86,11 +155,10 @@ export function speak(text, { rate = 1, voiceURI = '', onStart, echoTail = 900 }
 
 /** Мгновенно обрывает речь. */
 export function stopSpeaking() {
-  if (!ttsSupported) return;
   epoch++;
   const c = current;
   current = null;
-  synth.cancel();
+  if (ttsSupported) synth.cancel();
   lastCancelAt = Date.now();
   if (c) c.fin('cancel');
   keepAlive = null;
@@ -144,13 +212,16 @@ const COMMANDS = [
   ['slower', w('медленнее|помедленнее|медленней|помедленней')],
   ['faster', w('быстрее|побыстрее|быстрей|побыстрей')],
   ['continue', w('продолжай(?:те)?|продолжить|продолжаем|продолжи|поехали|давай(?:те)? дальше|едем дальше')],
-  ['next', w('дальше|следующий|следующее|пропусти(?:те)?|далее')],
+  ['next', w('дальше|следующий|следующее|пропусти(?:те)?|далее|готово|записал[а]?|записано')],
 ];
+const SPELL = w('по буквам|как пишется|как это пишется|как писать|по слогам');
 
 /** Короткая фраза -> команда или null. */
 export function matchCommand(text) {
   const t = norm(text);
-  if (!t || t.split(' ').length > 4) return null;
+  if (!t) return null;
+  if (t.split(' ').length <= 6 && SPELL.test(t)) return 'spell';
+  if (t.split(' ').length > 4) return null;
   for (const [name, re] of COMMANDS) if (re.test(t)) return name;
   return null;
 }
@@ -159,6 +230,14 @@ const YES = w('да|ага|угу|конечно|давай(?:те)?|продо�
 const NO = w('нет|не надо|не|стоп|подожди(?:те)?|погоди');
 export const isYes = (t) => { const n = norm(t); return n.split(' ').length <= 4 && YES.test(n) && !/(?:^|\s)нет(?=\s|$)/.test(n); };
 export const isNo = (t) => { const n = norm(t); return n.split(' ').length <= 3 && NO.test(n); };
+
+/** Слово, которое просят продиктовать по буквам («как пишется фотосинтез» -> «фотосинтез»). */
+export function spellTarget(text) {
+  const m = String(text).match(/(?:пишется|писать|по буквам|по слогам)\s+(?:слово\s+)?(.+)$/i);
+  return m ? m[1].replace(/[?.!,]+$/g, '').trim() : '';
+}
+
+export const isDontKnow = (t) => /^(я )?(не знаю|не помню|забыл[аи]?|без понятия|понятия не имею|сдаюсь|подскажи)/.test(norm(t));
 
 const QUESTION_START = /^(вопрос|а |а$|почему|зачем|что|чем|как|какой|какая|какое|какие|каким|когда|где|куда|откуда|кто|сколько|объясни|поясни|расскажи|уточни|не понял|не поняла|непонятно|можно|разве|в чем|правильно ли|то есть|это значит)/;
 export const looksLikeQuestion = (t) => QUESTION_START.test(norm(t));

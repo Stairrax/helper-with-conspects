@@ -38,7 +38,10 @@
   </svg>
 
   <header class="appbar">
-    <h1 id="screenTitle">Материал</h1>
+    <div class="appbar-title">
+      <h1 id="screenTitle">Материал</h1>
+      <button id="subjectBtn" class="subject-btn"><span id="subjectName">Предмет</span> ▾</button>
+    </div>
     <span id="micState" class="mic" title="Микрофон"><svg><use href="#i-mic"/></svg></span>
   </header>
 
@@ -117,6 +120,15 @@
           <button id="startBtn" class="btn filled wide">Начать диктовку</button>
           <div id="genStatus" class="status small"></div>
         </div>
+        <div class="card" id="reviewCard">
+          <div class="card-title">Повторение</div>
+          <div id="reviewSummary" class="small muted"></div>
+          <div class="row wrap mt8">
+            <button id="reviewDueBtn" class="btn tonal">Повторить нужное</button>
+            <button id="reviewAllBtn" class="btn outline">Все пройденные</button>
+          </div>
+          <button id="exportBtn" class="btn text">Сохранить конспект и вопросы в файл</button>
+        </div>
         <ol id="planList" class="plan"></ol>
         <p class="muted small center">Нажмите на тему, чтобы переставить, пропустить или начать с неё.</p>
       </div>
@@ -153,11 +165,19 @@
         </div>
       </div>
 
+      <div id="breakCard" class="banner hidden"><span id="breakText"></span>
+        <button id="breakSkip" class="btn tonal">Продолжить сейчас</button></div>
+      <button id="stopReviewBtn" class="btn outline wide hidden">Закончить повторение</button>
+
       <div id="qaPanel" class="qa hidden">
         <div id="answer" class="answer hidden"></div>
         <div class="ask-row">
           <textarea id="questionInput" rows="1" placeholder="Спросите голосом или напишите"></textarea>
           <button id="askBtn" class="icon-btn filled" aria-label="Спросить"><svg><use href="#i-send"/></svg></button>
+        </div>
+        <div id="quizBtns" class="row hidden mt8">
+          <button id="quizDontKnow" class="btn outline">Не знаю</button>
+          <button id="quizSkip" class="btn outline">Пропустить вопрос</button>
         </div>
         <button id="continueBtn" class="btn ok wide">Продолжить диктовку</button>
         <details id="historyCard" class="mini hidden"><summary id="historyTitle">Предыдущие вопросы</summary><div id="qaHistory"></div></details>
@@ -211,12 +231,37 @@
 
       <div class="card">
         <div class="card-title">Голос</div>
-        <label class="field">Голос
-          <div class="row">
-            <select id="voice"></select>
-            <button id="testVoice" class="icon-btn" aria-label="Прослушать"><svg><use href="#i-volume"/></svg></button>
-          </div>
-        </label>
+        <div class="seg" id="engineSeg">
+          <label><input type="radio" name="voiceEngine" value="system"><span>Голос Android</span></label>
+          <label><input type="radio" name="voiceEngine" value="neural"><span>Нейросетевой (живее)</span></label>
+        </div>
+        <div id="systemVoiceBox">
+          <label class="field mt">Голос
+            <div class="row">
+              <select id="voice"></select>
+              <button id="testVoice" class="icon-btn" aria-label="Прослушать"><svg><use href="#i-volume"/></svg></button>
+            </div>
+          </label>
+          <details class="mini">
+            <summary>Как сделать голос Android естественнее</summary>
+            <ol class="cmds">
+              <li>Настройки телефона → поиск «Синтез речи» (или «Преобразование текста в речь»).</li>
+              <li><b>Предпочтительная система</b> — «Синтезатор речи Google» / «Речевые сервисы Google».</li>
+              <li>Шестерёнка рядом → <b>Установить голосовые данные</b> → <b>Русский</b> → выберите голос (их несколько) и скачайте.</li>
+              <li>Вернитесь сюда и нажмите 🔊, чтобы послушать.</li>
+            </ol>
+          </details>
+        </div>
+        <div id="neuralBox" class="hidden">
+          <label class="field mt">Нейросетевой голос
+            <div class="row">
+              <select id="neuralVoice"></select>
+              <button id="testNeural" class="icon-btn" aria-label="Прослушать"><svg><use href="#i-volume"/></svg></button>
+            </div>
+          </label>
+          <div id="neuralStatus" class="status small"></div>
+          <p class="hint">Работает прямо на телефоне, без интернета и лимитов. Один раз скачивается около 90 МБ — лучше по Wi-Fi. Если голос не загрузится, приложение будет говорить голосом Android.</p>
+        </div>
         <label class="field">Скорость речи <b id="rateVal"></b>
           <input id="rate" type="range" min="0.5" max="2" step="0.1">
         </label>
@@ -233,7 +278,18 @@
         </div>
         <label class="switch"><span>Голосовые команды</span><input id="voiceCommands" type="checkbox"><i></i></label>
         <label class="switch"><span>Прерывать при любой моей речи<small>только в наушниках</small></span><input id="bargeIn" type="checkbox"><i></i></label>
+        <div class="card-title mt">Пауза после куска</div>
+        <div class="seg">
+          <label><input type="radio" name="pauseMode" value="time"><span>По времени</span></label>
+          <label><input type="radio" name="pauseMode" value="wait"><span>Пока не скажу «дальше»</span></label>
+        </div>
         <label class="switch"><span>Пауза дольше в сложных местах</span><input id="scalePause" type="checkbox"><i></i></label>
+        <label class="switch"><span>Подстраивать паузу<small>длиннее, если часто прошу повторить</small></span><input id="adaptivePause" type="checkbox"><i></i></label>
+        <label class="switch"><span>Самопроверка после темы<small>2–3 вопроса, ответ голосом</small></span><input id="selfCheck" type="checkbox"><i></i></label>
+        <label class="field mt">Напоминать о перерыве <b id="breakVal"></b>
+          <input id="breakEvery" type="range" min="0" max="90" step="5">
+        </label>
+        <label class="switch"><span>Кнопки наушников<small>пуск/пауза — стоп и продолжить, вперёд/назад — куски (экспериментально)</small></span><input id="headsetButtons" type="checkbox"><i></i></label>
         <label class="switch"><span>Проверка полноты кусков<small>надёжнее, но вдвое больше запросов</small></span><input id="coverageCheck" type="checkbox"><i></i></label>
         <details class="mini">
           <summary>Голосовые команды</summary>
@@ -242,6 +298,8 @@
             <li><b>продолжай</b> — с прерванного куска</li>
             <li><b>дальше</b>, <b>повтори</b>, <b>повтори тему</b>, <b>пропусти тему</b></li>
             <li><b>медленнее</b>, <b>быстрее</b></li>
+            <li><b>как пишется …</b> / <b>по буквам</b> — продиктовать слово по буквам</li>
+            <li><b>готово</b> / <b>записал</b> — дальше (в режиме «пока не скажу»)</li>
             <li>сразу вопросом: <b>почему…</b>, <b>что такое…</b>, <b>вопрос…</b></li>
             <li>после ответа: <b>да</b> / <b>дальше</b></li>
           </ul>
@@ -253,7 +311,7 @@
         <p class="hint" id="appInfo"></p>
         <div class="row">
           <button id="resetProgress" class="btn outline">Сбросить прогресс</button>
-          <button id="deleteProject" class="btn outline danger">Удалить всё</button>
+          <button id="deleteProject" class="btn outline danger">Удалить предмет</button>
         </div>
       </div>
     </section>
@@ -283,6 +341,22 @@
       </div>
       <button id="toggleText" class="sheet-item">Скрыть текст</button>
       <button id="retryTopicBtn" class="sheet-item hidden">Повторить подготовку темы</button>
+    </div>
+  </div>
+
+  <!-- Предметы -->
+  <div id="subjectSheet" class="sheet hidden">
+    <div class="sheet-scrim" data-close></div>
+    <div class="sheet-body">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">Предметы</div>
+      <div id="subjectList"></div>
+      <div class="sheet-sep"></div>
+      <button id="subjectNew" class="sheet-item accent">+ Новый предмет</button>
+      <div class="sheet-row">
+        <button id="subjectRename" class="sheet-item">Переименовать</button>
+        <button id="subjectDelete" class="sheet-item danger">Удалить</button>
+      </div>
     </div>
   </div>
 

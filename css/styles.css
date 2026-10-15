@@ -339,3 +339,27 @@ body.has-stop .toast { bottom: calc(var(--nav-h) + var(--stop-h) + var(--safe-b)
 .install > span span { color: var(--muted); font-size: 13px; }
 .install .btn { min-height: 40px; padding: 0 16px; }
 .ob-sub { display: block; margin: 6px 0; padding: 8px 12px; background: var(--surface); border-radius: 12px; color: var(--muted); font-size: 14px; }
+
+/* ---------- Предметы, повторение, перерыв ---------- */
+.appbar-title { display: flex; flex-direction: column; min-width: 0; }
+.appbar h1 { line-height: 1.15; }
+.subject-btn { border: 0; background: none; color: var(--accent); font-size: 13px; padding: 0; text-align: left; max-width: 70vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.appbar { height: calc(60px + env(safe-area-inset-top)); }
+.sheet-title { font-size: 14px; color: var(--muted); padding: 4px 20px 8px; }
+.sheet-item.active { color: var(--accent); background: var(--accent-soft); }
+.sheet-item.accent { color: var(--accent); }
+.sheet-item.danger { color: var(--danger); }
+.sheet-sep { height: 1px; background: var(--line); margin: 6px 12px; }
+#subjectList { max-height: 40vh; overflow-y: auto; }
+.mt8 { margin-top: 8px; }
+.field.mt, .mt { margin-top: 14px; }
+#exportBtn { margin-top: 8px; padding: 0 4px; min-height: 40px; }
+.badge { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 10px; margin-left: 6px; vertical-align: 1px; }
+.badge.weak { background: #3a2410; color: var(--warn); }
+.badge.due { background: var(--accent-soft); color: var(--accent); }
+.badge.good { background: #173a27; color: var(--ok); }
+#breakCard { display: flex; color: var(--text); }
+#breakCard .btn { min-height: 40px; }
+#stopReviewBtn { margin: 0 0 12px; }
+.quiz-q { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--accent); }
+.chunk { padding-top: 40px; }

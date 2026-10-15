@@ -1,12 +1,16 @@
 // Интерфейс приложения: материал, план, диктовка, настройки.
 
-import { loadSettings, saveSettings, loadProgress, saveProgress, clearProgress, idbGet, idbSet, idbDel } from './storage.js';
+import {
+  loadSettings, saveSettings, loadProgress, saveProgress, clearProgress, idbGet, idbSet, idbDel, loadSubjects, saveSubjects,
+} from './storage.js';
 import { fileToSource } from './extract.js';
 import {
-  analyze, generateTopicChunks, orderTopics, activeSeq, estimateTopicSec, allocateBudget, fitPause,
+  analyze, generateTopicChunks, generateExtras, orderTopics, activeSeq, estimateTopicSec, allocateBudget, fitPause,
 } from './analyze.js';
 import { listModels, conn, PROVIDERS, providerName } from './ai.js';
-import { loadVoices, getVoices, speak, stopSpeaking, srSupported, ttsSupported } from './speech.js';
+import { loadVoices, getVoices, speak, stopSpeaking, setEngine, srSupported, ttsSupported } from './speech.js';
+import { prepare as prepareNeural, isDownloaded, NEURAL_VOICES, audioContext } from './neural.js';
+import { enableMedia, disableMedia, updateMedia, mediaSupported } from './media.js';
 import { Dictation, STATE_TEXT } from './dictation.js';
 import { initOnboarding, onboardingDone } from './onboarding.js';
 
@@ -15,12 +19,16 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 let settings = loadSettings();
+let subjects = null;        // { list: [{id, title}], current }
 let sources = [];
 let project = null;
 let progress = null;
 
+const cur = () => subjects?.current;
+const curSubject = () => subjects?.list.find((x) => x.id === cur());
+
 function freshProgress(projectId) {
-  return { projectId, topicId: null, chunk: 0, done: {}, elapsedMs: 0, spoken: 0, qa: [] };
+  return { projectId, topicId: null, chunk: 0, done: {}, elapsedMs: 0, spoken: 0, qa: [], stats: {} };
 }
 
 // ---------- Сохранение ----------
@@ -28,10 +36,11 @@ function freshProgress(projectId) {
 let saveProjectTimer = null;
 function saveProject() {
   clearTimeout(saveProjectTimer);
-  saveProjectTimer = setTimeout(() => { if (project) idbSet('project', project); }, 400);
+  const id = cur(), p = project;
+  saveProjectTimer = setTimeout(() => { if (p && id) idbSet('project:' + id, p); }, 400);
 }
-const saveSources = () => idbSet('sources', sources);
-const persistProgress = () => { if (progress) saveProgress(progress); };
+const saveSources = () => idbSet('sources:' + cur(), sources);
+const persistProgress = () => { if (progress) saveProgress(progress, cur()); };
 
 // ---------- Утилиты ----------
 
@@ -83,7 +92,9 @@ const gen = {
     const start = Math.max(0, seq.findIndex((t) => t.id === progress?.topicId));
     const ordered = [...seq.slice(start), ...seq.slice(0, start)];
     return ordered.find((t) => t.status === 'pending' ||
-      (t.status === 'error' && (t.errors || 0) < 4 && Date.now() - (t.errorAt || 0) > 30000)) || null;
+      (t.status === 'error' && (t.errors || 0) < 4 && Date.now() - (t.errorAt || 0) > 30000)) ||
+      // темы, подготовленные до появления самопроверки: досоздаём выжимку и вопросы (по одной, начиная с текущей)
+      (settings.selfCheck ? ordered.slice(0, 2).find((t) => t.status === 'ready' && !t.quiz && !t.extrasFailed) : null) || null;
   },
   async loop() {
     if (this.running || !project) return;
@@ -94,6 +105,12 @@ const gen = {
         if (!p) break;
         const t = this.pick(p);
         if (!t) break;
+        if (t.status === 'ready') {
+          // только выжимка и вопросы
+          try { await generateExtras(t, settings, (m) => { this.status = m; render(); }); } catch { t.extrasFailed = true; }
+          if (p === project) saveProject();
+          continue;
+        }
         t.status = 'generating';
         render();
         try {
@@ -143,7 +160,9 @@ const dict = new Dictation({
   emit,
   toast,
   kickGenerator: () => gen.loop(),
+  onActivity: (playing) => updateMedia(dictTitle(), playing),
 });
+const dictTitle = () => (dict.mode === 'review' ? 'Повторение' : project?.topics.find((t) => t.id === progress?.topicId)?.title) || 'Диктор конспектов';
 
 function resetDictation() {
   stopSpeaking();
@@ -290,7 +309,13 @@ $('analyzeBtn').addEventListener('click', async () => {
     project = p;
     progress = freshProgress(p.id);
     persistProgress();
-    await idbSet('project', project);
+    await idbSet('project:' + cur(), project);
+    const subj = curSubject();
+    if (subj && /^(Предмет|Новый предмет)/.test(subj.title) && sources[0]) {
+      subj.title = sources[0].name.replace(/\.[a-z0-9]+$/i, '').slice(0, 40);
+      saveSubjects(subjects);
+      renderSubject();
+    }
     toast(`Найдено тем: ${p.topics.length}`);
     switchTab('plan');
     gen.loop();
@@ -330,6 +355,13 @@ function renderPlan() {
     ? `Подготовлено ${ready} из ${seq.length}${gen.running && gen.status ? ' · ' + gen.status : ''}`
     : '';
   document.querySelectorAll('input[name=planPriority]').forEach((r) => { r.checked = r.value === project.priority; });
+  const rv = reviewSets();
+  $('reviewSummary').textContent = rv.studied.length
+    ? `Пройдено тем: ${rv.studied.length}. ${rv.due.length ? `Пора повторить: ${rv.due.length}${rv.weak.length ? `, из них слабых: ${rv.weak.length}` : ''}.` : 'Сегодня повторять нечего.'}`
+    : 'Темы появятся здесь после диктовки — с отметками, что пора повторить.';
+  $('reviewDueBtn').disabled = !rv.due.length;
+  $('reviewDueBtn').textContent = rv.due.length ? `Повторить нужное (${rv.due.length})` : 'Повторить нужное';
+  $('reviewAllBtn').disabled = !rv.studied.length;
 
   const pos = new Map(project.plan.order.map((id, i) => [id, i]));
   let n = 0;
@@ -341,6 +373,13 @@ function renderPlan() {
     const isCur = progress?.topicId === id;
     const done = progress?.done?.[id];
     const est = estimateTopicSec(t, settings);
+    const stat = progress?.stats?.[id];
+    let badges = '';
+    if (stat?.studiedAt) {
+      if (stat.weak) badges += '<span class="badge weak">слабая</span>';
+      if (stat.due && stat.due <= Date.now()) badges += '<span class="badge due">повторить</span>';
+      else if (!stat.weak && stat.total) badges += `<span class="badge good">${fmtScore(stat.right)}/${stat.total}</span>`;
+    }
     let st = '', stCls = '';
     if (t.status === 'ready') {
       const c = t.coverage || { total: 0, covered: 0 };
@@ -369,11 +408,13 @@ function renderPlan() {
         ${t.summary ? `<p>${esc(t.summary)}</p>` : ''}
         ${prereq ? `<p>Нужно знать: ${prereq}</p>` : ''}
         <p>${stLong}${skipped ? '' : ` · по бюджету ${fmtDur(alloc[id] || 0)}`}</p>
+        ${stat?.studiedAt ? `<p>${stat.total ? `Самопроверка: ${fmtScore(stat.right)} из ${stat.total}` : 'Самопроверки не было'}${stat.asked ? ` · вопросов задано: ${stat.asked}` : ''} · повторить ${fmtDue(stat.due)}</p>` : ''}
         <div class="pactions">
           <button class="icon-btn" data-act="up" aria-label="Выше"><svg><use href="#i-up"/></svg></button>
           <button class="icon-btn" data-act="down" aria-label="Ниже"><svg><use href="#i-down"/></svg></button>
           <button class="btn" data-act="skip">${skipped ? 'Вернуть' : 'Пропустить'}</button>
           ${skipped ? '' : '<button class="btn tonal" data-act="from">Начать отсюда</button>'}
+          ${t.status === 'ready' && !skipped ? '<button class="btn" data-act="review">Повторить</button>' : ''}
           ${t.points?.length ? `<button class="btn" data-act="points">${openPoints.has(id) ? 'Скрыть пункты' : 'Пункты'}</button>` : ''}
           ${t.status === 'error' ? '<button class="btn" data-act="retry">Повторить</button>' : ''}
         </div>
@@ -383,7 +424,7 @@ function renderPlan() {
     return `<li class="${skipped ? 'skipped' : ''} ${isCur ? 'current' : ''} ${done ? 'done' : ''}" data-id="${id}">
       <button class="phead" data-act="open">
         <span class="pnum">${skipped ? '–' : done ? '✓' : n}</span>
-        <span class="pbody"><span class="ptitle">${esc(t.title)}</span>
+        <span class="pbody"><span class="ptitle">${esc(t.title)}${badges}</span>
           <span class="pmeta"><span class="dots">${dots(t.difficulty || 3)}</span> · ≈${fmtDur(est)}</span></span>
         <span class="pstate ${stCls}">${st}</span>
       </button>
@@ -418,6 +459,10 @@ $('planList').addEventListener('click', (e) => {
     case 'points':
       if (openPoints.has(id)) openPoints.delete(id); else openPoints.add(id);
       break;
+    case 'review':
+      switchTab('dictate');
+      dict.startReview([id]);
+      break;
     case 'retry': {
       const t = project.topics.find((x) => x.id === id);
       t.status = 'pending'; t.errors = 0;
@@ -437,6 +482,81 @@ document.querySelectorAll('input[name=planPriority]').forEach((r) => r.addEventL
   render();
   toast('Порядок пересчитан с учётом зависимостей');
 }));
+
+const fmtScore = (x) => (Number.isInteger(x) ? String(x) : x.toFixed(1).replace('.', ','));
+function fmtDue(due) {
+  if (!due) return '—';
+  const days = Math.ceil((due - Date.now()) / 86400000);
+  return days <= 0 ? 'сегодня' : days === 1 ? 'завтра' : `через ${days} дн.`;
+}
+
+/** Темы для повторения: слабые и с подошедшим сроком — первыми. */
+function reviewSets() {
+  const seq = project ? activeSeq(project) : [];
+  const stats = progress?.stats || {};
+  const studied = seq.filter((t) => stats[t.id]?.studiedAt && t.status === 'ready');
+  const due = studied.filter((t) => stats[t.id].weak || (stats[t.id].due && stats[t.id].due <= Date.now()))
+    .sort((a, b) => (stats[b.id].weak ? 1 : 0) - (stats[a.id].weak ? 1 : 0));
+  return { studied, due, weak: due.filter((t) => stats[t.id].weak) };
+}
+$('reviewDueBtn').addEventListener('click', () => { const ids = reviewSets().due.map((t) => t.id); if (ids.length) { switchTab('dictate'); dict.startReview(ids); } });
+$('reviewAllBtn').addEventListener('click', () => { const ids = reviewSets().studied.map((t) => t.id); if (ids.length) { switchTab('dictate'); dict.startReview(ids); } });
+
+// ---------- Экспорт ----------
+
+const TR = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya' };
+const translit = (s) => [...s].map((c) => { const l = c.toLowerCase(); const t = TR[l]; return t === undefined ? c : c === l ? t : t.charAt(0).toUpperCase() + t.slice(1); }).join('').replace(/\s+/g, '_');
+
+function buildExport() {
+  const subj = curSubject()?.title || 'Конспект';
+  const stats = progress?.stats || {};
+  const qa = progress?.qa || [];
+  const lines = [`# ${subj}`, '', `Сохранено ${new Date().toLocaleString('ru-RU')} из приложения «Диктор конспектов».`, ''];
+  for (const t of activeSeq(project)) {
+    lines.push(`## ${t.title}`, '');
+    if (t.chunks?.length) {
+      for (const c of t.chunks) lines.push(c.k === 'explain' || c.k === 'example' ? `> ${c.t}` : c.t, '');
+    } else lines.push(t.text, '');
+    if (t.recap) lines.push(`**Главное:** ${t.recap}`, '');
+    const st = stats[t.id];
+    if (st?.total) lines.push(`Самопроверка: ${fmtScore(st.right)} из ${st.total}${st.weak ? ' — стоит повторить' : ''}`, '');
+    if (t.quiz?.length) {
+      lines.push('**Вопросы для самопроверки:**', '');
+      t.quiz.forEach((q, i) => lines.push(`${i + 1}. ${q.q}`, `   Ответ: ${q.a}`));
+      lines.push('');
+    }
+    const tqa = qa.filter((x) => x.topicId === t.id && x.a && !x.error);
+    if (tqa.length) {
+      lines.push('**Мои вопросы:**', '');
+      for (const x of tqa) lines.push(`- ${x.q}`, `  ${x.a.trim()}`);
+      lines.push('');
+    }
+  }
+  const other = qa.filter((x) => !x.topicId && x.a && !x.error);
+  if (other.length) {
+    lines.push('## Другие вопросы', '');
+    for (const x of other) lines.push(`- ${x.q}`, `  ${x.a.trim()}`);
+  }
+  return { name: `${subj.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'конспект'}.md`, text: lines.join('\n') };
+}
+
+$('exportBtn').addEventListener('click', async () => {
+  if (!project) return;
+  const { name, text } = buildExport();
+  const file = new File([text], name, { type: 'text/markdown' });
+  // на Android — системное меню «Поделиться» (Telegram, Google Диск, почта…), иначе — скачивание
+  if (navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: name }); return; } catch (e) { if (e.name === 'AbortError') return; }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file);
+  a.download = translit(name); // браузеры иногда отбрасывают кириллицу в имени скачиваемого файла
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast('Файл сохранён в «Загрузки»');
+});
 
 $('fitPauseBtn').addEventListener('click', () => {
   if (!project) return;
@@ -461,14 +581,18 @@ function displayedChunk() {
   return { t, chunk: t.chunks[Math.max(0, idx)], idx: Math.max(0, idx) };
 }
 
-const PAUSED = ['paused', 'listening', 'confirm', 'topicEnd'];
-const DICTATING = ['speaking', 'gap', 'waiting'];
+const PAUSED = ['paused', 'listening', 'confirm', 'topicEnd', 'break'];
+const DICTATING = ['speaking', 'gap', 'waiting', 'reviewing', 'spelling'];
+const QUIZ = ['quiz', 'quizListen', 'quizGrade'];
 
 function renderDictation() {
   const st = dict.state;
   const seq = project ? activeSeq(project) : [];
   const topicId = dict.resumePos && st !== 'topicEnd' ? dict.resumePos.topicId : progress?.topicId;
-  const t = project?.topics.find((x) => x.id === topicId) || (project ? dict.currentTopic() : null);
+  // во время самопроверки и повторения в шапке — проверяемая тема
+  const special = (QUIZ.includes(st) && dict.quiz?.topic) ||
+    (dict.mode === 'review' && dict.review && project?.topics.find((x) => x.id === dict.review.ids[dict.review.i]));
+  const t = special || project?.topics.find((x) => x.id === topicId) || (project ? dict.currentTopic() : null);
   const ti = t ? seq.findIndex((x) => x.id === t.id) : -1;
   $('topicNum').textContent = t ? `Тема ${ti + 1} из ${seq.length}` : '';
   $('topicTitle').textContent = t ? t.title : (project ? 'Всё продиктовано' : 'Сначала составьте план');
@@ -480,13 +604,23 @@ function renderDictation() {
   const kinds = { explain: 'Пояснение', example: 'Пример', content: '' };
   $('chunkKind').textContent = chunk ? kinds[chunk.k] || '' : '';
   let text = chunk ? chunk.t : '';
+  // самопроверка: на карточке — текущий вопрос
+  if (QUIZ.includes(st) && dict.quiz) {
+    const q = dict.quiz.qs[dict.quiz.i];
+    $('chunkKind').textContent = `Самопроверка · вопрос ${dict.quiz.i + 1} из ${dict.quiz.qs.length}`;
+    text = q?.q || '';
+  } else if (st === 'reviewing' && dict.review) {
+    const rt = project?.topics.find((x) => x.id === dict.review.ids[dict.review.i]);
+    $('chunkKind').textContent = `Повторение · ${dict.review.i + 1} из ${dict.review.ids.length}`;
+    text = rt ? `${rt.title}. ${rt.recap || ''}` : '';
+  }
   if (!text) {
     if (!project) text = 'Добавьте конспект на вкладке «Материал».';
     else if (st === 'waiting' || t?.status === 'generating' || t?.status === 'pending') text = 'Готовлю эту тему…';
     else if (st === 'idle') text = 'Нажмите ▶, чтобы начать.';
   }
   $('chunkText').textContent = text;
-  $('chunkBox').classList.toggle('hidden-text', !settings.showText && !!chunk);
+  $('chunkBox').classList.toggle('hidden-text', !settings.showText && !!chunk && !QUIZ.includes(st) && st !== 'reviewing');
   $('toggleText').textContent = settings.showText ? 'Скрыть текст' : 'Показать текст';
 
   $('dictState').textContent = STATE_TEXT[st] || st;
@@ -503,16 +637,22 @@ function renderDictation() {
   $('retryTopicBtn').classList.toggle('hidden', !(st === 'waiting' && t?.status === 'error'));
 
   // панель вопроса — только когда диктовка остановлена
-  const qaOpen = pausedLike || ['thinking', 'answering'].includes(st) || (st === 'finished' && progress?.qa?.length);
+  const qaOpen = pausedLike || ['thinking', 'answering', 'quiz', 'quizListen', 'quizGrade'].includes(st) || (st === 'finished' && progress?.qa?.length);
+  $('quizBtns').classList.toggle('hidden', st !== 'quizListen');
+  $('questionInput').placeholder = st === 'quizListen' ? 'Ваш ответ — голосом или текстом' : 'Спросите голосом или напишите';
+  $('stopReviewBtn').classList.toggle('hidden', dict.mode !== 'review');
+  $('breakCard').classList.toggle('hidden', st !== 'break');
   $('qaPanel').classList.toggle('hidden', !qaOpen);
   $('tab-dictate').classList.toggle('qa-open', !!qaOpen);
-  $('continueBtn').classList.toggle('hidden', !pausedLike && !['thinking', 'answering'].includes(st));
-  $('continueBtn').textContent = st === 'topicEnd' ? 'Следующая тема' : 'Продолжить диктовку';
+  $('continueBtn').classList.toggle('hidden', (!pausedLike && !['thinking', 'answering'].includes(st)) || st === 'break');
+  $('continueBtn').textContent = st === 'topicEnd' ? 'Следующая тема' : dict.mode === 'review' ? 'Продолжить повторение' : 'Продолжить диктовку';
   const qa = progress?.qa || [];
   const last = qa[qa.length - 1];
   const showAnswer = last && (['thinking', 'answering', 'confirm'].includes(st) || (pausedLike && Date.now() - last.t < 10 * 60000));
-  $('answer').classList.toggle('hidden', !showAnswer);
-  if (showAnswer) $('answer').innerHTML = `<div class="q">${esc(last.q)}</div>${esc(last.a || '…')}`;
+  const fb = QUIZ.includes(st) ? dict.feedback : null;
+  $('answer').classList.toggle('hidden', !showAnswer && !fb);
+  if (fb) $('answer').innerHTML = `<div class="q">Ваш ответ: ${esc(fb.answer)}</div>${esc(fb.entry.a || '…')}`;
+  else if (showAnswer) $('answer').innerHTML = `<div class="q">${esc(last.q)}</div>${esc(last.a || '…')}`;
   const older = showAnswer ? qa.slice(0, -1) : qa;
   $('historyCard').classList.toggle('hidden', !older.length);
   $('historyTitle').textContent = `Предыдущие вопросы (${older.length})`;
@@ -566,6 +706,16 @@ $('playBtn').addEventListener('click', () => {
   else dict.start();
 });
 $('continueBtn').addEventListener('click', () => dict.resume());
+$('quizDontKnow').addEventListener('click', () => dict.submitText('не знаю'));
+$('quizSkip').addEventListener('click', () => dict.next());
+$('stopReviewBtn').addEventListener('click', () => dict.stopReview());
+$('breakSkip').addEventListener('click', () => dict.resume());
+// обратный отсчёт перерыва
+setInterval(() => {
+  if (dict.state !== 'break' || !dict.breakUntil) return;
+  const left = Math.max(0, dict.breakUntil - Date.now());
+  $('breakText').textContent = `Перерыв: осталось ${Math.floor(left / 60000)}:${String(Math.floor((left % 60000) / 1000)).padStart(2, '0')}`;
+}, 500);
 $('repeatBtn').addEventListener('click', () => dict.repeat());
 $('nextBtn').addEventListener('click', () => dict.next());
 
@@ -607,13 +757,13 @@ function sendQuestion() {
   $('questionInput').value = '';
   $('questionInput').style.height = '';
   $('questionInput').blur();
-  dict.ask(q);
+  dict.submitText(q);
 }
 $('askBtn').addEventListener('click', sendQuestion);
 $('questionInput').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuestion(); } });
 $('questionInput').addEventListener('focus', () => {
   // начали печатать вопрос — останавливаем диктовку
-  if (['speaking', 'gap', 'waiting', 'topicEnd'].includes(dict.state)) dict.interrupt('question');
+  if (['speaking', 'gap', 'waiting', 'topicEnd', 'reviewing'].includes(dict.state)) dict.interrupt('question');
 });
 
 // ---------- Настройки ----------
@@ -656,6 +806,17 @@ function renderSettings() {
   $('pause').value = settings.pause;
   $('pauseVal').textContent = `${settings.pause} с`;
   $('scalePause').checked = settings.scalePause;
+  $('adaptivePause').checked = settings.adaptivePause;
+  $('selfCheck').checked = settings.selfCheck;
+  $('headsetButtons').checked = settings.headsetButtons;
+  $('headsetButtons').disabled = !mediaSupported;
+  $('breakEvery').value = settings.breakEvery;
+  $('breakVal').textContent = +settings.breakEvery ? `каждые ${settings.breakEvery} мин` : 'выключено';
+  document.querySelectorAll('input[name=pauseMode]').forEach((r) => { r.checked = r.value === settings.pauseMode; });
+  document.querySelectorAll('input[name=voiceEngine]').forEach((r) => { r.checked = r.value === settings.voiceEngine; });
+  $('systemVoiceBox').classList.toggle('hidden', settings.voiceEngine === 'neural');
+  $('neuralBox').classList.toggle('hidden', settings.voiceEngine !== 'neural');
+  $('neuralVoice').value = settings.neuralVoice;
   $('voiceCommands').checked = settings.voiceCommands;
   $('bargeIn').checked = settings.bargeIn;
   $('coverageCheck').checked = settings.coverageCheck;
@@ -699,6 +860,79 @@ $('provider').addEventListener('change', (e) => {
 bind('rate', 'rate', Number, 'input');
 bind('pause', 'pause', Number, 'input');
 bind('scalePause', 'scalePause');
+bind('adaptivePause', 'adaptivePause');
+bind('selfCheck', 'selfCheck');
+bind('breakEvery', 'breakEvery', Number, 'input');
+$('headsetButtons').addEventListener('change', (e) => {
+  settings.headsetButtons = e.target.checked;
+  saveSettings(settings);
+  if (settings.headsetButtons) { enableHeadset(); toast('Попробуйте кнопку пуск/пауза на наушниках во время диктовки'); } else disableMedia();
+});
+document.querySelectorAll('input[name=pauseMode]').forEach((r) => r.addEventListener('change', () => {
+  settings.pauseMode = r.value;
+  saveSettings(settings);
+}));
+
+// ---------- Нейросетевой голос ----------
+
+$('neuralVoice').innerHTML = Object.entries(NEURAL_VOICES).map(([id, name]) => `<option value="${id}">${esc(name)}</option>`).join('');
+let neuralFailNotified = false;
+
+function applyEngine() {
+  setEngine(settings.voiceEngine, settings.neuralVoice, (err) => {
+    // нейроголос не сработал посреди занятия — дальше говорим голосом Android
+    setEngine('system');
+    if (!neuralFailNotified) { neuralFailNotified = true; toast('Нейросетевой голос не сработал — говорю голосом Android. ' + (err?.message || ''), 6000); }
+  });
+}
+
+async function downloadNeural() {
+  const st = $('neuralStatus');
+  const id = settings.neuralVoice;
+  setEngine('system'); // пока голос качается, говорим системным
+  st.textContent = (await isDownloaded(id)) ? 'Загружаю голос…' : 'Скачиваю голос (около 90 МБ)…';
+  try {
+    await prepareNeural(id, (p) => {
+      if (p.stage === 'model' && p.total) st.textContent = `Скачиваю голос: ${Math.round((p.loaded / p.total) * 100)}%`;
+      else if (p.stage === 'session') st.textContent = 'Подготавливаю голос…';
+    });
+    if (settings.voiceEngine !== 'neural' || settings.neuralVoice !== id) return;
+    neuralFailNotified = false;
+    applyEngine();
+    st.textContent = '✓ Голос готов и работает без интернета.';
+  } catch (e) {
+    st.textContent = '✗ Не удалось загрузить голос: ' + (e.message || e) + '. Пока говорю голосом Android — попробуйте позже или через Wi-Fi.';
+  }
+}
+
+document.querySelectorAll('input[name=voiceEngine]').forEach((r) => r.addEventListener('change', () => {
+  settings.voiceEngine = r.value;
+  saveSettings(settings);
+  renderSettings();
+  if (settings.voiceEngine === 'neural') downloadNeural(); else applyEngine();
+}));
+$('neuralVoice').addEventListener('change', (e) => {
+  settings.neuralVoice = e.target.value;
+  saveSettings(settings);
+  downloadNeural();
+});
+$('testNeural').addEventListener('click', async () => {
+  audioContext();
+  stopSpeaking();
+  if ($('neuralStatus').textContent.startsWith('Скач')) return toast('Голос ещё скачивается');
+  speak('Привет! Так звучит нейросетевой голос. Определение: производная — это скорость изменения функции.', { rate: settings.rate });
+});
+
+// звук Web Audio и кнопки наушников включаются только после касания экрана
+document.addEventListener('pointerdown', () => {
+  if (settings.voiceEngine === 'neural') audioContext();
+  if (settings.headsetButtons && project) enableHeadset();
+}, { capture: true });
+
+function enableHeadset() {
+  enableMedia({ toggle: () => dict.toggle(), next: () => dict.next(), previous: () => dict.repeat() });
+  updateMedia(dictTitle(), ['speaking', 'gap', 'waiting', 'reviewing'].includes(dict.state));
+}
 bind('bargeIn', 'bargeIn');
 bind('coverageCheck', 'coverageCheck');
 bind('voice', 'voiceURI');
@@ -747,20 +981,102 @@ $('resetProgress').addEventListener('click', () => {
   render();
   toast('Прогресс сброшен');
 });
-$('deleteProject').addEventListener('click', async () => {
-  if (!confirm('Удалить план, куски и все загруженные конспекты?')) return;
+$('deleteProject').addEventListener('click', () => deleteSubject());
+
+// ---------- Предметы ----------
+
+function renderSubject() {
+  $('subjectName').textContent = curSubject()?.title || 'Предмет';
+  $('subjectList').innerHTML = (subjects?.list || []).map((x) =>
+    `<button class="sheet-item ${x.id === cur() ? 'active' : ''}" data-subject="${x.id}">${esc(x.title)}</button>`).join('');
+}
+
+async function openSubject(id) {
   resetDictation();
   dict.rec.stop();
-  project = null;
-  progress = null;
-  sources = [];
-  clearProgress();
-  await idbDel('project');
-  await idbDel('sources');
+  disableMedia();
+  subjects.current = id;
+  saveSubjects(subjects);
+  sources = (await idbGet('sources:' + id)) || [];
+  project = (await idbGet('project:' + id)) || null;
+  progress = loadProgress(id);
+  openTopic = null;
+  if (project) {
+    project.topics.forEach((t) => { if (t.status === 'generating') t.status = 'pending'; });
+    if (!progress || progress.projectId !== project.id) progress = freshProgress(project.id);
+    budgetMin = project.budgetMin;
+    const r = document.querySelector(`input[name=priority][value=${project.priority}]`);
+    if (r) r.checked = true;
+    gen.loop();
+  } else {
+    progress = null;
+  }
+  renderSubject();
   renderSources();
+  renderBudget();
+  render();
+}
+
+function newSubject() {
+  const title = (prompt('Название предмета', `Предмет ${subjects.list.length + 1}`) || '').trim();
+  if (!title) return;
+  const id = 's' + uid();
+  subjects.list.push({ id, title: title.slice(0, 40) });
+  saveSubjects(subjects);
+  openSubject(id).then(() => switchTab('load'));
+}
+
+function renameSubject() {
+  const s = curSubject();
+  const title = (prompt('Новое название предмета', s.title) || '').trim();
+  if (!title) return;
+  s.title = title.slice(0, 40);
+  saveSubjects(subjects);
+  renderSubject();
+}
+
+async function deleteSubject() {
+  const s = curSubject();
+  if (!s || !confirm(`Удалить предмет «${s.title}» вместе с планом, конспектами и прогрессом?`)) return;
+  await idbDel('project:' + s.id);
+  await idbDel('sources:' + s.id);
+  clearProgress(s.id);
+  subjects.list = subjects.list.filter((x) => x.id !== s.id);
+  if (!subjects.list.length) subjects.list.push({ id: 's' + uid(), title: 'Предмет 1' });
+  await openSubject(subjects.list[0].id);
   switchTab('load');
-  toast('Проект удалён');
+  toast('Предмет удалён');
+}
+
+/** Первый запуск новой версии: переносим единственный проект в список предметов. */
+async function loadOrMigrateSubjects() {
+  subjects = loadSubjects();
+  if (subjects?.list?.length) return;
+  const id = 's' + uid();
+  const oldProject = await idbGet('project');
+  const oldSources = await idbGet('sources');
+  const oldProgress = loadProgress();
+  const name = oldProject?.sources?.[0]?.name || oldSources?.[0]?.name;
+  subjects = { list: [{ id, title: name ? name.replace(/\.[a-z0-9]+$/i, '').slice(0, 40) : 'Предмет 1' }], current: id };
+  if (oldProject) await idbSet('project:' + id, oldProject);
+  if (oldSources) await idbSet('sources:' + id, oldSources);
+  if (oldProgress) saveProgress(oldProgress, id);
+  saveSubjects(subjects);
+  if (oldProject) await idbDel('project');
+  if (oldSources) await idbDel('sources');
+  clearProgress();
+}
+
+const openSubjectSheet = (on) => $('subjectSheet').classList.toggle('hidden', !on);
+$('subjectBtn').addEventListener('click', () => { renderSubject(); openSubjectSheet(true); });
+$('subjectSheet').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-subject]');
+  if (b) { openSubjectSheet(false); if (b.dataset.subject !== cur()) openSubject(b.dataset.subject); return; }
+  if (e.target.closest('[data-close]')) openSubjectSheet(false);
 });
+$('subjectNew').addEventListener('click', () => { openSubjectSheet(false); newSubject(); });
+$('subjectRename').addEventListener('click', () => { openSubjectSheet(false); renameSubject(); });
+$('subjectDelete').addEventListener('click', () => { openSubjectSheet(false); deleteSubject(); });
 
 // ---------- Карточка «продолжить» ----------
 
@@ -861,20 +1177,10 @@ async function init() {
   loadVoices().then(renderVoices);
   if (ttsSupported) speechSynthesis.addEventListener?.('voiceschanged', () => { loadVoices().then(renderVoices); });
 
-  sources = (await idbGet('sources')) || [];
-  project = (await idbGet('project')) || null;
-  progress = loadProgress();
-  if (project) {
-    project.topics.forEach((t) => { if (t.status === 'generating') t.status = 'pending'; });
-    if (!progress || progress.projectId !== project.id) progress = freshProgress(project.id);
-    budgetMin = project.budgetMin;
-    const r = document.querySelector(`input[name=priority][value=${project.priority}]`);
-    if (r) r.checked = true;
-    gen.loop();
-  }
-  renderSources();
-  renderBudget();
-  render();
+  applyEngine();
+  if (settings.voiceEngine === 'neural') downloadNeural();
+  await loadOrMigrateSubjects();
+  await openSubject(subjects.current || subjects.list[0].id);
   renderInstall();
   if (!settings.apiKey && !onboardingDone()) wizard.open(0);
   // быстрое действие на иконке: «Продолжить диктовку»

@@ -371,12 +371,36 @@ ${text}
 2. "chunks": последовательность кусков для диктовки. Каждый кусок "t" — 1–3 предложения. Передай всё содержание полностью, по порядку, переформулировав для устной речи; формулы и обозначения — словами. Тип "k": "content".
 3. В сложных местах${topic.difficulty >= 3 ? ' (в этой теме их, вероятно, много)' : ''} добавь отдельные куски с типом "k":"explain" (начинаются словами «Пояснение:») — короткое пояснение простыми словами, и/или "k":"example" (начинаются словами «Например:») — короткий пример. Это дополнение, а не замена содержания.
 4. У каждого пункта "c" — номера кусков (с нуля), в которых он передан.
-Ответ JSON: {"points":[{"p":"…","c":[0]}],"chunks":[{"t":"…","k":"content"}]}`;
+5. "recap": 1–3 предложения — самое главное из этого текста для быстрого повторения перед экзаменом, для устной речи.
+6. "quiz": 1–2 вопроса для самопроверки по самому важному в этом тексте, с краткими правильными ответами "a" (одно-два предложения). Вопросы — такие, на которые можно ответить устно.
+Ответ JSON: {"points":[{"p":"…","c":[0]}],"chunks":[{"t":"…","k":"content"}],"recap":"…","quiz":[{"q":"…","a":"…"}]}`;
   const res = await generateJSON({ ...conn(settings), system: SYS_DICTATION, parts: [{ text: prompt }], onStatus, temperature: 0.3 });
   const chunks = (res.chunks || []).map((c) => ({ t: String(c.t || c.text || '').trim(), k: ['explain', 'example'].includes(c.k) ? c.k : 'content' })).filter((c) => c.t);
   const points = (res.points || []).map((p) => ({ p: String(p.p || p.point || '').trim(), c: (p.c || []).map(Number).filter((n) => n >= 0 && n < chunks.length) })).filter((p) => p.p);
   if (!chunks.length) throw new GeminiError('Нейросеть не вернула куски для темы', { code: 'EMPTY' });
-  return { chunks, points };
+  return { chunks, points, recap: String(res.recap || '').trim(), quiz: cleanQuiz(res.quiz) };
+}
+
+function cleanQuiz(q) {
+  return (Array.isArray(q) ? q : [])
+    .map((x) => ({ q: String(x.q || x.question || '').trim(), a: String(x.a || x.answer || '').trim() }))
+    .filter((x) => x.q && x.a);
+}
+
+/** Выжимка и вопросы для тем, подготовленных до появления самопроверки (один запрос). */
+export async function generateExtras(topic, settings, onStatus) {
+  const prompt =
+`Тема: «${topic.title}».
+ИСХОДНЫЙ ТЕКСТ:
+<<<
+${topic.text.slice(0, 12000)}
+>>>
+1. "recap": 2–4 предложения — самое главное из темы для быстрого повторения перед экзаменом, для устной речи (формулы словами).
+2. "quiz": 3 вопроса для самопроверки по самому важному в теме, с краткими правильными ответами "a". Вопросы — такие, на которые можно ответить устно.
+Ответ JSON: {"recap":"…","quiz":[{"q":"…","a":"…"}]}`;
+  const res = await generateJSON({ ...conn(settings), system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.3 });
+  topic.recap = String(res.recap || '').trim();
+  topic.quiz = cleanQuiz(res.quiz).slice(0, 3);
 }
 
 async function verifySection(text, chunks, points, settings, onStatus) {
@@ -443,6 +467,8 @@ export async function generateTopicChunks(topic, settings, onStatus) {
   const sections = groupBlocks(toBlocks(topic.text), SECTION_CHARS).map((g) => g.join('\n\n'));
   const allChunks = [];
   const allPoints = [];
+  const recaps = [];
+  const quizzes = [];
   for (let si = 0; si < sections.length; si++) {
     const text = sections[si];
     const tag = sections.length > 1 ? ` (часть ${si + 1}/${sections.length})` : '';
@@ -459,6 +485,8 @@ export async function generateTopicChunks(topic, settings, onStatus) {
       continue;
     }
     let { chunks, points } = res;
+    recaps.push(res.recap);
+    quizzes.push(res.quiz);
     if (settings.coverageCheck) {
       onStatus(`«${topic.title}»${tag}: проверяю полноту`);
       let missing = [];
@@ -487,5 +515,10 @@ export async function generateTopicChunks(topic, settings, onStatus) {
   }
   topic.chunks = allChunks;
   topic.points = allPoints;
+  topic.recap = recaps.filter(Boolean).join(' ');
+  // до трёх вопросов: по одному из разных частей темы, затем остальные
+  const first = quizzes.map((q) => q[0]).filter(Boolean);
+  const rest = quizzes.flatMap((q) => q.slice(1));
+  topic.quiz = [...first, ...rest].slice(0, 3);
   topic.coverage = { total: allPoints.length, covered: allPoints.filter((p) => p.c.length).length, checked: !!settings.coverageCheck };
 }

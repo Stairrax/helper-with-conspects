@@ -19,6 +19,13 @@ export const DEFAULT_SETTINGS = {
   scalePause: true,     // пауза зависит от сложности темы и длины куска
   coverageCheck: true,
   showText: true,
+  voiceEngine: 'system',  // 'system' — голос Android, 'neural' — нейросетевой голос на телефоне
+  neuralVoice: 'irina',
+  pauseMode: 'time',      // 'time' — пауза по времени, 'wait' — ждать «дальше»
+  adaptivePause: true,    // удлинять паузу, если часто просят повторить
+  selfCheck: true,        // самопроверка после каждой темы
+  breakEvery: 40,         // напоминать о перерыве каждые N минут (0 — не напоминать)
+  headsetButtons: false,  // управление кнопками наушников
 };
 
 export function loadSettings() {
@@ -36,16 +43,29 @@ export function saveSettings(s) {
   try { localStorage.setItem(LS_SETTINGS, JSON.stringify(s)); } catch { /* приватный режим */ }
 }
 
-export function loadProgress() {
-  try { return JSON.parse(localStorage.getItem(LS_PROGRESS) || 'null'); } catch { return null; }
+// Прогресс хранится отдельно для каждого предмета: kd.progress:<id> (без id — старый общий ключ).
+const progressKey = (id) => (id ? `${LS_PROGRESS}:${id}` : LS_PROGRESS);
+
+export function loadProgress(id) {
+  try { return JSON.parse(localStorage.getItem(progressKey(id)) || 'null'); } catch { return null; }
 }
 
-export function saveProgress(p) {
-  try { localStorage.setItem(LS_PROGRESS, JSON.stringify(p)); } catch { /* ignore */ }
+export function saveProgress(p, id) {
+  try { localStorage.setItem(progressKey(id), JSON.stringify(p)); } catch { /* ignore */ }
 }
 
-export function clearProgress() {
-  try { localStorage.removeItem(LS_PROGRESS); } catch { /* ignore */ }
+export function clearProgress(id) {
+  try { localStorage.removeItem(progressKey(id)); } catch { /* ignore */ }
+}
+
+// ---------- Предметы ----------
+
+export function loadSubjects() {
+  try { return JSON.parse(localStorage.getItem('kd.subjects') || 'null'); } catch { return null; }
+}
+
+export function saveSubjects(s) {
+  try { localStorage.setItem('kd.subjects', JSON.stringify(s)); } catch { /* ignore */ }
 }
 
 // --- IndexedDB (key-value) с запасным вариантом на localStorage ---
