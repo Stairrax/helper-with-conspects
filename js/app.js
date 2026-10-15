@@ -1158,7 +1158,15 @@ document.querySelectorAll('input[name=voiceEngine]').forEach((r) => r.addEventLi
   saveSettings(settings);
   renderSettings();
   if (settings.voiceEngine === 'neural') downloadNeural(); else applyEngine();
-  if (settings.voiceEngine === 'cloud') showCloudCache();
+  if (settings.voiceEngine === 'cloud') {
+    showCloudCache();
+    // сервис ещё не настроен — сразу показываем, что сделать
+    const c = cloudCfg();
+    if ((c.provider === 'yandex' && !c.url) || (c.provider !== 'yandex' && !c.key)) {
+      $('cloudHelp').open = true;
+      $('cloudStatus').textContent = 'Сервис ещё не настроен — пока будет говорить голос Android. Инструкция ниже.';
+    }
+  }
 }));
 $('neuralVoice').addEventListener('change', (e) => {
   settings.neuralVoice = e.target.value;
