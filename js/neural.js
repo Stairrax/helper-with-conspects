@@ -38,12 +38,15 @@ function getWorker() {
       const p = pending.get(m.id);
       if (!p) return;
       pending.delete(m.id);
-      if (m.type === 'error') p.reject(new Error(m.message));
+      if (m.type === 'error') p.reject(Object.assign(new Error(m.message), { stale: !!m.stale }));
       else p.resolve(m);
     };
     worker.onerror = (e) => {
+      // модуль упал (например, не хватило памяти) — пересоздадим его при следующей фразе
       for (const p of pending.values()) p.reject(new Error(e.message || 'Ошибка голосового модуля'));
       pending.clear();
+      try { worker.terminate(); } catch { /* ignore */ }
+      worker = null;
     };
   }
   return worker;

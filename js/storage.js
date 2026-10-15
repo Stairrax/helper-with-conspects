@@ -23,6 +23,10 @@ export const DEFAULT_SETTINGS = {
   neuralVoice: 'irina',
   voiceStyle: 'none',     // 'none' | 'jarvis' — стиль ИИ-ассистента
   address: '',            // обращение: '' | 'сэр' | 'мэм'
+  cloudProvider: 'yandex', // облачный голос: 'yandex' | 'gemini' | 'elevenlabs'
+  cloudVoice: {},          // выбранный голос для каждого сервиса
+  cloudKey: {},            // ключи gemini / elevenlabs
+  yandexUrl: '',           // адрес функции-посредника Яндекса
   pauseMode: 'time',      // 'time' — пауза по времени, 'wait' — ждать «дальше»
   adaptivePause: true,    // удлинять паузу, если часто просят повторить
   selfCheck: true,        // самопроверка после каждой темы

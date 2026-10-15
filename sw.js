@@ -1,12 +1,13 @@
 // Service worker: оболочка приложения работает офлайн, библиотеки с CDN кэшируются при первом использовании.
 // Запросы к API нейросетей никогда не кэшируются.
 
-const VERSION = 'kd-v9';
+const VERSION = 'kd-v10';
 const SHELL = [
   './',
   'index.html',
   'css/styles.css',
   'js/app.js',
+  'js/cloud.js',
   'js/ai.js',
   'js/analyze.js',
   'js/anthropic.js',
@@ -21,6 +22,7 @@ const SHELL = [
   'js/speech.js',
   'js/storage.js',
   'manifest.webmanifest',
+  'yandex-function/index.js',
   'icons/icon.svg',
   'icons/icon-192.png',
   'icons/icon-512.png',
@@ -35,7 +37,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== VERSION && k !== 'kd-cdn' && k !== 'kd-voices').map((k) => caches.delete(k)))) // скачанный голос не удаляем
+      .then((keys) => Promise.all(keys.filter((k) => k !== VERSION && k !== 'kd-cdn' && k !== 'kd-voices' && k !== 'kd-tts').map((k) => caches.delete(k)))) // скачанный голос не удаляем
       .then(() => self.clients.claim()),
   );
 });

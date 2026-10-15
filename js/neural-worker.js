@@ -73,10 +73,18 @@ async function init(voice) {
       locateFile: (f) => base + f,
     });
   }
-  config = JSON.parse(new TextDecoder().decode(await fetchCached(voice.config)));
-  const model = await fetchCached(voice.model, (loaded, total) => post({ type: 'progress', stage: 'model', loaded, total }));
+  const cfg = JSON.parse(new TextDecoder().decode(await fetchCached(voice.config)));
+  let model = await fetchCached(voice.model, (loaded, total) => post({ type: 'progress', stage: 'model', loaded, total }));
   post({ type: 'progress', stage: 'session', loaded: 0, total: 0 });
+  // в памяти держим только один голос: старую модель выгружаем, иначе на телефоне кончается память
+  if (session) {
+    try { await session.release(); } catch { /* ignore */ }
+    session = null;
+    loadedVoice = null;
+  }
   session = await ort.InferenceSession.create(model);
+  model = null;
+  config = cfg;
   loadedVoice = voice.id;
 }
 
@@ -104,15 +112,24 @@ async function synth(text, rate) {
 const post = (m, transfer) => self.postMessage(m, transfer || []);
 
 // Синтез идёт по одному, в порядке очереди.
+// Голос, выбранный последним: заготовки старым голосом после смены пропускаем,
+// чтобы не перезагружать модели туда-обратно.
+let wantedVoice = null;
 let chain = Promise.resolve();
 self.onmessage = (e) => {
   const m = e.data;
+  if (m.type === 'init' || !wantedVoice) wantedVoice = m.voice.id;
+  if (m.type === 'synth' && m.voice.id !== wantedVoice && m.voice.id !== loadedVoice) {
+    post({ type: 'error', id: m.id, message: 'stale', stale: true });
+    return;
+  }
   chain = chain.then(async () => {
     try {
       if (m.type === 'init') {
         await init(m.voice);
         post({ type: 'ready', id: m.id });
       } else if (m.type === 'synth') {
+        if (m.voice.id !== wantedVoice) { post({ type: 'error', id: m.id, message: 'stale', stale: true }); return; }
         await init(m.voice);
         const pcm = await synth(m.text, m.rate);
         post({ type: 'audio', id: m.id, pcm, sampleRate: config.audio.sample_rate }, [pcm.buffer]);

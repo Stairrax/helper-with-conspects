@@ -2,6 +2,7 @@
 // команды и защита от эха.
 
 import * as neural from './neural.js';
+import * as cloud from './cloud.js';
 
 const synth = window.speechSynthesis;
 export const ttsSupported = !!synth && 'SpeechSynthesisUtterance' in window;
@@ -44,7 +45,9 @@ export function isSpeaking() {
 
 // ---------- Выбор движка ----------
 
-let engine = 'system';        // 'system' | 'neural'
+let engine = 'system';        // 'system' | 'neural' | 'cloud'
+let cloudCfg = null;          // { provider, voice, key, url, model }
+let failures = 0;             // подряд неудачных фраз нейро/облачного голоса
 let neuralVoice = 'irina';
 let voiceStyle = 'none';      // 'none' | 'jarvis'
 
@@ -55,20 +58,74 @@ const neuralRate = (rate) => rate / stylePitch();
 let onNeuralError = () => {};
 
 export function setEngine(kind, voice, onError) {
-  engine = kind === 'neural' ? 'neural' : 'system';
+  engine = kind === 'neural' || kind === 'cloud' ? kind : 'system';
   if (voice) neuralVoice = voice;
   if (onError) onNeuralError = onError;
+  failures = 0;
+}
+
+export function setCloud(cfg) { cloudCfg = cfg; }
+
+/** Сбой нейро/облачного голоса: эту фразу говорим голосом Android; после трёх сбоев подряд (или ошибки ключа) — сообщаем. */
+function engineFailed(err, text, opts, resolve) {
+  failures++;
+  if (err?.fatal || failures >= 3) { failures = 0; onNeuralError(err); }
+  speakSystem(text, opts).then(resolve);
 }
 
 /** Готовит следующие куски заранее (только для нейроголоса — системному не нужно). */
 export function prefetch(texts, { rate = 1 } = {}) {
-  if (engine !== 'neural') return;
-  for (const t of texts) if (t) neural.synth(t, { voice: neuralVoice, rate: neuralRate(rate) }).catch(() => {});
+  if (engine === 'neural') for (const t of texts) if (t) neural.synth(t, { voice: neuralVoice, rate: neuralRate(rate) }).catch(() => {});
+  if (engine === 'cloud' && cloudCfg) for (const t of texts) if (t) cloud.audioFor(cloudCfg, t).catch(() => {});
 }
 
 /** Произносит текст. Promise -> 'end' | 'cancel' | 'error'. */
 export function speak(text, opts = {}) {
-  return engine === 'neural' ? speakNeural(text, opts) : speakSystem(text, opts);
+  if (engine === 'neural') return speakNeural(text, opts);
+  if (engine === 'cloud' && cloudCfg) return speakCloud(text, opts);
+  return speakSystem(text, opts);
+}
+
+function speakCloud(text, opts) {
+  const { rate = 1, onStart, echoTail = 900 } = opts;
+  const myEpoch = epoch;
+  return new Promise((resolve) => {
+    const rec = remember(text, echoTail);
+    let done = false, audio = null, url = null, wd = null;
+    const fin = (r) => {
+      if (done) return;
+      done = true;
+      clearTimeout(wd);
+      rec.end = Date.now();
+      if (current?.fin === fin) current = null;
+      if (audio) { audio.onended = audio.onerror = null; audio.pause(); }
+      if (url) URL.revokeObjectURL(url);
+      if (r === 'end') failures = 0;
+      resolve(r);
+    };
+    current = { fin, text };
+    const fail = (err) => {
+      if (done || myEpoch !== epoch) return fin('cancel');
+      done = true;
+      if (current?.fin === fin) current = null;
+      recent.splice(recent.indexOf(rec), 1);
+      engineFailed(err, text, opts, resolve);
+    };
+    cloud.audioFor(cloudCfg, text).then((blob) => {
+      if (done || myEpoch !== epoch) return fin('cancel');
+      url = URL.createObjectURL(blob);
+      audio = new Audio(url);
+      audio.preservesPitch = true;  // скорость меняем без изменения тона
+      audio.playbackRate = Math.max(0.5, Math.min(2, rate));
+      audio.onended = () => fin('end');
+      audio.onerror = () => fail(new Error('не удалось воспроизвести звук'));
+      audio.play().then(() => {
+        onStart?.();
+        const sec = Number.isFinite(audio.duration) ? audio.duration : 60;
+        wd = setTimeout(() => fin('end'), (sec / audio.playbackRate) * 1000 + 5000);
+      }).catch(fail);
+    }).catch(fail);
+  });
 }
 
 function remember(text, echoTail) {
@@ -92,6 +149,7 @@ function speakNeural(text, opts) {
       if (current?.fin === fin) current = null;
       try { src?.stop(); } catch { /* уже остановлен */ }
       if (r === 'cancel') neural.cutTail();
+      if (r === 'end') failures = 0;
       resolve(r);
     };
     current = { fin, text };
@@ -111,12 +169,13 @@ function speakNeural(text, opts) {
       wd = setTimeout(() => fin(ac.state === 'running' ? 'end' : 'error'), (buf.duration / pitch) * 1000 + 4000);
     }).catch((err) => {
       if (done || myEpoch !== epoch) return fin('cancel');
-      // нейроголос не сработал — говорим системным, чтобы диктовка не останавливалась
       done = true;
       if (current?.fin === fin) current = null;
       recent.splice(recent.indexOf(rec), 1);
-      onNeuralError(err);
-      speakSystem(text, opts).then(resolve);
+      // заготовка старым голосом после смены голоса — просто синтезируем заново
+      if (err?.stale) { speakNeural(text, opts).then(resolve); return; }
+      // нейроголос не сработал — эту фразу говорим голосом Android, чтобы диктовка не останавливалась
+      engineFailed(err, text, opts, resolve);
     });
   });
 }
