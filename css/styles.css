@@ -338,3 +338,4 @@ body.has-stop .toast { bottom: calc(var(--nav-h) + var(--stop-h) + var(--safe-b)
 .install > span { flex: 1; display: flex; flex-direction: column; font-size: 15px; }
 .install > span span { color: var(--muted); font-size: 13px; }
 .install .btn { min-height: 40px; padding: 0 16px; }
+.ob-sub { display: block; margin: 6px 0; padding: 8px 12px; background: var(--surface); border-radius: 12px; color: var(--muted); font-size: 14px; }
