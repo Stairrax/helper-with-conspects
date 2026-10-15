@@ -818,6 +818,40 @@ const wizard = initOnboarding({
 });
 $('rerunWizard').addEventListener('click', () => wizard.open(1));
 
+// ---------- Установка как приложения ----------
+
+let installPrompt = null;
+const isInstalled = () => matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches;
+
+function renderInstall() {
+  const show = !isInstalled();
+  $('installCard').classList.toggle('hidden', !show);
+  $('obInstall').classList.toggle('hidden', !show);
+}
+
+async function installApp() {
+  if (installPrompt) {
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice.catch(() => ({}));
+    installPrompt = null;
+    if (outcome === 'accepted') toast('Устанавливаю… Потом открывайте приложение с иконки на экране.', 5000);
+  } else {
+    toast('Откройте меню Chrome ⋮ → «Установить приложение» (или «Добавить на главный экран»).', 6000);
+  }
+}
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault(); // показываем свою кнопку вместо всплывающей подсказки Chrome
+  installPrompt = e;
+  renderInstall();
+});
+window.addEventListener('appinstalled', () => {
+  installPrompt = null;
+  toast('Приложение установлено — открывайте его с иконки «Диктор».', 5000);
+});
+$('installBtn').addEventListener('click', installApp);
+$('obInstall').addEventListener('click', installApp);
+
 // ---------- Старт ----------
 
 async function init() {
@@ -841,7 +875,10 @@ async function init() {
   renderSources();
   renderBudget();
   render();
+  renderInstall();
   if (!settings.apiKey && !onboardingDone()) wizard.open(0);
+  // быстрое действие на иконке: «Продолжить диктовку»
+  if (new URLSearchParams(location.search).get('go') === 'dictate' && project) switchTab('dictate');
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   window.addEventListener('pagehide', persistProgress);

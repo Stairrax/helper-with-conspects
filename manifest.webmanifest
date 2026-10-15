@@ -3,16 +3,75 @@
   "short_name": "Диктор",
   "description": "Голосовой диктатор конспектов с мгновенной остановкой и ответами на вопросы",
   "lang": "ru",
-  "start_url": "./",
+  "start_url": "./?source=app",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0b0c10",
   "theme_color": "#0b0c10",
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
-    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "id": "./",
+  "categories": [
+    "education",
+    "productivity"
+  ],
+  "shortcuts": [
+    {
+      "name": "Продолжить диктовку",
+      "short_name": "Продолжить",
+      "url": "./?go=dictate",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "screenshots/dictate.png",
+      "sizes": "412x915",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Диктовка с мгновенной остановкой"
+    },
+    {
+      "src": "screenshots/answer.png",
+      "sizes": "412x915",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Ответ на вопрос и продолжение"
+    },
+    {
+      "src": "screenshots/plan.png",
+      "sizes": "412x915",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "План по темам под ваше время"
+    }
   ]
 }

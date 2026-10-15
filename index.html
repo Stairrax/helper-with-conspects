@@ -45,6 +45,11 @@
   <main>
     <!-- ===== МАТЕРИАЛ ===== -->
     <section id="tab-load" class="tab active">
+      <div id="installCard" class="install hidden">
+        <img src="icons/icon-192.png" alt="">
+        <span><b>Установить как приложение</b><span>Своя иконка, без адресной строки</span></span>
+        <button id="installBtn" class="btn filled">Установить</button>
+      </div>
       <button id="resumeCard" class="resume hidden">
         <span class="resume-text"><b>Продолжить диктовку</b><span id="resumeText"></span></span>
         <svg class="ic"><use href="#i-play"/></svg>
@@ -291,6 +296,7 @@
         <li>Останавливается по кнопке или слову «стоп» и отвечает на вопросы.</li>
         <li>Нужна одна настройка — бесплатный ключ OpenRouter. Это займёт пару минут.</li>
       </ul>
+      <button id="obInstall" class="btn tonal wide hidden">Установить как приложение</button>
       <button id="obStart" class="btn filled wide">Настроить</button>
     </section>
 
