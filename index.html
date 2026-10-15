@@ -235,6 +235,19 @@
           <label><input type="radio" name="voiceEngine" value="system"><span>Голос Android</span></label>
           <label><input type="radio" name="voiceEngine" value="neural"><span>Нейросетевой (живее)</span></label>
         </div>
+        <div class="row mt">
+          <label class="field grow">Стиль
+            <select id="voiceStyle"></select>
+          </label>
+          <label class="field grow">Обращение
+            <select id="address">
+              <option value="">без обращения</option>
+              <option value="сэр">«сэр»</option>
+              <option value="мэм">«мэм»</option>
+            </select>
+          </label>
+        </div>
+        <p class="hint" id="styleHint"></p>
         <div id="systemVoiceBox">
           <label class="field mt">Голос
             <div class="row">

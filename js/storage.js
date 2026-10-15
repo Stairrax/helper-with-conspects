@@ -21,6 +21,8 @@ export const DEFAULT_SETTINGS = {
   showText: true,
   voiceEngine: 'system',  // 'system' — голос Android, 'neural' — нейросетевой голос на телефоне
   neuralVoice: 'irina',
+  voiceStyle: 'none',     // 'none' | 'jarvis' — стиль ИИ-ассистента
+  address: '',            // обращение: '' | 'сэр' | 'мэм'
   pauseMode: 'time',      // 'time' — пауза по времени, 'wait' — ждать «дальше»
   adaptivePause: true,    // удлинять паузу, если часто просят повторить
   selfCheck: true,        // самопроверка после каждой темы

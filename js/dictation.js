@@ -112,6 +112,15 @@ export class Dictation {
   get project() { return this.h.getProject(); }
   get qa() { return (this.h.progress.qa ||= []); }
 
+  /** Обращение к студенту («, сэр») — если выбрано в настройках. */
+  get a() { const x = this.settings.address; return x ? `, ${x}` : ''; }
+
+  /** Дополнение к инструкции нейросети: манера ассистента. */
+  get manner() {
+    const x = this.settings.address;
+    return x ? ` Говори в манере вежливого и немного ироничного ИИ-ассистента, обращайся к студенту «${x}».` : '';
+  }
+
   /** Сохраняет прогресс и место в текущей теме (чтобы вернуться к ней с того же куска). */
   save() {
     const p = this.pos;
@@ -365,7 +374,7 @@ export class Dictation {
     }
     if (!nextId) return this.finish(my);
     this.set('topicEnd');
-    await this.say(`Конец темы «${topic.title}». Есть вопросы?`, true);
+    await this.say(`Тема «${topic.title}» завершена${this.a}. Есть вопросы?`, true);
     if (my !== this.token) return;
     if (this.settings.mode === 'all') {
       // короткая пауза на вопросы, потом — дальше
@@ -381,7 +390,7 @@ export class Dictation {
     this.resumePos = null;
     this.h.saveProgress();
     this.set('finished');
-    await this.say('Диктовка завершена. Если остались вопросы — нажмите «Стоп, вопрос».');
+    await this.say(`Диктовка завершена${this.a}. Если остались вопросы — нажмите «Стоп, вопрос».`);
     if (my !== this.token) return;
     keepAwake(false);
     this.micForced = false;
@@ -401,12 +410,12 @@ export class Dictation {
     this.resumePos = { topicId: this.pos.topicId, chunk: this.pos.chunk };
     this.breakUntil = Date.now() + BREAK_MS;
     this.set('break', 'Отдохните 5 минут. Скажите «продолжай», если хотите раньше.');
-    await this.say(`Вы занимаетесь уже ${minutes} минут. Сделайте перерыв пять минут: встаньте, разомнитесь, попейте воды. Я напомню, когда пора продолжать.`);
+    await this.say(`Вы занимаетесь уже ${minutes} минут${this.a}. Сделайте перерыв пять минут: встаньте, разомнитесь, попейте воды. Я напомню, когда пора продолжать.`);
     while (my === this.token && Date.now() < this.breakUntil) await sleep(500);
     if (my !== this.token) return;
     this.breakUntil = 0;
     this.set('confirm');
-    await this.say('Перерыв окончен. Продолжаем?', true);
+    await this.say(`Перерыв окончен${this.a}. Продолжаем?`, true);
   }
 
   // ---------- Самопроверка ----------
@@ -453,7 +462,7 @@ export class Dictation {
     if (done.length) {
       this.set('quiz');
       const r = Number.isInteger(right) ? right : right.toFixed(1).replace('.', ',');
-      await this.say(`Результат: ${r} из ${done.length}.${right / done.length < 0.7 ? ' Эту тему стоит повторить — я отмечу её в плане.' : ' Отлично!'}`);
+      await this.say(`Результат: ${r} из ${done.length}.${right / done.length < 0.7 ? ' Эту тему стоит повторить — я отмечу её в плане.' : ` Отлично${this.a}!`}`);
     }
   }
 
@@ -478,7 +487,7 @@ export class Dictation {
     let failed = false;
     await this.streamSpeak(my, {
       system: 'Ты — доброжелательный экзаменатор. Оцени устный ответ студента по смыслу, а не дословно; ответ распознан с голоса и может содержать ошибки распознавания. ' +
-        'Начни строго с одного слова: «Верно.», «Частично.» или «Неверно.» Затем одно-два коротких предложения: что упущено или как правильно. Без markdown, формулы словами.',
+        'Начни строго с одного слова: «Верно.», «Частично.» или «Неверно.» Затем одно-два коротких предложения: что упущено или как правильно. Без markdown, формулы словами.' + this.manner,
       parts: [{ text: `Тема: ${topic.title}\nФрагмент конспекта:\n<<<\n${topic.text.slice(0, 6000)}\n>>>\nВопрос: ${q.q}\nЭталонный ответ: ${q.a}\nОтвет студента: ${answer}` }],
     }, entry, () => { failed = true; });
     if (my !== this.token) return null;
@@ -950,7 +959,7 @@ ${prevQa ? `\nПРЕДЫДУЩИЕ ВОПРОСЫ В ЭТОЙ СЕССИИ:\n${p
     await this.streamSpeak(my, {
       system: 'Ты — репетитор, который помогает студенту во время диктовки конспекта. Отвечай по-русски, кратко (2–6 предложений), ' +
         'простыми словами, так, чтобы ответ было удобно слушать: без markdown, списков, таблиц и спецсимволов; формулы и обозначения — словами. ' +
-        'Опирайся на конспект и на то, что уже продиктовано. Если в конспекте ответа нет — скажи об этом и дай короткий ответ из общих знаний.',
+        'Опирайся на конспект и на то, что уже продиктовано. Если в конспекте ответа нет — скажи об этом и дай короткий ответ из общих знаний.' + this.manner,
       parts: [{ text: this.buildContext(question) }],
     }, entry, async (e) => {
       entry.error = true;
@@ -961,6 +970,6 @@ ${prevQa ? `\nПРЕДЫДУЩИЕ ВОПРОСЫ В ЭТОЙ СЕССИИ:\n${p
     this.h.saveProgress();
     if (this.mode !== 'review' && !this.resumePos && !this.currentTopic()) { this.set('finished'); return; }
     this.set('confirm');
-    await this.say('Продолжаем?', true);
+    await this.say(`Продолжаем${this.a}?`, true);
   }
 }

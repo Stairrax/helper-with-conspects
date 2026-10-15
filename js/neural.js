@@ -99,3 +99,67 @@ export async function isDownloaded(voiceId) {
   } catch { /* ignore */ }
   return false;
 }
+
+// ---------- Стиль голоса ----------
+// «Ассистент в стиле Джарвиса» — стилизация, а не копия чьего-то голоса:
+// тон чуть ниже, чёткая середина, лёгкий «цифровой» металлический оттенок и короткое эхо.
+
+export const VOICE_STYLES = {
+  none: { name: 'Обычный', pitch: 1 },
+  jarvis: { name: 'ИИ-ассистент в стиле Джарвиса', pitch: 0.93 },
+};
+
+let chain = null; // { input, out }
+
+function impulse(ac, seconds, decay) {
+  const len = Math.round(ac.sampleRate * seconds);
+  const buf = ac.createBuffer(2, len, ac.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+  }
+  return buf;
+}
+
+/** Узел, к которому подключать звук для выбранного стиля. */
+export function outputFor(style) {
+  const ac = audioContext();
+  if (style !== 'jarvis') return ac.destination;
+  if (chain) return chain.input;
+  const input = ac.createGain();
+  const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 110;
+  const warmth = ac.createBiquadFilter(); warmth.type = 'lowshelf'; warmth.frequency.value = 220; warmth.gain.value = 2.5;
+  const presence = ac.createBiquadFilter(); presence.type = 'peaking'; presence.frequency.value = 2800; presence.Q.value = 0.9; presence.gain.value = 4;
+  const comp = ac.createDynamicsCompressor(); comp.threshold.value = -20; comp.ratio.value = 3;
+  const out = ac.createGain(); out.gain.value = 0.95;
+  // короткая задержка с обратной связью — «цифровой» металлический оттенок
+  const dly = ac.createDelay(0.05); dly.delayTime.value = 0.011;
+  const fb = ac.createGain(); fb.gain.value = 0.25;
+  const wet = ac.createGain(); wet.gain.value = 0.22;
+  // лёгкое эхо помещения
+  const conv = ac.createConvolver(); conv.buffer = impulse(ac, 0.6, 3);
+  const rev = ac.createGain(); rev.gain.value = 0.12;
+  input.connect(hp); hp.connect(warmth); warmth.connect(presence); presence.connect(comp); comp.connect(out);
+  comp.connect(dly); dly.connect(wet); wet.connect(out); dly.connect(fb); fb.connect(dly);
+  comp.connect(conv); conv.connect(rev); rev.connect(out);
+  out.connect(ac.destination);
+  chain = { input, out };
+  return input;
+}
+
+/** Мгновенно глушит хвост эха после «стоп». */
+export function cutTail() {
+  if (!chain) return;
+  const ac = audioContext();
+  const g = chain.out.gain;
+  g.cancelScheduledValues(ac.currentTime);
+  g.setValueAtTime(0, ac.currentTime);
+}
+
+/** Возвращает громкость перед новой фразой (после cutTail). */
+export function restoreOut() {
+  if (!chain) return;
+  const ac = audioContext();
+  chain.out.gain.cancelScheduledValues(ac.currentTime);
+  chain.out.gain.setValueAtTime(0.95, ac.currentTime);
+}

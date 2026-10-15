@@ -8,8 +8,8 @@ import {
   analyze, generateTopicChunks, generateExtras, orderTopics, activeSeq, estimateTopicSec, allocateBudget, fitPause,
 } from './analyze.js';
 import { listModels, conn, PROVIDERS, providerName } from './ai.js';
-import { loadVoices, getVoices, speak, stopSpeaking, setEngine, srSupported, ttsSupported } from './speech.js';
-import { prepare as prepareNeural, isDownloaded, NEURAL_VOICES, audioContext } from './neural.js';
+import { loadVoices, getVoices, speak, stopSpeaking, setEngine, setStyle, srSupported, ttsSupported } from './speech.js';
+import { prepare as prepareNeural, isDownloaded, NEURAL_VOICES, VOICE_STYLES, audioContext } from './neural.js';
 import { enableMedia, disableMedia, updateMedia, mediaSupported } from './media.js';
 import { Dictation, STATE_TEXT } from './dictation.js';
 import { initOnboarding, onboardingDone } from './onboarding.js';
@@ -865,6 +865,12 @@ function renderSettings() {
   $('systemVoiceBox').classList.toggle('hidden', settings.voiceEngine === 'neural');
   $('neuralBox').classList.toggle('hidden', settings.voiceEngine !== 'neural');
   $('neuralVoice').value = settings.neuralVoice;
+  $('voiceStyle').value = settings.voiceStyle;
+  $('address').value = settings.address;
+  $('styleHint').textContent = settings.voiceStyle !== 'jarvis' ? ''
+    : settings.voiceEngine === 'neural'
+      ? 'Стилизация под ИИ-ассистента из кино: тон ниже, «цифровой» оттенок и лёгкое эхо. Это не голос актёра — копировать чужой голос без разрешения нельзя. Лучше всего звучит с мужскими голосами.'
+      : 'С голосом Android можно только понизить тон. Полный эффект — с нейросетевым голосом.';
   $('voiceCommands').checked = settings.voiceCommands;
   $('bargeIn').checked = settings.bargeIn;
   $('coverageCheck').checked = settings.coverageCheck;
@@ -923,10 +929,31 @@ document.querySelectorAll('input[name=pauseMode]').forEach((r) => r.addEventList
 
 // ---------- Нейросетевой голос ----------
 
+$('voiceStyle').innerHTML = Object.entries(VOICE_STYLES).map(([id, st]) => `<option value="${id}">${esc(st.name)}</option>`).join('');
+$('voiceStyle').addEventListener('change', (e) => {
+  settings.voiceStyle = e.target.value;
+  if (settings.voiceStyle === 'jarvis') {
+    if (!settings.address) settings.address = 'сэр';
+    // для этого стиля лучше подходит мужской голос
+    if (settings.voiceEngine === 'neural' && settings.neuralVoice === 'irina') {
+      settings.neuralVoice = 'dmitri';
+      saveSettings(settings);
+      renderSettings();
+      setStyle(settings.voiceStyle);
+      return downloadNeural();
+    }
+  }
+  saveSettings(settings);
+  setStyle(settings.voiceStyle);
+  renderSettings();
+});
+$('address').addEventListener('change', (e) => { settings.address = e.target.value; saveSettings(settings); });
+
 $('neuralVoice').innerHTML = Object.entries(NEURAL_VOICES).map(([id, name]) => `<option value="${id}">${esc(name)}</option>`).join('');
 let neuralFailNotified = false;
 
 function applyEngine() {
+  setStyle(settings.voiceStyle);
   setEngine(settings.voiceEngine, settings.neuralVoice, (err) => {
     // нейроголос не сработал посреди занятия — дальше говорим голосом Android
     setEngine('system');
@@ -968,7 +995,9 @@ $('testNeural').addEventListener('click', async () => {
   audioContext();
   stopSpeaking();
   if ($('neuralStatus').textContent.startsWith('Скач')) return toast('Голос ещё скачивается');
-  speak('Привет! Так звучит нейросетевой голос. Определение: производная — это скорость изменения функции.', { rate: settings.rate });
+  speak(settings.voiceStyle === 'jarvis'
+    ? `Добрый день${settings.address ? ', ' + settings.address : ''}. Все системы в норме. Начинаем диктовку: производная — это скорость изменения функции.`
+    : 'Привет! Так звучит нейросетевой голос. Определение: производная — это скорость изменения функции.', { rate: settings.rate });
 });
 
 // звук Web Audio и кнопки наушников включаются только после касания экрана
@@ -1000,7 +1029,9 @@ $('showKey').addEventListener('click', () => {
 });
 $('testVoice').addEventListener('click', () => {
   stopSpeaking();
-  speak('Проверка голоса. Определение: производная — это скорость изменения функции.', { rate: settings.rate, voiceURI: settings.voiceURI });
+  speak(settings.voiceStyle === 'jarvis'
+    ? `Добрый день${settings.address ? ', ' + settings.address : ''}. Все системы в норме. Определение: производная — это скорость изменения функции.`
+    : 'Проверка голоса. Определение: производная — это скорость изменения функции.', { rate: settings.rate, voiceURI: settings.voiceURI });
 });
 $('checkKey').addEventListener('click', async () => {
   const key = $('apiKey').value.trim();

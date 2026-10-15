@@ -46,6 +46,12 @@ export function isSpeaking() {
 
 let engine = 'system';        // 'system' | 'neural'
 let neuralVoice = 'irina';
+let voiceStyle = 'none';      // 'none' | 'jarvis'
+
+export function setStyle(style) { voiceStyle = neural.VOICE_STYLES[style] ? style : 'none'; }
+const stylePitch = () => neural.VOICE_STYLES[voiceStyle].pitch;
+// Тон понижаем замедлением воспроизведения, а скорость речи компенсируем при синтезе.
+const neuralRate = (rate) => rate / stylePitch();
 let onNeuralError = () => {};
 
 export function setEngine(kind, voice, onError) {
@@ -57,7 +63,7 @@ export function setEngine(kind, voice, onError) {
 /** Готовит следующие куски заранее (только для нейроголоса — системному не нужно). */
 export function prefetch(texts, { rate = 1 } = {}) {
   if (engine !== 'neural') return;
-  for (const t of texts) if (t) neural.synth(t, { voice: neuralVoice, rate }).catch(() => {});
+  for (const t of texts) if (t) neural.synth(t, { voice: neuralVoice, rate: neuralRate(rate) }).catch(() => {});
 }
 
 /** Произносит текст. Promise -> 'end' | 'cancel' | 'error'. */
@@ -85,20 +91,24 @@ function speakNeural(text, opts) {
       rec.end = Date.now();
       if (current?.fin === fin) current = null;
       try { src?.stop(); } catch { /* уже остановлен */ }
+      if (r === 'cancel') neural.cutTail();
       resolve(r);
     };
     current = { fin, text };
-    neural.synth(text, { voice: neuralVoice, rate }).then((buf) => {
+    const pitch = stylePitch();
+    neural.synth(text, { voice: neuralVoice, rate: neuralRate(rate) }).then((buf) => {
       if (done || myEpoch !== epoch) return fin('cancel');
       const ac = neural.audioContext();
       src = ac.createBufferSource();
       src.buffer = buf;
-      src.connect(ac.destination);
+      src.playbackRate.value = pitch;
+      src.connect(neural.outputFor(voiceStyle));
+      neural.restoreOut();
       src.onended = () => fin('end');
       onStart?.();
       src.start();
       // если звук не пошёл (контекст заблокирован) — сообщаем об ошибке, а не висим
-      wd = setTimeout(() => fin(ac.state === 'running' ? 'end' : 'error'), buf.duration * 1000 + 4000);
+      wd = setTimeout(() => fin(ac.state === 'running' ? 'end' : 'error'), (buf.duration / pitch) * 1000 + 4000);
     }).catch((err) => {
       if (done || myEpoch !== epoch) return fin('cancel');
       // нейроголос не сработал — говорим системным, чтобы диктовка не останавливалась
@@ -122,6 +132,7 @@ function speakSystem(text, { rate = 1, voiceURI = '', onStart, echoTail = 900 } 
       const v = pickVoice(voiceURI);
       try { if (v) u.voice = v; } catch { /* голос недоступен */ }
       u.rate = rate;
+      if (voiceStyle === 'jarvis') u.pitch = 0.8; // голосу Android можно только понизить тон
       const rec = remember(text, echoTail);
       let done = false, seen = false;
       const started = Date.now();
