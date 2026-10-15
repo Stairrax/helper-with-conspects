@@ -72,6 +72,7 @@ export function conn(settings) {
     apiKey: settings.apiKey,
     model: settings.model || p.model,
     baseUrl: base || p.base,
+    fallbacks: settings.provider === 'openrouter' ? settings.fallbackModels || [] : [],
   };
 }
 

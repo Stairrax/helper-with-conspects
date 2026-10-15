@@ -30,8 +30,11 @@ function toMessages(system, parts) {
   return messages;
 }
 
-function buildBody({ system, parts, temperature, maxOutputTokens, model }, streamMode) {
+function buildBody({ system, parts, temperature, maxOutputTokens, model, fallbacks }, streamMode) {
   const body = { model: String(model || '').trim(), messages: toMessages(system, parts), temperature };
+  // OpenRouter: если основная модель перегружена или недоступна, запрос уйдёт на запасную
+  const extra = (fallbacks || []).filter((m) => m && m !== body.model);
+  if (extra.length) body.models = [body.model, ...extra].slice(0, 3);
   if (maxOutputTokens) body.max_tokens = maxOutputTokens;
   if (streamMode) body.stream = true;
   return body;
@@ -44,12 +47,15 @@ function errMessage(body) {
   return (typeof e === 'string' ? e : e.message || JSON.stringify(e)) + raw;
 }
 
+const isDailyLimit = (body) => /per-day|free-models-per-day|daily/i.test(errMessage(body));
+
 function humanError(status, body) {
   const msg = errMessage(body);
   if (status === 401) return 'Неверный API-ключ (401). Проверьте ключ в настройках.';
   if (status === 402) return 'Недостаточно средств на счёте провайдера (402). Выберите бесплатную модель (с «:free» на конце) или пополните баланс.';
   if (status === 403) return 'Доступ запрещён (403): ' + msg;
   if (status === 404) return 'Модель не найдена (404). Выберите другую модель в настройках. ' + msg;
+  if (isDailyLimit(body)) return 'На сегодня бесплатные запросы OpenRouter закончились (лимит в день). Продолжите завтра или пополните баланс OpenRouter — тогда лимит станет намного больше.';
   if (status === 429) return 'Превышен лимит запросов (429). ' + msg;
   if (status >= 500) return `Сервер провайдера временно недоступен (${status}).`;
   if (/image|vision|multimodal/i.test(msg)) return 'Эта модель не принимает изображения. Для фото страниц выберите модель с поддержкой картинок. ' + msg;
@@ -77,7 +83,8 @@ export async function generate(opts) {
   const { apiKey, baseUrl, onStatus = () => {}, retries = 5, signal } = opts;
   if (!apiKey) throw new AIError('Не задан API-ключ (Настройки).', { code: 'NO_KEY' });
   if (!baseUrl) throw new AIError('Не задан адрес API (Настройки).', { code: 'NO_KEY' });
-  const body = JSON.stringify(buildBody({ temperature: 0.3, ...opts }, false));
+  const payload = buildBody({ temperature: 0.3, ...opts }, false);
+  let body = JSON.stringify(payload);
   let attempt = 0;
   for (;;) {
     attempt++;
@@ -105,8 +112,14 @@ export async function generate(opts) {
         if (!(e instanceof AIError) || !e.retryable) throw e;
         err = e;
       }
+    } else if (res.status === 400 && payload.models) {
+      // сервис не принял список запасных моделей — повторяем без него
+      delete payload.models;
+      body = JSON.stringify(payload);
+      attempt--;
+      continue;
     } else {
-      err = new AIError(humanError(res.status, data), { status: res.status, retryable: res.status === 429 || res.status >= 500 });
+      err = new AIError(humanError(res.status, data), { status: res.status, retryable: (res.status === 429 && !isDailyLimit(data)) || res.status >= 500 });
     }
     if (!err.retryable || attempt > retries) throw err;
     let wait = err.status === 429 ? retryAfter(res) || 15000 * attempt : 2000 * 2 ** (attempt - 1);
@@ -127,7 +140,8 @@ export async function stream(opts) {
     });
     if (!res.ok || !res.body) {
       const data = await res.json().catch(() => ({}));
-      throw new AIError(humanError(res.status, data), { status: res.status, retryable: res.status === 429 || res.status >= 500 });
+      const noFallbacks = res.status === 400 && (opts.fallbacks || []).length > 0; // повторим обычным запросом без них
+      throw new AIError(humanError(res.status, data), { status: res.status, retryable: (res.status === 429 && !isDailyLimit(data)) || res.status >= 500 || noFallbacks });
     }
     const reader = res.body.getReader();
     const dec = new TextDecoder();

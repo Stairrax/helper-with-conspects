@@ -175,6 +175,10 @@
     <section id="tab-settings" class="tab">
       <div class="card">
         <div class="card-title">Нейросеть</div>
+        <div id="aiSummary" class="ai-summary"></div>
+        <button id="rerunWizard" class="btn tonal wide">Настроить заново (мастер)</button>
+        <details class="mini" id="manualAi">
+          <summary>Настроить вручную</summary>
         <label class="field">Провайдер
           <select id="provider"></select>
         </label>
@@ -196,6 +200,7 @@
           <label class="field">Адрес (например, прокси)
             <input id="baseUrl" type="text" inputmode="url" spellcheck="false" autocapitalize="off">
           </label>
+        </details>
         </details>
       </div>
 
@@ -274,6 +279,50 @@
       <button id="toggleText" class="sheet-item">Скрыть текст</button>
       <button id="retryTopicBtn" class="sheet-item hidden">Повторить подготовку темы</button>
     </div>
+  </div>
+
+  <!-- Мастер первого запуска -->
+  <div id="onboard" class="onboard hidden">
+    <section class="ob-step">
+      <img src="icons/icon-192.png" alt="" class="ob-logo">
+      <h2>Диктор конспектов</h2>
+      <ul class="ob-list">
+        <li>Читает конспект вслух короткими кусками — вы успеваете записывать.</li>
+        <li>Останавливается по кнопке или слову «стоп» и отвечает на вопросы.</li>
+        <li>Нужна одна настройка — бесплатный ключ OpenRouter. Это займёт пару минут.</li>
+      </ul>
+      <button id="obStart" class="btn filled wide">Настроить</button>
+    </section>
+
+    <section class="ob-step hidden">
+      <div class="ob-num">Шаг 1 из 2</div>
+      <h2>Ключ OpenRouter</h2>
+      <ol class="ob-steps">
+        <li>Откройте сайт и войдите (можно через Google).
+          <button id="obOpenKeys" class="btn tonal">Открыть openrouter.ai/keys</button></li>
+        <li>Нажмите <b>Create API Key</b>, введите любое имя, нажмите <b>Create</b> и скопируйте ключ.</li>
+        <li>Вернитесь сюда и вставьте ключ:
+          <div class="row">
+            <input id="obKey" type="text" placeholder="sk-or-…" autocomplete="off" spellcheck="false" autocapitalize="off">
+            <button id="obPaste" class="btn tonal">Вставить</button>
+          </div></li>
+      </ol>
+      <button id="obCheck" class="btn filled wide">Проверить и подобрать модель</button>
+      <div id="obStatus" class="ob-status"></div>
+      <button id="obOther" class="btn text">У меня другой провайдер — настрою сам</button>
+    </section>
+
+    <section class="ob-step hidden">
+      <div class="ob-num">Шаг 2 из 2</div>
+      <h2>Звук и микрофон</h2>
+      <p class="muted">Проверьте, что слышно голос, и разрешите микрофон — он нужен для команд «стоп», «дальше» и вопросов голосом.</p>
+      <button id="obVoice" class="btn tonal wide">Прослушать голос</button>
+      <div id="obVoiceStatus" class="ob-status"></div>
+      <button id="obMic" class="btn tonal wide">Разрешить микрофон</button>
+      <div id="obMicStatus" class="ob-status"></div>
+      <p class="muted small">Совет: в наушниках голосовые команды срабатывают надёжнее.</p>
+      <button id="obFinish" class="btn filled wide">Готово</button>
+    </section>
   </div>
 
   <div id="toast" class="toast"></div>

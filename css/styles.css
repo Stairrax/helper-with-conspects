@@ -306,3 +306,28 @@ body.has-stop .toast { bottom: calc(var(--nav-h) + var(--stop-h) + var(--safe-b)
 .qa-open .chunk { min-height: 0; }
 .qa-open .chunk p { font-size: 18px; }
 #fitPauseBtn { margin-top: 8px; padding: 0 4px; min-height: 40px; }
+
+/* ---------- Мастер первого запуска ---------- */
+.onboard {
+  position: fixed; inset: 0; z-index: 60; overflow-y: auto; background: var(--bg);
+  padding: calc(24px + env(safe-area-inset-top)) 20px calc(24px + var(--safe-b));
+}
+.ob-step { max-width: 520px; margin: 0 auto; }
+.ob-step h2 { font-size: 26px; font-weight: 500; margin: 8px 0 16px; }
+.ob-logo { width: 72px; height: 72px; border-radius: 20px; margin-top: 24px; }
+.ob-num { color: var(--accent); font-size: 14px; font-weight: 500; }
+.ob-list { padding-left: 20px; color: var(--muted); margin: 0 0 24px; }
+.ob-list li { margin-bottom: 10px; }
+.ob-steps { padding-left: 22px; margin: 0 0 8px; }
+.ob-steps li { margin-bottom: 18px; }
+.ob-steps li b { color: var(--accent); font-weight: 500; }
+.ob-steps .btn, .ob-steps .row { margin-top: 10px; }
+.ob-status { min-height: 1.4em; margin: 10px 2px; font-size: 15px; color: var(--muted); }
+.ob-status.ok { color: var(--ok); }
+.ob-status.err { color: var(--danger); }
+.ob-step > .btn.text { display: block; margin: 8px auto 0; }
+.ai-summary { font-size: 15px; }
+.ai-summary .muted { display: block; font-size: 13px; margin-top: 2px; overflow-wrap: anywhere; }
+#manualAi[open] { margin-bottom: 4px; }
+#manualAi .field:first-of-type { margin-top: 8px; }
+.ob-steps li > .btn { display: flex; }

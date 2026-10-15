@@ -9,6 +9,7 @@ export const DEFAULT_SETTINGS = {
   model: 'google/gemini-2.5-flash',
   baseUrl: '',            // пусто — адрес провайдера по умолчанию
   profiles: {},           // сохранённые ключ/модель/адрес остальных провайдеров
+  fallbackModels: [],     // запасные модели OpenRouter (подбирает мастер настройки)
   rate: 1,
   pause: 3,
   voiceURI: '',

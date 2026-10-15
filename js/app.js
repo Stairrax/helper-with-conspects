@@ -8,6 +8,7 @@ import {
 import { listModels, conn, PROVIDERS, providerName } from './ai.js';
 import { loadVoices, getVoices, speak, stopSpeaking, srSupported, ttsSupported } from './speech.js';
 import { Dictation, STATE_TEXT } from './dictation.js';
+import { initOnboarding, onboardingDone } from './onboarding.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -261,7 +262,7 @@ function logLine(msg, cls = '') {
 }
 
 $('analyzeBtn').addEventListener('click', async () => {
-  if (!settings.apiKey) { toast(`Укажите ключ API (${providerName(settings)}) в настройках`); return switchTab('settings'); }
+  if (!settings.apiKey) { wizard.open(1); return; }
   if (!sources.length) return toast('Добавьте хотя бы один конспект');
   const budgetMin = getBudget();
   if (!budgetMin) return toast('Укажите, сколько у вас времени');
@@ -637,6 +638,9 @@ const PROVIDER_HINTS = {
 
 function renderSettings() {
   const prov = PROVIDERS[settings.provider] || PROVIDERS.gemini;
+  $('aiSummary').innerHTML = settings.apiKey
+    ? `${esc(providerName(settings))} · ключ указан<span class="muted">Модель: ${esc(settings.model)}${settings.fallbackModels?.length && settings.provider === 'openrouter' ? ` (+${settings.fallbackModels.length} запасные)` : ''}</span>`
+    : '<span style="color:var(--warn)">Ключ не указан — нажмите «Настроить заново».</span>';
   $('provider').value = settings.provider;
   $('apiKey').value = settings.apiKey;
   $('apiKey').placeholder = prov.keyHint || 'ключ API';
@@ -668,7 +672,10 @@ function bind(id, key, parse = (v) => v, ev = 'change') {
   });
 }
 bind('apiKey', 'apiKey', (v) => v.trim());
-bind('model', 'model', (v) => v.trim().replace(/^models\//, '') || (PROVIDERS[settings.provider]?.model ?? ''));
+bind('model', 'model', (v) => {
+  settings.fallbackModels = []; // модель выбрана вручную — запасные от мастера больше не подходят
+  return v.trim().replace(/^models\//, '') || (PROVIDERS[settings.provider]?.model ?? '');
+});
 bind('baseUrl', 'baseUrl', (v) => v.trim());
 
 $('provider').innerHTML = Object.entries(PROVIDERS).map(([id, p]) => `<option value="${id}">${esc(p.name.replace(/ \(.*\)$/, ''))}</option>`).join('');
@@ -798,6 +805,19 @@ function renderWarnings() {
   $('srWarn').classList.toggle('hidden', !warn.length);
 }
 
+// ---------- Мастер первого запуска ----------
+
+const wizard = initOnboarding({
+  getSettings: () => settings,
+  save: () => { saveSettings(settings); renderSettings(); },
+  onFinish: (goSettings) => {
+    renderSettings();
+    if (goSettings) { $('manualAi').open = true; switchTab('settings'); } else switchTab(project ? activeTab : 'load');
+    if (project && !gen.running && gen.pick(project)) gen.loop();
+  },
+});
+$('rerunWizard').addEventListener('click', () => wizard.open(1));
+
 // ---------- Старт ----------
 
 async function init() {
@@ -821,6 +841,7 @@ async function init() {
   renderSources();
   renderBudget();
   render();
+  if (!settings.apiKey && !onboardingDone()) wizard.open(0);
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   window.addEventListener('pagehide', persistProgress);

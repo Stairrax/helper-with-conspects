@@ -1,7 +1,7 @@
 // Service worker: оболочка приложения работает офлайн, библиотеки с CDN кэшируются при первом использовании.
 // Запросы к API нейросетей никогда не кэшируются.
 
-const VERSION = 'kd-v3';
+const VERSION = 'kd-v4';
 const SHELL = [
   './',
   'index.html',
@@ -13,6 +13,7 @@ const SHELL = [
   'js/dictation.js',
   'js/extract.js',
   'js/gemini.js',
+  'js/onboarding.js',
   'js/openai.js',
   'js/speech.js',
   'js/storage.js',
