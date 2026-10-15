@@ -32,7 +32,6 @@ export const CLOUD_PROVIDERS = {
       Puck: 'Puck (бодрый мужской)',
     },
     voice: 'Leda',
-    model: 'gemini-2.5-flash-preview-tts',
     persistent: false, // несжатый звук — храним только в памяти
   },
   elevenlabs: {
@@ -145,9 +144,29 @@ async function yandex(cfg, text, signal) {
   return res.blob();
 }
 
+// Модели синтеза речи Google меняются часто: пробуем по очереди и запоминаем ту, что ответила.
+const GEMINI_TTS_MODELS = ['gemini-3.1-flash-tts-preview', 'gemini-3.8-flash-tts', 'gemini-2.5-flash-preview-tts'];
+let geminiModel = (() => { try { return localStorage.getItem('kd.geminiTts') || ''; } catch { return ''; } })();
+
 async function gemini(cfg, text, signal) {
   if (!cfg.key) throw new CloudError('Gemini: укажите ключ Google AI Studio (Настройки → Голос).', { fatal: true });
-  const model = cfg.model || CLOUD_PROVIDERS.gemini.model;
+  const order = cfg.model ? [cfg.model] : [...new Set([geminiModel, ...GEMINI_TTS_MODELS].filter(Boolean))];
+  let lastErr;
+  for (const model of order) {
+    try {
+      const blob = await geminiOnce(model, cfg, text, signal);
+      if (model !== geminiModel) { geminiModel = model; try { localStorage.setItem('kd.geminiTts', model); } catch { /* ignore */ } }
+      return blob;
+    } catch (e) {
+      lastErr = e;
+      // модели нет или для неё нет бесплатного лимита — пробуем следующую
+      if (!e.tryNext) throw e;
+    }
+  }
+  throw lastErr;
+}
+
+async function geminiOnce(model, cfg, text, signal) {
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.key },
@@ -160,7 +179,14 @@ async function gemini(cfg, text, signal) {
     }),
     signal,
   });
-  if (!res.ok) throw httpError('Gemini', res.status, await readError(res));
+  if (!res.ok) {
+    const body = await readError(res);
+    const err = httpError('Gemini', res.status, body);
+    const msg = JSON.stringify(body);
+    err.tryNext = res.status === 404 || (res.status === 400 && /not found|not supported|does not support/i.test(msg)) ||
+      (res.status === 429 && /limit: ?0\b/.test(msg));
+    throw err;
+  }
   const data = await res.json();
   const part = data?.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
   if (!part) throw new CloudError('Gemini: пустой ответ без звука');
