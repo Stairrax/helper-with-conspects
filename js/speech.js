@@ -123,7 +123,23 @@ function speakCloud(text, opts) {
         onStart?.();
         const sec = Number.isFinite(audio.duration) ? audio.duration : 60;
         wd = setTimeout(() => fin('end'), (sec / audio.playbackRate) * 1000 + 5000);
-      }).catch(fail);
+      }).catch(async (err) => {
+        // браузер не дал запустить звук элементом <audio> — играем через Web Audio (он разблокирован касанием)
+        if (done || myEpoch !== epoch) return fin('cancel');
+        try {
+          const ac = neural.audioContext();
+          const buf = await ac.decodeAudioData(await blob.arrayBuffer());
+          if (done || myEpoch !== epoch) return fin('cancel');
+          const src = ac.createBufferSource();
+          src.buffer = buf;
+          src.connect(ac.destination);
+          src.onended = () => fin('end');
+          audio = { pause: () => { try { src.stop(); } catch { /* ignore */ } } };
+          onStart?.();
+          src.start();
+          wd = setTimeout(() => fin('end'), buf.duration * 1000 + 5000);
+        } catch { fail(err); }
+      });
     }).catch(fail);
   });
 }

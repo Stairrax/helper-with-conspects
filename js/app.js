@@ -1117,7 +1117,9 @@ function applyEngine() {
     setCloud(cloudCfg());
     setEngine('cloud', null, (err) => {
       setEngine('system');
-      toast('Облачный голос не отвечает — говорю голосом Android. ' + (err?.message || ''), 7000);
+      const msg = err?.message || 'неизвестная ошибка';
+      $('cloudStatus').textContent = '✗ ' + msg;
+      toast('Облачный голос не сработал, говорю голосом Android. Причина: ' + msg, 9000);
     });
     return;
   }

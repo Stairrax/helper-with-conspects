@@ -104,8 +104,25 @@ export async function clearCache() {
 
 // ---------- Сервисы ----------
 
+/** fetch с понятной ошибкой, если до сервиса не достучаться (блокировка, нет интернета, CORS). */
+async function net(provider, url, opts) {
+  try {
+    return await fetch(url, opts);
+  } catch (e) {
+    if (e.name === 'AbortError') throw e;
+    throw new CloudError(provider === 'Яндекс'
+      ? 'Яндекс: нет связи с функцией-посредником — проверьте интернет, адрес функции и что она публичная.'
+      : `${provider}: нет связи с сервисом — скорее всего, он недоступен из вашей сети. Включите VPN или выберите Яндекс.`, { network: true });
+  }
+}
+
 function httpError(provider, status, body) {
   const msg = typeof body === 'string' ? body.slice(0, 200) : body?.error?.message || body?.detail?.message || body?.message || '';
+  const code = typeof body === 'object' ? body?.detail?.status || body?.error?.status || '' : '';
+  // ElevenLabs: бесплатный доступ блокируется при VPN/прокси, кончился лимит, у ключа нет прав
+  if (code === 'detected_unusual_activity') return new CloudError('ElevenLabs заблокировал бесплатный доступ: сервис видит VPN или прокси. Бесплатно через VPN он не работает — нужен платный тариф или другой сервис.', { status, fatal: true });
+  if (code === 'quota_exceeded') return new CloudError('ElevenLabs: закончился бесплатный лимит на этот месяц.', { status, fatal: true });
+  if (code === 'missing_permissions') return new CloudError('ElevenLabs: у ключа нет разрешения Text to Speech — создайте ключ заново и включите это разрешение.', { status, fatal: true });
   if (status === 401 || status === 403) return new CloudError(`${provider}: ключ не подходит или нет доступа (${status}). ${msg}`, { status, fatal: true });
   if (status === 402) return new CloudError(`${provider}: закончились средства или бесплатный лимит. ${msg}`, { status, fatal: true });
   if (status === 429) return new CloudError(`${provider}: превышен лимит запросов. ${msg}`, { status });
@@ -136,10 +153,10 @@ function pcmToWav(b64, rate) {
 }
 
 async function yandex(cfg, text, signal) {
-  if (!cfg.url) throw new CloudError('Яндекс: укажите адрес функции-посредника (Настройки → Голос).', { fatal: true });
+  if (!cfg.url) throw new CloudError('Яндекс ещё не настроен: нужна функция-посредник в Yandex Cloud — инструкция в «Как подключить» (Настройки → Голос).', { fatal: true });
   const headers = { 'Content-Type': 'application/json' };
   if (cfg.key) headers['X-Api-Key'] = cfg.key;
-  const res = await fetch(cfg.url, { method: 'POST', headers, body: JSON.stringify({ text, voice: cfg.voice }), signal });
+  const res = await net('Яндекс', cfg.url, { method: 'POST', headers, body: JSON.stringify({ text, voice: cfg.voice }), signal });
   if (!res.ok) throw httpError('Яндекс', res.status, await readError(res));
   return res.blob();
 }
@@ -163,11 +180,15 @@ async function gemini(cfg, text, signal) {
       if (!e.tryNext) throw e;
     }
   }
+  if (lastErr?.status === 429) {
+    throw new CloudError('Gemini: для вашего ключа нет бесплатного лимита на синтез речи (Google сейчас даёт его не всем). Нужен платный аккаунт Google AI или другой сервис.', { status: 429, fatal: true });
+  }
+  if (lastErr?.tryNext) throw new CloudError('Gemini: модели синтеза речи недоступны для вашего ключа.', { status: lastErr.status, fatal: true });
   throw lastErr;
 }
 
 async function geminiOnce(model, cfg, text, signal) {
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+  const res = await net('Gemini', `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.key },
     body: JSON.stringify({
@@ -197,7 +218,7 @@ async function geminiOnce(model, cfg, text, signal) {
 async function elevenlabs(cfg, text, signal) {
   if (!cfg.key) throw new CloudError('ElevenLabs: укажите ключ API (Настройки → Голос).', { fatal: true });
   const model = cfg.model || CLOUD_PROVIDERS.elevenlabs.model;
-  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(cfg.voice)}?output_format=mp3_22050_32`, {
+  const res = await net('ElevenLabs', `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(cfg.voice)}?output_format=mp3_22050_32`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'xi-api-key': cfg.key, Accept: 'audio/mpeg' },
     body: JSON.stringify({
@@ -250,7 +271,7 @@ export function audioFor(cfg, text) {
 
 /** Голоса ElevenLabs из аккаунта (включая добавленные вами). */
 export async function listElevenVoices(key) {
-  const res = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': key } });
+  const res = await net('ElevenLabs', 'https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': key } });
   if (!res.ok) throw httpError('ElevenLabs', res.status, await readError(res));
   const data = await res.json();
   return (data.voices || []).map((v) => ({ id: v.voice_id, name: `${v.name}${v.labels?.gender ? ` (${v.labels.gender === 'female' ? 'женский' : v.labels.gender === 'male' ? 'мужской' : v.labels.gender})` : ''}` }));
