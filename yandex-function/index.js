@@ -49,7 +49,8 @@ module.exports.handler = async function (event, context) {
   const iam = context?.token?.access_token || '';
   if (!apiKey && !iam) return reply(401, { message: 'Нет доступа: привяжите к функции сервисный аккаунт с ролью ai.speechkit-tts.user' });
 
-  const form = new URLSearchParams({ text, lang: 'ru-RU', voice, format: 'oggopus' });
+  const speed = Math.min(3, Math.max(0.1, Number(req.speed) || 1));
+  const form = new URLSearchParams({ text, lang: 'ru-RU', voice, speed: String(speed), format: 'oggopus' });
   if (!apiKey && process.env.FOLDER_ID) form.set('folderId', process.env.FOLDER_ID);
   const res = await fetch(TTS_URL, {
     method: 'POST',

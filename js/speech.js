@@ -76,7 +76,10 @@ function engineFailed(err, text, opts, resolve) {
 /** Готовит следующие куски заранее (только для нейроголоса — системному не нужно). */
 export function prefetch(texts, { rate = 1 } = {}) {
   if (engine === 'neural') for (const t of texts) if (t) neural.synth(t, { voice: neuralVoice, rate: neuralRate(rate) }).catch(() => {});
-  if (engine === 'cloud' && cloudCfg) for (const t of texts) if (t) cloud.audioFor(cloudCfg, t).catch(() => {});
+  if (engine === 'cloud' && cloudCfg) {
+    const cfg = { ...cloudCfg, speed: cloud.speedPlan(cloudCfg.provider, rate).speed };
+    for (const t of texts) if (t) cloud.audioFor(cfg, t).catch(() => {});
+  }
 }
 
 /** Произносит текст. Promise -> 'end' | 'cancel' | 'error'. */
@@ -111,12 +114,13 @@ function speakCloud(text, opts) {
       recent.splice(recent.indexOf(rec), 1);
       engineFailed(err, text, opts, resolve);
     };
-    cloud.audioFor(cloudCfg, text).then((blob) => {
+    const plan = cloud.speedPlan(cloudCfg.provider, rate);
+    cloud.audioFor({ ...cloudCfg, speed: plan.speed }, text).then((blob) => {
       if (done || myEpoch !== epoch) return fin('cancel');
       url = URL.createObjectURL(blob);
       audio = new Audio(url);
       audio.preservesPitch = true;  // скорость меняем без изменения тона
-      audio.playbackRate = Math.max(0.5, Math.min(2, rate));
+      audio.playbackRate = plan.playbackRate; // для Яндекса — 1: скорость уже задана при синтезе, без искажений
       audio.onended = () => fin('end');
       audio.onerror = () => fail(new Error('не удалось воспроизвести звук'));
       audio.play().then(() => {

@@ -69,7 +69,22 @@ async function sha(text) {
 }
 
 async function cacheUrl(cfg, text) {
-  return `https://tts.cache/${cfg.provider}/${encodeURIComponent(cfg.voice)}/${await sha(text)}`;
+  const sp = cfg.speed && cfg.speed !== 1 ? `@${cfg.speed}` : '';
+  return `https://tts.cache/${cfg.provider}/${encodeURIComponent(cfg.voice)}${sp}/${await sha(text)}`;
+}
+
+/**
+ * Как получить нужную скорость речи без искажений: скорость задаёт сам сервис,
+ * а растягивание звука при воспроизведении — только то, что сервис не умеет.
+ */
+export function speedPlan(provider, rate) {
+  const r = Math.round(Math.max(0.5, Math.min(2, rate || 1)) * 10) / 10;
+  if (provider === 'yandex') return { speed: r, playbackRate: 1 };
+  if (provider === 'elevenlabs') {
+    const speed = Math.round(Math.max(0.7, Math.min(1.2, r)) * 100) / 100;
+    return { speed, playbackRate: Math.round((r / speed) * 100) / 100 };
+  }
+  return { speed: 1, playbackRate: r };
 }
 
 async function fromCache(cfg, text) {
@@ -156,7 +171,7 @@ async function yandex(cfg, text, signal) {
   if (!cfg.url) throw new CloudError('Яндекс ещё не настроен: нужна функция-посредник в Yandex Cloud — инструкция в «Как подключить» (Настройки → Голос).', { fatal: true });
   const headers = { 'Content-Type': 'application/json' };
   if (cfg.key) headers['X-Api-Key'] = cfg.key;
-  const res = await net('Яндекс', cfg.url, { method: 'POST', headers, body: JSON.stringify({ text, voice: cfg.voice }), signal });
+  const res = await net('Яндекс', cfg.url, { method: 'POST', headers, body: JSON.stringify({ text, voice: cfg.voice, speed: cfg.speed || 1 }), signal });
   if (!res.ok) throw httpError('Яндекс', res.status, await readError(res));
   return res.blob();
 }
@@ -226,7 +241,7 @@ async function elevenlabs(cfg, text, signal) {
       model_id: model,
       // язык явно задают только модели v2.5 (Flash/Turbo); остальные определяют его сами
       ...(/v2_5|flash|turbo/.test(model) ? { language_code: 'ru' } : {}),
-      voice_settings: { stability: 0.55, similarity_boost: 0.75, style: 0.1, use_speaker_boost: true },
+      voice_settings: { stability: 0.55, similarity_boost: 0.75, style: 0.1, use_speaker_boost: true, speed: cfg.speed || 1 },
     }),
     signal,
   });
@@ -242,7 +257,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * Сначала — память и сохранённая озвучка, потом — запрос с повторами.
  */
 export function audioFor(cfg, text) {
-  const key = `${cfg.provider}|${cfg.voice}|${text}`;
+  const key = `${cfg.provider}|${cfg.voice}|${cfg.speed || 1}|${text}`;
   if (!memory.has(key)) {
     const p = (async () => {
       const saved = await fromCache(cfg, text);

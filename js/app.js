@@ -9,7 +9,7 @@ import {
 } from './analyze.js';
 import { listModels, conn, PROVIDERS, providerName } from './ai.js';
 import { loadVoices, getVoices, speak, stopSpeaking, setEngine, setStyle, setCloud, srSupported, ttsSupported } from './speech.js';
-import { CLOUD_PROVIDERS, audioFor, isCached, clearCache, cacheSizeMB, listElevenVoices } from './cloud.js';
+import { CLOUD_PROVIDERS, audioFor, isCached, clearCache, cacheSizeMB, listElevenVoices, speedPlan } from './cloud.js';
 import { prepare as prepareNeural, isDownloaded, NEURAL_VOICES, VOICE_STYLES, audioContext } from './neural.js';
 import { enableMedia, disableMedia, updateMedia, mediaSupported } from './media.js';
 import { Dictation, STATE_TEXT } from './dictation.js';
@@ -1055,7 +1055,7 @@ let prerendering = null;
 $('prerenderBtn').addEventListener('click', async () => {
   if (prerendering) { prerendering.stop = true; return; }
   if (!project) return;
-  const cfg = cloudCfg();
+  const cfg = { ...cloudCfg(), speed: speedPlan(settings.cloudProvider, settings.rate).speed };
   const texts = [];
   const seq = activeSeq(project);
   const start = Math.max(0, seq.findIndex((t) => t.id === progress?.topicId));
