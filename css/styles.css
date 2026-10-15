@@ -363,3 +363,13 @@ body.has-stop .toast { bottom: calc(var(--nav-h) + var(--stop-h) + var(--safe-b)
 #stopReviewBtn { margin: 0 0 12px; }
 .quiz-q { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--accent); }
 .chunk { padding-top: 40px; }
+
+/* ---------- Перемотка по кускам ---------- */
+.seek { -webkit-appearance: none; appearance: none; width: 100%; height: 28px; margin: 0; background: none; touch-action: none; }
+.seek::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--accent) var(--fill, 0%), var(--surface3) var(--fill, 0%)); }
+.seek::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; margin-top: -7px; border-radius: 50%; background: var(--accent); border: 0; }
+.seek:disabled::-webkit-slider-thumb { background: transparent; }
+.seek::-moz-range-track { height: 4px; border-radius: 2px; background: var(--surface3); }
+.seek::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--accent); }
+.seek::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 0; }
+.chunk.preview { outline: 2px dashed var(--accent); outline-offset: -2px; }

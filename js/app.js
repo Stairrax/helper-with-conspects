@@ -73,6 +73,7 @@ let activeTab = 'load';
 const TITLES = { load: 'Материал', plan: 'План', dictate: 'Диктовка', settings: 'Настройки' };
 function switchTab(name) {
   activeTab = name;
+  try { localStorage.setItem('kd.lastTab', name); } catch { /* ignore */ }
   document.body.dataset.tab = name;
   $('screenTitle').textContent = TITLES[name];
   document.querySelectorAll('.navbar button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
@@ -285,7 +286,7 @@ $('analyzeBtn').addEventListener('click', async () => {
   if (!sources.length) return toast('Добавьте хотя бы один конспект');
   const budgetMin = getBudget();
   if (!budgetMin) return toast('Укажите, сколько у вас времени');
-  if (project && !confirm('Текущий план и прогресс диктовки будут заменены. Продолжить?')) return;
+  if (project && !confirm('Составить план заново? Текущий план и место, где вы остановились, будут сброшены.\n\nЧтобы продолжить диктовку, нажмите «Отмена» и откройте вкладку «Диктовка». Для другого предмета создайте новый предмет (название под заголовком).')) return;
   const btn = $('analyzeBtn');
   btn.disabled = true;
   $('analyzeCard').classList.remove('hidden');
@@ -413,7 +414,7 @@ function renderPlan() {
           <button class="icon-btn" data-act="up" aria-label="Выше"><svg><use href="#i-up"/></svg></button>
           <button class="icon-btn" data-act="down" aria-label="Ниже"><svg><use href="#i-down"/></svg></button>
           <button class="btn" data-act="skip">${skipped ? 'Вернуть' : 'Пропустить'}</button>
-          ${skipped ? '' : '<button class="btn tonal" data-act="from">Начать отсюда</button>'}
+          ${skipped ? '' : startButtons(t, done)}
           ${t.status === 'ready' && !skipped ? '<button class="btn" data-act="review">Повторить</button>' : ''}
           ${t.points?.length ? `<button class="btn" data-act="points">${openPoints.has(id) ? 'Скрыть пункты' : 'Пункты'}</button>` : ''}
           ${t.status === 'error' ? '<button class="btn" data-act="retry">Повторить</button>' : ''}
@@ -449,13 +450,18 @@ $('planList').addEventListener('click', (e) => {
       gen.loop();
       break;
     case 'from':
+    case 'cont': {
+      const t = project.topics.find((x) => x.id === id);
+      const at = btn.dataset.act === 'cont' ? savedChunk(t) : 0;
       resetDictation();
       progress.topicId = id;
-      progress.chunk = 0;
+      progress.chunk = at;
+      if (progress.done) delete progress.done[id];
       persistProgress();
       switchTab('dictate');
       dict.start();
       break;
+    }
     case 'points':
       if (openPoints.has(id)) openPoints.delete(id); else openPoints.add(id);
       break;
@@ -482,6 +488,22 @@ document.querySelectorAll('input[name=planPriority]').forEach((r) => r.addEventL
   render();
   toast('Порядок пересчитан с учётом зависимостей');
 }));
+
+/** На каком куске остановились в теме (0 — не начинали или уже прошли). */
+function savedChunk(t) {
+  const n = t.chunks?.length || 0;
+  const at = progress?.topicId === t.id ? progress.chunk : progress?.topicPos?.[t.id];
+  return at > 0 && at < n ? at : 0;
+}
+
+function startButtons(t, done) {
+  const at = t.status === 'ready' ? savedChunk(t) : 0;
+  if (at) {
+    return `<button class="btn tonal" data-act="cont">Продолжить · кусок ${at + 1} из ${t.chunks.length}</button>` +
+      '<button class="btn" data-act="from">С начала</button>';
+  }
+  return `<button class="btn tonal" data-act="from">${done ? 'Пройти заново' : 'Начать отсюда'}</button>`;
+}
 
 const fmtScore = (x) => (Number.isInteger(x) ? String(x) : x.toFixed(1).replace('.', ','));
 function fmtDue(due) {
@@ -599,7 +621,13 @@ function renderDictation() {
   const { chunk, idx } = project ? displayedChunk() : { chunk: null, idx: -1 };
   const n = t?.chunks?.length || 0;
   const doneChunks = t && t.status === 'ready' ? Math.min(n, (st === 'topicEnd' ? n : progress.chunk)) : 0;
-  $('topicBar').style.width = n ? `${(doneChunks / n) * 100}%` : '0';
+  const seek = $('seek');
+  seek.disabled = !n || t?.status !== 'ready' || QUIZ.includes(st) || dict.mode === 'review';
+  if (!seeking) {
+    seek.max = Math.max(1, n);
+    seek.value = n ? Math.min(idx + 1, n) : 1;
+    seek.style.setProperty('--fill', n ? `${(doneChunks / n) * 100}%` : '0%');
+  }
   $('chunkNum').textContent = n ? `${Math.min(idx + 1, n)} / ${n}` : '';
   const kinds = { explain: 'Пояснение', example: 'Пример', content: '' };
   $('chunkKind').textContent = chunk ? kinds[chunk.k] || '' : '';
@@ -623,7 +651,9 @@ function renderDictation() {
   $('chunkBox').classList.toggle('hidden-text', !settings.showText && !!chunk && !QUIZ.includes(st) && st !== 'reviewing');
   $('toggleText').textContent = settings.showText ? 'Скрыть текст' : 'Показать текст';
 
-  $('dictState').textContent = STATE_TEXT[st] || st;
+  $('dictState').textContent = st === 'idle' && progress?.review?.ids?.length ? `Нажмите ▶ — продолжу повторение (${progress.review.i + 1} из ${progress.review.ids.length})`
+    : st === 'idle' && progress?.spoken > 0 && t && chunk ? 'Нажмите ▶ — продолжу с этого места'
+      : STATE_TEXT[st] || st;
   $('stateDot').className = 'dot s-' + st;
   $('dictMsg').textContent = dict.message || '';
   $('heard').textContent = dict.heard && st !== 'idle' ? `«${dict.heard}»` : '';
@@ -640,7 +670,7 @@ function renderDictation() {
   const qaOpen = pausedLike || ['thinking', 'answering', 'quiz', 'quizListen', 'quizGrade'].includes(st) || (st === 'finished' && progress?.qa?.length);
   $('quizBtns').classList.toggle('hidden', st !== 'quizListen');
   $('questionInput').placeholder = st === 'quizListen' ? 'Ваш ответ — голосом или текстом' : 'Спросите голосом или напишите';
-  $('stopReviewBtn').classList.toggle('hidden', dict.mode !== 'review');
+  $('stopReviewBtn').classList.toggle('hidden', dict.mode !== 'review' && !(st === 'idle' && progress?.review?.ids?.length));
   $('breakCard').classList.toggle('hidden', st !== 'break');
   $('qaPanel').classList.toggle('hidden', !qaOpen);
   $('tab-dictate').classList.toggle('qa-open', !!qaOpen);
@@ -673,13 +703,31 @@ function renderDictation() {
     if (st === 'finished') remain = 0;
     const frac = total ? 1 - remain / total : 0;
     $('overallBar').style.width = `${Math.max(0, Math.min(1, frac)) * 100}%`;
-    $('timeText').textContent = `${fmtClock(progress.elapsedMs || 0)} из ${fmtClock(project.budgetMin * 60000)}`;
+    $('timeText').textContent = `занимаетесь ${fmtDur((progress.elapsedMs || 0) / 1000)} из ${fmtDur(project.budgetMin * 60)}`;
     $('remainText').textContent = `${Math.round(frac * 100)}% · осталось ≈${fmtDur(remain)}`;
   } else {
     $('timeText').textContent = '';
     $('remainText').textContent = '';
   }
 }
+
+// перемотка: пока тянем — показываем, куда попадём; отпустили — переходим
+let seeking = false;
+$('seek').addEventListener('input', (e) => {
+  seeking = true;
+  const t = dict.seekTopic();
+  const i = +e.target.value - 1;
+  const c = t?.chunks?.[i];
+  e.target.style.setProperty('--fill', `${((i + 1) / (t?.chunks?.length || 1)) * 100}%`);
+  $('chunkNum').textContent = `${i + 1} / ${t?.chunks?.length || 0}`;
+  if (c) { $('chunkText').textContent = c.t; $('chunkBox').classList.add('preview'); }
+});
+$('seek').addEventListener('change', (e) => {
+  seeking = false;
+  $('chunkBox').classList.remove('preview');
+  dict.seek(+e.target.value - 1);
+  render();
+});
 
 // пауза между кусками — плавная полоса
 (function gapLoop() {
@@ -1081,15 +1129,17 @@ $('subjectDelete').addEventListener('click', () => { openSubjectSheet(false); de
 // ---------- Карточка «продолжить» ----------
 
 function renderResume() {
-  const show = !!project && !!progress && (progress.spoken > 0 || progress.topicId) && dict.state === 'idle';
+  const show = !!project && !!progress && (progress.spoken > 0 || progress.topicId || progress.review) && dict.state === 'idle';
   $('resumeCard').classList.toggle('hidden', !show);
   if (!show) return;
   const t = project.topics.find((x) => x.id === progress.topicId);
   const seq = activeSeq(project);
   const done = seq.filter((x) => progress.done?.[x.id]).length;
-  $('resumeText').textContent = t
-    ? `«${t.title}» · пройдено тем ${done} из ${seq.length}`
-    : `Пройдено тем ${done} из ${seq.length}`;
+  const rv = progress.review;
+  $('resumeText').textContent = rv?.ids?.length
+    ? `Повторение: тема ${Math.min(rv.i + 1, rv.ids.length)} из ${rv.ids.length}`
+    : t ? `«${t.title}», кусок ${progress.chunk + 1} из ${t.chunks?.length || '?'} · пройдено тем ${done} из ${seq.length}`
+      : `Пройдено тем ${done} из ${seq.length}`;
 }
 $('resumeCard').addEventListener('click', () => { switchTab('dictate'); dict.start(); });
 
@@ -1181,6 +1231,12 @@ async function init() {
   if (settings.voiceEngine === 'neural') downloadNeural();
   await loadOrMigrateSubjects();
   await openSubject(subjects.current || subjects.list[0].id);
+  // открываемся там, где остановились: на диктовке, если она начата
+  let last = 'load';
+  try { last = localStorage.getItem('kd.lastTab') || 'load'; } catch { /* ignore */ }
+  const started = progress && (progress.spoken > 0 || progress.topicId || progress.review);
+  if (project && (last === 'plan' || last === 'dictate')) switchTab(last);
+  else if (project && started) switchTab('dictate');
   renderInstall();
   if (!settings.apiKey && !onboardingDone()) wizard.open(0);
   // быстрое действие на иконке: «Продолжить диктовку»

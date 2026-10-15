@@ -112,6 +112,13 @@ export class Dictation {
   get project() { return this.h.getProject(); }
   get qa() { return (this.h.progress.qa ||= []); }
 
+  /** Сохраняет прогресс и место в текущей теме (чтобы вернуться к ней с того же куска). */
+  save() {
+    const p = this.pos;
+    if (p.topicId) (p.topicPos ||= {})[p.topicId] = p.chunk;
+    this.h.saveProgress();
+  }
+
   set(state, message = '') {
     this.state = state;
     this.message = message;
@@ -187,9 +194,45 @@ export class Dictation {
     }
     if (PAUSED.includes(this.state)) return this.resume();
     if (DICTATING.includes(this.state)) return;
+    if (this.state === 'idle' && this.pos.review?.ids?.length) return this.startReview(this.pos.review.ids, this.pos.review.i);
     this.mode = 'dictate';
+    this.resumeNote = this.state === 'idle';
     this.mic(false);
     this.run();
+  }
+
+  /** Тема, которая сейчас на экране (по ней и перематываем). */
+  seekTopic() {
+    if (this.state === 'topicEnd') return this.topicById(this.lastSpoken?.topicId) || this.currentTopic();
+    return this.topicById(this.resumePos?.topicId) || this.currentTopic();
+  }
+
+  /** Перемотка к куску i текущей темы. */
+  seek(i) {
+    const t = this.seekTopic();
+    if (!t || t.status !== 'ready' || !t.chunks.length) return;
+    i = Math.max(0, Math.min(t.chunks.length - 1, Math.round(i)));
+    const st = this.state;
+    const active = DICTATING.includes(st);
+    stopSpeaking();
+    this.token++;
+    this.gap = null;
+    this.resolveWaiter(null);
+    this.abortAnswer();
+    this.clearQuestion();
+    this.quiz = null;
+    this.mode = 'dictate';
+    this.review = null;
+    this.pos.topicId = t.id;
+    this.pos.chunk = i;
+    this.announced = t.id;
+    this.endedTopic = null;
+    this.resumePos = null;
+    this.save();
+    if (active) return this.run();
+    if (st === 'idle' || st === 'finished') return this.set('idle');
+    this.resumePos = { topicId: t.id, chunk: i };
+    this.set('paused');
   }
 
   async run() {
@@ -245,10 +288,20 @@ export class Dictation {
         await sleep(600);
         if (my !== this.token) return;
       }
+      // вернулись к занятию с середины темы — напоминаем, где мы
+      if (this.resumeNote && this.pos.chunk > 0) {
+        this.resumeNote = false;
+        this.set('speaking');
+        await this.say(`Продолжаем тему «${topic.title}».`);
+        if (my !== this.token) return;
+        await sleep(400);
+        if (my !== this.token) return;
+      }
+      this.resumeNote = false;
       const idx = this.pos.chunk;
       const chunk = topic.chunks[idx];
       this.set('speaking');
-      this.h.saveProgress();
+      this.save();
       prefetch(topic.chunks.slice(idx + 1, idx + 4).map((c) => c.t), { rate: this.settings.rate });
       let r = await this.say(chunk.t);
       if (my !== this.token) return;
@@ -268,7 +321,7 @@ export class Dictation {
       this.pos.spoken = (this.pos.spoken || 0) + 1;
       // кусок прошёл без «повтори» — пауза понемногу возвращается к обычной
       this.pos.pauseBoost = Math.max(1, (this.pos.pauseBoost || 1) * 0.97);
-      this.h.saveProgress();
+      this.save();
       if (!(await this.doGap(my, topic, chunk.t))) return;
     }
   }
@@ -300,6 +353,7 @@ export class Dictation {
 
   async endOfTopic(my, topic) {
     this.endedTopic = topic.id;
+    if (this.pos.topicPos) delete this.pos.topicPos[topic.id];
     this.pos.done = this.pos.done || {};
     this.pos.done[topic.id] = true;
     const nextId = this.nextTopicId(topic.id);
@@ -438,7 +492,7 @@ export class Dictation {
 
   // ---------- Быстрое повторение ----------
 
-  startReview(ids) {
+  startReview(ids, from = 0) {
     const topics = ids.map((id) => this.topicById(id)).filter(Boolean);
     if (!topics.length) return;
     stopSpeaking();
@@ -447,7 +501,9 @@ export class Dictation {
     this.resolveWaiter(null);
     this.resumePos = null;
     this.mode = 'review';
-    this.review = { ids: topics.map((t) => t.id), i: 0 };
+    this.review = { ids: topics.map((t) => t.id), i: Math.max(0, Math.min(from, topics.length - 1)), resumed: from > 0 };
+    this.pos.review = { ids: this.review.ids, i: this.review.i };
+    this.save();
     this.runReview();
   }
 
@@ -460,6 +516,10 @@ export class Dictation {
     if (rv.i === 0) {
       this.set('reviewing');
       await this.say(`Быстрое повторение: ${rv.ids.length === 1 ? 'одна тема' : `тем — ${rv.ids.length}`}.`);
+    } else if (rv.resumed) {
+      rv.resumed = false;
+      this.set('reviewing');
+      await this.say('Продолжаем повторение.');
     }
     while (my === this.token && rv.i < rv.ids.length) {
       const t = this.topicById(rv.ids[rv.i]);
@@ -473,10 +533,14 @@ export class Dictation {
         if (my !== this.token) return;
       }
       rv.i++;
+      this.pos.review = { ids: rv.ids, i: rv.i };
+      this.save();
     }
     if (my !== this.token) return;
     this.mode = 'dictate';
     this.review = null;
+    delete this.pos.review;
+    this.save();
     this.set('idle');
     await this.say('Повторение закончено.');
   }
@@ -486,6 +550,8 @@ export class Dictation {
     this.token++;
     this.mode = 'dictate';
     this.review = null;
+    delete this.pos.review;
+    this.save();
     this.set('idle');
   }
 
@@ -555,7 +621,13 @@ export class Dictation {
   next() {
     const st = this.state;
     if (st === 'quizListen') return this.resolveWaiter({ type: 'skip' });
-    if (st === 'reviewing') { stopSpeaking(); this.review.i++; return this.runReview(); }
+    if (st === 'reviewing') {
+      stopSpeaking();
+      this.review.i++;
+      this.pos.review = { ids: this.review.ids, i: this.review.i };
+      this.save();
+      return this.runReview();
+    }
     if (st === 'speaking') { stopSpeaking(); this.pos.chunk++; this.run(); }
     else if (st === 'gap' || st === 'waiting') { this.run(); }
     else if (st === 'idle') this.start();
