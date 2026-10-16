@@ -3,7 +3,7 @@
 
 import {
   speak, stopSpeaking, prefetch, isEcho, matchCommand, isYes, isNo, looksLikeQuestion, stripCue, norm, mergeText,
-  spellTarget, isDontKnow, Recognizer, srSupported, keepAwake,
+  spellTarget, isDontKnow, Recognizer, srSupported, keepAwake, hasBtHeadset, onBtChange, checkAudioDevices,
 } from './speech.js';
 import { stream, conn } from './ai.js';
 import { activeSeq, pauseFor } from './analyze.js';
@@ -19,6 +19,7 @@ const FALSE_STOP_MS = 6000;    // остановились «на вопрос»
 // После микрофона Android (особенно с Bluetooth-наушниками) не сразу выходит из «режима звонка»:
 // голос начинаем не раньше, чем через столько мс после выключения микрофона.
 const SETTLE_MS = 1500;
+const SETTLE_BT_MS = 3000;     // Bluetooth-наушники возвращаются из режима гарнитуры дольше
 
 export const STATE_TEXT = {
   idle: 'Готов к диктовке',
@@ -108,6 +109,12 @@ export class Dictation {
       onState: (on) => { this.micOn = on; this.h.emit(); },
       onFatal: (msg) => { this.micError = msg; this.h.toast(msg); this.h.emit(); },
     });
+    // подключили или отключили Bluetooth-наушники — сразу решаем, слушать ли микрофон без «СТОП»
+    onBtChange(() => {
+      if (!this.micForced && !this.micFree()) this.rec.stop();
+      else if (this.micFree() && !['idle', 'finished'].includes(this.state)) this.mic(false);
+      this.h.emit();
+    });
     setInterval(() => {
       if (!this.h.progress || this.state === 'idle' || this.state === 'finished') return;
       const p = this.h.progress;
@@ -190,15 +197,27 @@ export class Dictation {
 
   // ---------- Микрофон ----------
 
+  /** Слушать ли микрофон без «СТОП». С Bluetooth-наушниками — нет: иначе звук «как по телефону». */
+  micFree() {
+    const s = this.settings;
+    return !!s.voiceCommands && !(s.btStopOnly !== false && hasBtHeadset());
+  }
+
+  /** Слушать и пока звучит голос (настройка «Всегда»). */
+  listenDuring() { return !!this.settings.listenWhileSpeaking && this.micFree(); }
+
+  /** Микрофон работает только после «СТОП» из-за Bluetooth-наушников. */
+  get btMicOff() { return !!this.settings.voiceCommands && !this.micFree(); }
+
   mic(force) {
     if (!srSupported) return;
     if (force) this.micForced = true;
-    if (this.settings.voiceCommands || this.micForced) this.rec.start();
+    if (this.micFree() || this.micForced) this.rec.start();
   }
 
   micAfterResume() {
     this.micForced = false;
-    if (!this.settings.voiceCommands) this.rec.stop();
+    if (!this.micFree()) this.rec.stop();
   }
 
   /** Пока звучит голос, микрофон выключен (если не включено «Слушать, пока говорю»). after — через сколько включить снова. */
@@ -206,7 +225,7 @@ export class Dictation {
     if (on) {
       this.holdDepth++;
       clearTimeout(this.holdTimer);
-      if (!this.settings.listenWhileSpeaking) this.rec.hold(true);
+      if (!this.listenDuring()) this.rec.hold(true);
       return;
     }
     this.holdDepth = Math.max(0, this.holdDepth - 1);
@@ -223,6 +242,7 @@ export class Dictation {
   start() {
     if (!this.project) return;
     keepAwake(true);
+    checkAudioDevices(); // наушники могли подключить, пока приложение было свёрнуто
     if (this.state === 'finished') {
       this.pos.done = {};
       this.pos.topicId = null;
@@ -380,7 +400,7 @@ export class Dictation {
     this.set('gap');
     const end = Date.now() + ms;
     // микрофон выключаем чуть раньше конца паузы — к следующему куску звук уже обычный, без «режима звонка»
-    const early = !this.settings.listenWhileSpeaking && ms >= SETTLE_MS + 1000;
+    const early = !this.listenDuring() && ms >= SETTLE_MS + 1000;
     let held = false;
     while (Date.now() < end && my === this.token) {
       if (early && !held && end - Date.now() <= SETTLE_MS) { held = true; this.holdMic(true); }
@@ -397,8 +417,8 @@ export class Dictation {
     const tok = this.token;
     this.holdMic(true);
     try {
-      if (!s.listenWhileSpeaking) {
-        const wait = SETTLE_MS - this.rec.quietFor();
+      if (!this.listenDuring()) {
+        const wait = (hasBtHeadset() ? SETTLE_BT_MS : SETTLE_MS) - this.rec.quietFor();
         if (wait > 0) {
           await sleep(wait);
           if (tok !== this.token) return 'cancel';

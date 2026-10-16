@@ -139,9 +139,14 @@
     <!-- ===== ДИКТОВКА ===== -->
     <section id="tab-dictate" class="tab">
       <div id="srWarn" class="banner warn hidden"></div>
+      <div id="btBanner" class="banner hidden">
+        <svg class="ic"><use href="#i-headphones"/></svg>
+        <span>Bluetooth-наушники: чтобы голос звучал чисто, а не «как по телефону», микрофон включается только после «СТОП» или кнопки на наушниках.</span>
+        <button id="btBannerClose" class="icon-btn small" aria-label="Скрыть"><svg><use href="#i-close"/></svg></button>
+      </div>
       <div id="headphonesTip" class="banner hidden">
         <svg class="ic"><use href="#i-headphones"/></svg>
-        <span>В наушниках голосовые команды срабатывают надёжнее.</span>
+        <span>В проводных наушниках голосовые команды срабатывают надёжнее.</span>
         <button id="tipClose" class="icon-btn small" aria-label="Скрыть"><svg><use href="#i-close"/></svg></button>
       </div>
 
@@ -320,6 +325,7 @@
           <label><input type="radio" name="micMode" value="always"><span>Всегда</span></label>
         </div>
         <p class="hint" id="micHint"></p>
+        <label class="switch" id="btRow"><span>Bluetooth-наушники: микрофон только после «СТОП»<small id="btState"></small></span><input id="btStopOnly" type="checkbox"><i></i></label>
         <label class="switch" id="bargeInRow"><span>Прерывать при любой моей речи<small>только в наушниках</small></span><input id="bargeIn" type="checkbox"><i></i></label>
         <div class="card-title mt">Пауза после куска</div>
         <div class="seg">
@@ -463,20 +469,20 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/ai.js": "./js/ai.js?v=19",
-      "./js/analyze.js": "./js/analyze.js?v=19",
-      "./js/anthropic.js": "./js/anthropic.js?v=19",
-      "./js/app.js": "./js/app.js?v=19",
-      "./js/cloud.js": "./js/cloud.js?v=19",
-      "./js/dictation.js": "./js/dictation.js?v=19",
-      "./js/extract.js": "./js/extract.js?v=19",
-      "./js/gemini.js": "./js/gemini.js?v=19",
-      "./js/media.js": "./js/media.js?v=19",
-      "./js/neural.js": "./js/neural.js?v=19",
-      "./js/onboarding.js": "./js/onboarding.js?v=19",
-      "./js/openai.js": "./js/openai.js?v=19",
-      "./js/speech.js": "./js/speech.js?v=19",
-      "./js/storage.js": "./js/storage.js?v=19"
+      "./js/ai.js": "./js/ai.js?v=20",
+      "./js/analyze.js": "./js/analyze.js?v=20",
+      "./js/anthropic.js": "./js/anthropic.js?v=20",
+      "./js/app.js": "./js/app.js?v=20",
+      "./js/cloud.js": "./js/cloud.js?v=20",
+      "./js/dictation.js": "./js/dictation.js?v=20",
+      "./js/extract.js": "./js/extract.js?v=20",
+      "./js/gemini.js": "./js/gemini.js?v=20",
+      "./js/media.js": "./js/media.js?v=20",
+      "./js/neural.js": "./js/neural.js?v=20",
+      "./js/onboarding.js": "./js/onboarding.js?v=20",
+      "./js/openai.js": "./js/openai.js?v=20",
+      "./js/speech.js": "./js/speech.js?v=20",
+      "./js/storage.js": "./js/storage.js?v=20"
     }
   }
   </script>
@@ -510,6 +516,6 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=19"></script>
+  <script type="module" src="js/app.js?v=20"></script>
 </body>
 </html>

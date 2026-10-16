@@ -1,6 +1,6 @@
 // Мастер первого запуска: ключ OpenRouter → автоматический подбор бесплатной модели → проверка звука и микрофона.
 
-import { speak, stopSpeaking, loadVoices, getVoices, ttsSupported, srSupported } from './speech.js';
+import { speak, stopSpeaking, loadVoices, getVoices, ttsSupported, srSupported, checkAudioDevices } from './speech.js';
 
 const OR_BASE = 'https://openrouter.ai/api/v1';
 const DONE_KEY = 'kd.onboarded';
@@ -142,6 +142,7 @@ export function initOnboarding(hooks) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((t) => t.stop());
+      checkAudioDevices(); // после разрешения видны названия устройств — узнаём о Bluetooth-наушниках
       st.textContent = '✓ Микрофон разрешён.';
     } catch {
       st.textContent = 'Доступ не дан. Нажмите на значок замка в адресной строке → Разрешения → Микрофон → Разрешить.';

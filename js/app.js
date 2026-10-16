@@ -9,7 +9,9 @@ import {
   analyze, generateTopicChunks, generateExtras, orderTopics, activeSeq, estimateTopicSec, allocateBudget, fitPause,
 } from './analyze.js';
 import { listModels, conn, PROVIDERS, providerName } from './ai.js';
-import { loadVoices, getVoices, speak, stopSpeaking, setEngine, setStyle, setCloud, srSupported, ttsSupported } from './speech.js';
+import {
+  loadVoices, getVoices, speak, stopSpeaking, setEngine, setStyle, setCloud, srSupported, ttsSupported, hasBtHeadset, onBtChange,
+} from './speech.js';
 import { CLOUD_PROVIDERS, audioFor, isCached, clearCache, cacheSizeMB, listElevenVoices, speedPlan } from './cloud.js';
 import { prepare as prepareNeural, isDownloaded, NEURAL_VOICES, VOICE_STYLES, audioContext } from './neural.js';
 import { enableMedia, disableMedia, updateMedia, mediaSupported } from './media.js';
@@ -888,6 +890,10 @@ function renderSettings() {
   $('micHint').textContent = micHint(mic);
   $('bargeIn').checked = settings.bargeIn;
   $('bargeInRow').classList.toggle('hidden', mic !== 'always');
+  $('btRow').classList.toggle('hidden', mic === 'stop');
+  $('btStopOnly').checked = settings.btStopOnly !== false;
+  $('btState').textContent = (hasBtHeadset() ? 'Сейчас подключены. ' : 'Сейчас не подключены. ') +
+    'Bluetooth-наушники не умеют одновременно хороший звук и микрофон: пока он работает, звук «как по телефону». Останавливайте кнопкой «СТОП» или кнопкой на наушниках.';
   $('coverageCheck').checked = settings.coverageCheck;
   document.querySelectorAll('input[name=mode]').forEach((r) => { r.checked = r.value === settings.mode; });
   $('voice').value = settings.voiceURI;
@@ -900,7 +906,7 @@ function micMode() {
 function micHint(mode) {
   return {
     stop: 'Звук всегда обычный. Микрофон включается только после кнопки «СТОП» или кнопки на наушниках: задайте вопрос или скажите «продолжай». Дальше / повтор — кнопками на экране или на наушниках.',
-    gaps: 'Можно говорить «записал», «повтори», задавать вопросы — в паузах между кусками; пока звучит голос, микрофон выключен. Если с Bluetooth-наушниками голос всё равно звучит «как по телефону», выберите «После «СТОП»».',
+    gaps: 'Можно говорить «записал», «повтори», задавать вопросы — в паузах между кусками; пока звучит голос, микрофон выключен.',
     always: 'Можно перебить голосом посреди фразы. На Android голос из-за этого обрывается и звучит «как по телефону».',
   }[mode];
 }
@@ -1221,6 +1227,16 @@ function enableHeadset() {
   updateMedia(dictTitle(), ['speaking', 'gap', 'waiting', 'reviewing'].includes(dict.state));
 }
 bind('bargeIn', 'bargeIn');
+$('btStopOnly').addEventListener('change', (e) => {
+  settings.btStopOnly = e.target.checked;
+  saveSettings(settings);
+  if (!dict.micForced && !dict.micFree()) dict.rec.stop();
+  else if (dict.micFree() && !['idle', 'finished'].includes(dict.state)) dict.mic(false);
+  renderSettings();
+  render();
+});
+// подключили Bluetooth-наушники — обновляем подсказки
+onBtChange(() => { renderSettings(); render(); });
 bind('coverageCheck', 'coverageCheck');
 bind('voice', 'voiceURI');
 document.querySelectorAll('input[name=micMode]').forEach((r) => r.addEventListener('change', () => {
@@ -1432,6 +1448,8 @@ $('resumeCard').addEventListener('click', () => { switchTab('dictate'); dict.sta
 
 // ---------- Общий рендер ----------
 
+let btBannerHidden = false; // подсказку про Bluetooth-наушники закрыли до перезапуска
+
 function render() {
   if (activeTab === 'plan') renderPlan();
   if (activeTab === 'dictate') renderDictation();
@@ -1442,8 +1460,11 @@ function render() {
   const showStop = !!project && (activeTab === 'dictate' || active);
   $('stopBar').classList.toggle('hidden', !showStop);
   document.body.classList.toggle('has-stop', showStop);
-  $('headphonesTip').classList.toggle('hidden', tipHidden() || !srSupported || !project);
+  const bt = dict.btMicOff && !!project && !btBannerHidden;
+  $('btBanner').classList.toggle('hidden', !bt);
+  $('headphonesTip').classList.toggle('hidden', bt || tipHidden() || !srSupported || !project);
 }
+$('btBannerClose').addEventListener('click', () => { btBannerHidden = true; render(); });
 
 function renderWarnings() {
   const warn = [];

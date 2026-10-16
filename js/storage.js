@@ -19,6 +19,7 @@ export const DEFAULT_SETTINGS = {
   // голос обрывается и глохнет, поэтому там по умолчанию слушаем только в паузах
   listenWhileSpeaking: typeof navigator === 'undefined' || !/Android/i.test(navigator.userAgent),
   bargeIn: false,       // прерывать при любой речи (только с наушниками)
+  btStopOnly: true,     // с Bluetooth-наушниками микрофон только после «СТОП» — иначе звук «как по телефону»
   scalePause: true,     // пауза зависит от сложности темы и длины куска
   coverageCheck: true,
   showText: true,

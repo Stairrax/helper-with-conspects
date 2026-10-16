@@ -546,6 +546,31 @@ export class Recognizer {
   }
 }
 
+// ---------- Bluetooth-наушники ----------
+// Обычные Bluetooth-наушники не умеют одновременно хороший звук и микрофон: как только телефон включает
+// микрофон, они переходят в режим гарнитуры — голос звучит «как по телефону». Узнаём о них по списку
+// устройств (названия видны, когда микрофон разрешён).
+
+let btHeadset = false;
+const btListeners = new Set();
+export const hasBtHeadset = () => btHeadset;
+export function onBtChange(fn) { btListeners.add(fn); }
+
+export async function checkAudioDevices() {
+  try {
+    const list = await navigator.mediaDevices.enumerateDevices();
+    const bt = list.some((d) => /bluetooth|hands-?free/i.test(d.label));
+    if (bt !== btHeadset) {
+      btHeadset = bt;
+      btListeners.forEach((fn) => { try { fn(bt); } catch { /* ignore */ } });
+    }
+  } catch { /* список устройств недоступен */ }
+}
+if (navigator.mediaDevices?.enumerateDevices) {
+  checkAudioDevices();
+  navigator.mediaDevices.addEventListener?.('devicechange', checkAudioDevices);
+}
+
 // ---------- Wake Lock ----------
 
 let wakeLock = null;
