@@ -427,12 +427,21 @@ export class Recognizer {
     this.backoff = 250;
     this.active = false;
     this.held = false;
+    this.offAt = 0;      // когда микрофон в последний раз выключился
   }
 
   start() {
     if (!SR || this.wanted) return;
     this.wanted = true;
-    this._start();
+    // запуск — следующим шагом: если сразу за ним заговорит голос, микрофон даже не включится
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this._start(), 0);
+  }
+
+  /** Сколько мс микрофон уже выключен (0 — работает сейчас). */
+  quietFor() {
+    if (this.active || this.rec) return 0;
+    return this.offAt ? Date.now() - this.offAt : Infinity;
   }
 
   /**
@@ -447,6 +456,7 @@ export class Recognizer {
     if (on) {
       const rec = this.rec;
       this.rec = null;
+      if (rec) this.offAt = Date.now();
       try { rec?.abort(); } catch { /* ignore */ }
       if (this.active) this._setActive(false);
     } else if (this.wanted && !this.rec) {
@@ -458,12 +468,17 @@ export class Recognizer {
   stop() {
     this.wanted = false;
     clearTimeout(this.timer);
+    if (this.rec) this.offAt = Date.now();
     try { this.rec?.abort(); } catch { /* ignore */ }
     this.rec = null;
     this._setActive(false);
   }
 
-  _setActive(v) { this.active = v; this.onState(v); }
+  _setActive(v) {
+    if (this.active && !v) this.offAt = Date.now();
+    this.active = v;
+    this.onState(v);
+  }
 
   _start() {
     if (!this.wanted || this.held || this.rec) return;

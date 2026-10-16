@@ -16,6 +16,9 @@ const DAY = 24 * 3600 * 1000;
 const BREAK_MS = 5 * 60 * 1000;
 const CMD_REPEAT_MS = 1500;    // одна и та же команда голосом чаще не выполняется (распознавание присылает её дважды)
 const FALSE_STOP_MS = 6000;    // остановились «на вопрос», а вопроса так и не было — продолжаем сами
+// После микрофона Android (особенно с Bluetooth-наушниками) не сразу выходит из «режима звонка»:
+// голос начинаем не раньше, чем через столько мс после выключения микрофона.
+const SETTLE_MS = 1500;
 
 export const STATE_TEXT = {
   idle: 'Готов к диктовке',
@@ -209,6 +212,8 @@ export class Dictation {
     this.holdDepth = Math.max(0, this.holdDepth - 1);
     if (this.holdDepth) return;
     clearTimeout(this.holdTimer);
+    // ждём ответа (после «СТОП», «Продолжаем?») — слушаем сразу
+    if (PAUSED.includes(this.state) || this.state === 'quizListen') after = 0;
     // между фразами подряд микрофон не дёргаем — включаем, только если голос действительно замолчал
     this.holdTimer = setTimeout(() => { if (!this.holdDepth) this.rec.hold(false); }, after);
   }
@@ -374,7 +379,14 @@ export class Dictation {
     this.gap = { start: Date.now(), ms };
     this.set('gap');
     const end = Date.now() + ms;
-    while (Date.now() < end && my === this.token) await sleep(100);
+    // микрофон выключаем чуть раньше конца паузы — к следующему куску звук уже обычный, без «режима звонка»
+    const early = !this.settings.listenWhileSpeaking && ms >= SETTLE_MS + 1000;
+    let held = false;
+    while (Date.now() < end && my === this.token) {
+      if (early && !held && end - Date.now() <= SETTLE_MS) { held = true; this.holdMic(true); }
+      await sleep(100);
+    }
+    if (held) this.holdMic(false);
     this.gap = null;
     return my === this.token;
   }
@@ -382,8 +394,16 @@ export class Dictation {
   /** prompt: короткая реплика, на которую ждём ответ, — окно защиты от эха после неё минимальное. */
   async say(text, prompt = false, rateK = 1) {
     const s = this.settings;
+    const tok = this.token;
     this.holdMic(true);
     try {
+      if (!s.listenWhileSpeaking) {
+        const wait = SETTLE_MS - this.rec.quietFor();
+        if (wait > 0) {
+          await sleep(wait);
+          if (tok !== this.token) return 'cancel';
+        }
+      }
       return await speak(text, { rate: Math.min(2, s.rate * rateK), voiceURI: s.voiceURI, echoTail: prompt ? 250 : 900 });
     } finally {
       this.holdMic(false, prompt ? 0 : 350); // после «Продолжаем?» ответ ждём сразу

@@ -114,6 +114,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 36px; marg
 /* переключатели Android */
 .switch { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 56px; border-top: 1px solid var(--line); }
 .seg + .switch { margin-top: 12px; }
+.seg + .hint { margin-top: 8px; }
 .switch span { display: flex; flex-direction: column; }
 .switch small { color: var(--muted); font-size: 13px; }
 .switch input { position: absolute; opacity: 0; pointer-events: none; }

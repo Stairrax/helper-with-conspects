@@ -878,14 +878,26 @@ function renderSettings() {
     : settings.voiceEngine === 'neural'
       ? 'Стилизация под ИИ-ассистента из кино: тон ниже, «цифровой» оттенок и лёгкое эхо. Это не голос актёра — копировать чужой голос без разрешения нельзя. Лучше всего звучит с мужскими голосами.'
       : 'С голосом Android можно только понизить тон. Полный эффект — с нейросетевым голосом.';
-  $('voiceCommands').checked = settings.voiceCommands;
+  const mic = micMode();
+  document.querySelectorAll('input[name=micMode]').forEach((r) => { r.checked = r.value === mic; });
+  $('micHint').textContent = micHint(mic);
   $('bargeIn').checked = settings.bargeIn;
-  $('listenWhileSpeaking').checked = settings.listenWhileSpeaking;
-  $('listenWhileSpeakingRow').classList.toggle('hidden', !settings.voiceCommands);
-  $('bargeInRow').classList.toggle('hidden', !settings.voiceCommands || !settings.listenWhileSpeaking);
+  $('bargeInRow').classList.toggle('hidden', mic !== 'always');
   $('coverageCheck').checked = settings.coverageCheck;
   document.querySelectorAll('input[name=mode]').forEach((r) => { r.checked = r.value === settings.mode; });
   $('voice').value = settings.voiceURI;
+}
+
+// Когда слушает микрофон. На Android включённый микрофон переводит звук в «режим звонка».
+function micMode() {
+  return !settings.voiceCommands ? 'stop' : settings.listenWhileSpeaking ? 'always' : 'gaps';
+}
+function micHint(mode) {
+  return {
+    stop: 'Звук всегда обычный. Микрофон включается только после кнопки «СТОП» или кнопки на наушниках: задайте вопрос или скажите «продолжай». Дальше / повтор — кнопками на экране или на наушниках.',
+    gaps: 'Можно говорить «записал», «повтори», задавать вопросы — в паузах между кусками; пока звучит голос, микрофон выключен. Если с Bluetooth-наушниками голос всё равно звучит «как по телефону», выберите «После «СТОП»».',
+    always: 'Можно перебить голосом посреди фразы. На Android голос из-за этого обрывается и звучит «как по телефону».',
+  }[mode];
 }
 
 function bind(id, key, parse = (v) => v, ev = 'change') {
@@ -1199,22 +1211,18 @@ function enableHeadset() {
   updateMedia(dictTitle(), ['speaking', 'gap', 'waiting', 'reviewing'].includes(dict.state));
 }
 bind('bargeIn', 'bargeIn');
-$('listenWhileSpeaking').addEventListener('change', (e) => {
-  settings.listenWhileSpeaking = e.target.checked;
+bind('coverageCheck', 'coverageCheck');
+bind('voice', 'voiceURI');
+document.querySelectorAll('input[name=micMode]').forEach((r) => r.addEventListener('change', () => {
+  settings.voiceCommands = r.value !== 'stop';
+  settings.listenWhileSpeaking = r.value === 'always';
   saveSettings(settings);
+  if (!settings.voiceCommands) { if (!dict.micForced) dict.rec.stop(); } else if (dict.state !== 'idle' && dict.state !== 'finished') dict.mic(false);
   // если сейчас звучит голос — сразу включаем или выключаем микрофон
   if (dict.holdDepth) dict.rec.hold(!settings.listenWhileSpeaking);
   renderSettings();
-});
-bind('coverageCheck', 'coverageCheck');
-bind('voice', 'voiceURI');
-$('voiceCommands').addEventListener('change', (e) => {
-  settings.voiceCommands = e.target.checked;
-  saveSettings(settings);
-  if (!settings.voiceCommands) { if (!dict.micForced) dict.rec.stop(); } else if (dict.state !== 'idle' && dict.state !== 'finished') dict.mic(false);
-  renderSettings();
   render();
-});
+}));
 document.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener('change', () => {
   settings.mode = r.value;
   saveSettings(settings);

@@ -313,9 +313,14 @@
           <label><input type="radio" name="mode" value="all"><span>Всё подряд</span></label>
           <label><input type="radio" name="mode" value="topic"><span>С вопросами после каждой темы</span></label>
         </div>
-        <label class="switch"><span>Голосовые команды<small>«записал», «повтори», «стоп», вопросы — в паузах между кусками</small></span><input id="voiceCommands" type="checkbox"><i></i></label>
-        <label class="switch" id="listenWhileSpeakingRow"><span>Слушать, пока говорю<small>«стоп» голосом посреди фразы. На Android голос из-за этого обрывается и глохнет — лучше выключить</small></span><input id="listenWhileSpeaking" type="checkbox"><i></i></label>
-        <label class="switch" id="bargeInRow"><span>Прерывать при любой моей речи<small>только в наушниках и при «Слушать, пока говорю»</small></span><input id="bargeIn" type="checkbox"><i></i></label>
+        <div class="card-title mt">Микрофон</div>
+        <div class="seg">
+          <label><input type="radio" name="micMode" value="stop"><span>После «СТОП»</span></label>
+          <label><input type="radio" name="micMode" value="gaps"><span>В паузах</span></label>
+          <label><input type="radio" name="micMode" value="always"><span>Всегда</span></label>
+        </div>
+        <p class="hint" id="micHint"></p>
+        <label class="switch" id="bargeInRow"><span>Прерывать при любой моей речи<small>только в наушниках</small></span><input id="bargeIn" type="checkbox"><i></i></label>
         <div class="card-title mt">Пауза после куска</div>
         <div class="seg">
           <label><input type="radio" name="pauseMode" value="time"><span>По времени</span></label>
