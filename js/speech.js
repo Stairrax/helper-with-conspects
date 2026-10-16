@@ -117,7 +117,7 @@ function speakCloud(text, opts) {
       engineFailed(err, text, opts, resolve);
     };
     // сервис молчит слишком долго (плохая связь) — эту фразу говорим голосом Android, а не стоим в тишине
-    slow = setTimeout(() => { if (!audio) fail(new Error('облачный голос слишком долго не отвечает')); }, 15000);
+    slow = setTimeout(() => { if (!audio) fail(new Error('облачный голос слишком долго не отвечает')); }, 8000);
     const plan = cloud.speedPlan(cloudCfg.provider, rate);
     cloud.audioFor({ ...cloudCfg, speed: plan.speed }, text).then((blob) => {
       if (done || myEpoch !== epoch) return fin('cancel');

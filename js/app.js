@@ -1128,16 +1128,21 @@ $('address').addEventListener('change', (e) => { settings.address = e.target.val
 
 $('neuralVoice').innerHTML = Object.entries(NEURAL_VOICES).map(([id, name]) => `<option value="${id}">${esc(name)}</option>`).join('');
 let neuralFailNotified = false;
+let cloudRetry = null;
 
 function applyEngine() {
   setStyle(settings.voiceStyle);
   if (settings.voiceEngine === 'cloud') {
     setCloud(cloudCfg());
+    clearTimeout(cloudRetry);
     setEngine('cloud', null, (err) => {
       setEngine('system');
       const msg = err?.message || 'неизвестная ошибка';
       $('cloudStatus').textContent = '✗ ' + msg;
-      toast('Облачный голос не сработал, говорю голосом Android. Причина: ' + msg, 9000);
+      if (err?.fatal) { toast('Облачный голос не сработал, говорю голосом Android. Причина: ' + msg, 9000); return; }
+      // временный сбой (связь, сервис долго не отвечает) — настройки не меняем и через минуту снова пробуем облачный голос
+      toast('Облачный голос не отвечает — пока говорю голосом Android, через минуту попробую снова. ' + msg, 7000);
+      cloudRetry = setTimeout(() => { if (settings.voiceEngine === 'cloud') applyEngine(); }, 60000);
     });
     return;
   }
@@ -1456,6 +1461,8 @@ $('obInstall').addEventListener('click', installApp);
 // ---------- Старт ----------
 
 async function init() {
+  // просим браузер не удалять данные приложения (настройки, конспекты, озвучку), когда на телефоне мало места
+  navigator.storage?.persist?.().catch(() => {});
   renderSettings();
   renderWarnings();
   $('appInfo').textContent = 'Данные хранятся только на этом устройстве. Позиция диктовки сохраняется автоматически.';

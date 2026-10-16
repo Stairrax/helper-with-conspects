@@ -271,7 +271,7 @@ export function audioFor(cfg, text) {
           return blob;
         } catch (e) {
           lastErr = e;
-          if (e.fatal || e.name === 'AbortError') break;
+          if (e.fatal || e.name === 'AbortError' || attempt === 2) break;
           await sleep(e.status === 429 ? 8000 * (attempt + 1) : 1500 * (attempt + 1));
         }
       }
