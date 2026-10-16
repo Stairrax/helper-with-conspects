@@ -116,6 +116,46 @@ export async function idbSet(key, value) {
   }
 }
 
+/** Все записи IndexedDB (для резервной копии). */
+async function idbEntries() {
+  try {
+    const d = await db();
+    return await new Promise((resolve, reject) => {
+      const out = {};
+      const t = d.transaction('kv', 'readonly');
+      const req = t.objectStore('kv').openCursor();
+      req.onsuccess = () => { const c = req.result; if (c) { out[c.key] = c.value; c.continue(); } };
+      t.oncomplete = () => resolve(out);
+      t.onerror = () => reject(t.error);
+    });
+  } catch { return {}; }
+}
+
+// ---------- Резервная копия ----------
+
+const BACKUP_APP = 'konspekt-diktor';
+
+/** Все данные одним объектом: настройки и ключи, предметы, конспекты, прогресс. */
+export async function makeBackup() {
+  const ls = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k?.startsWith('kd.') && k !== 'kd.backupAt') ls[k] = localStorage.getItem(k);
+  }
+  return { app: BACKUP_APP, version: 1, at: Date.now(), localStorage: ls, idb: await idbEntries() };
+}
+
+/** Заменяет все данные приложения содержимым копии. */
+export async function restoreBackup(data) {
+  if (data?.app !== BACKUP_APP || !data.localStorage || typeof data.localStorage !== 'object') {
+    throw new Error('Это не резервная копия Диктора конспектов');
+  }
+  try { await tx('readwrite', (s) => s.clear()); } catch { /* ignore */ }
+  for (const k of Object.keys(localStorage)) if (k.startsWith('kd.') && k !== 'kd.backupAt') localStorage.removeItem(k);
+  for (const [k, v] of Object.entries(data.localStorage)) localStorage.setItem(k, String(v));
+  for (const [k, v] of Object.entries(data.idb || {})) await idbSet(k, v);
+}
+
 export async function idbDel(key) {
   try { await tx('readwrite', (s) => s.delete(key)); } catch { /* ignore */ }
   try { localStorage.removeItem('kd.idb.' + key); } catch { /* ignore */ }

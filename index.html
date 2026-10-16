@@ -352,7 +352,13 @@
       <div class="card">
         <div class="card-title">Данные</div>
         <p class="hint" id="appInfo"></p>
+        <p class="hint">Резервная копия — один файл со всеми настройками, ключами и конспектами. Сохраните её, например, в Google Диск или Telegram «Избранное»: если данные пропадут, всё вернётся одним касанием. В файле ваши ключи API — никому его не отправляйте. <span id="backupInfo"></span></p>
         <div class="row">
+          <button id="backupBtn" class="btn tonal">Сохранить копию</button>
+          <button id="restoreBtn" class="btn outline">Восстановить из копии</button>
+          <input id="restoreInput" type="file" accept=".json,application/json" hidden>
+        </div>
+        <div class="row mt">
           <button id="resetProgress" class="btn outline">Сбросить прогресс</button>
           <button id="deleteProject" class="btn outline danger">Удалить предмет</button>
         </div>
@@ -415,6 +421,7 @@
       </ul>
       <button id="obInstall" class="btn tonal wide hidden">Установить как приложение</button>
       <button id="obStart" class="btn filled wide">Настроить</button>
+      <button id="obRestore" class="btn text wide">Восстановить из резервной копии</button>
     </section>
 
     <section class="ob-step hidden">
@@ -456,20 +463,20 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/ai.js": "./js/ai.js?v=18",
-      "./js/analyze.js": "./js/analyze.js?v=18",
-      "./js/anthropic.js": "./js/anthropic.js?v=18",
-      "./js/app.js": "./js/app.js?v=18",
-      "./js/cloud.js": "./js/cloud.js?v=18",
-      "./js/dictation.js": "./js/dictation.js?v=18",
-      "./js/extract.js": "./js/extract.js?v=18",
-      "./js/gemini.js": "./js/gemini.js?v=18",
-      "./js/media.js": "./js/media.js?v=18",
-      "./js/neural.js": "./js/neural.js?v=18",
-      "./js/onboarding.js": "./js/onboarding.js?v=18",
-      "./js/openai.js": "./js/openai.js?v=18",
-      "./js/speech.js": "./js/speech.js?v=18",
-      "./js/storage.js": "./js/storage.js?v=18"
+      "./js/ai.js": "./js/ai.js?v=19",
+      "./js/analyze.js": "./js/analyze.js?v=19",
+      "./js/anthropic.js": "./js/anthropic.js?v=19",
+      "./js/app.js": "./js/app.js?v=19",
+      "./js/cloud.js": "./js/cloud.js?v=19",
+      "./js/dictation.js": "./js/dictation.js?v=19",
+      "./js/extract.js": "./js/extract.js?v=19",
+      "./js/gemini.js": "./js/gemini.js?v=19",
+      "./js/media.js": "./js/media.js?v=19",
+      "./js/neural.js": "./js/neural.js?v=19",
+      "./js/onboarding.js": "./js/onboarding.js?v=19",
+      "./js/openai.js": "./js/openai.js?v=19",
+      "./js/speech.js": "./js/speech.js?v=19",
+      "./js/storage.js": "./js/storage.js?v=19"
     }
   }
   </script>
@@ -503,6 +510,6 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=18"></script>
+  <script type="module" src="js/app.js?v=19"></script>
 </body>
 </html>

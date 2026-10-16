@@ -2,6 +2,7 @@
 
 import {
   loadSettings, saveSettings, loadProgress, saveProgress, clearProgress, idbGet, idbSet, idbDel, loadSubjects, saveSubjects,
+  makeBackup, restoreBackup,
 } from './storage.js';
 import { fileToSource } from './extract.js';
 import {
@@ -565,22 +566,26 @@ function buildExport() {
   return { name: `${subj.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'конспект'}.md`, text: lines.join('\n') };
 }
 
-$('exportBtn').addEventListener('click', async () => {
-  if (!project) return;
-  const { name, text } = buildExport();
-  const file = new File([text], name, { type: 'text/markdown' });
-  // на Android — системное меню «Поделиться» (Telegram, Google Диск, почта…), иначе — скачивание
+/** На Android — системное меню «Поделиться» (Telegram, Google Диск, почта…), иначе — скачивание. false — если отменили. */
+async function shareOrDownload(file) {
   if (navigator.canShare?.({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: name }); return; } catch (e) { if (e.name === 'AbortError') return; }
+    try { await navigator.share({ files: [file], title: file.name }); return true; } catch (e) { if (e.name === 'AbortError') return false; }
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(file);
-  a.download = translit(name); // браузеры иногда отбрасывают кириллицу в имени скачиваемого файла
+  a.download = translit(file.name); // браузеры иногда отбрасывают кириллицу в имени скачиваемого файла
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   toast('Файл сохранён в «Загрузки»');
+  return true;
+}
+
+$('exportBtn').addEventListener('click', async () => {
+  if (!project) return;
+  const { name, text } = buildExport();
+  await shareOrDownload(new File([text], name, { type: 'text/markdown' }));
 });
 
 $('fitPauseBtn').addEventListener('click', () => {
@@ -1271,6 +1276,48 @@ $('resetProgress').addEventListener('click', () => {
 });
 $('deleteProject').addEventListener('click', () => deleteSubject());
 
+// ---------- Резервная копия ----------
+
+function renderBackupInfo() {
+  let at = 0;
+  try { at = +localStorage.getItem('kd.backupAt') || 0; } catch { /* ignore */ }
+  $('backupInfo').textContent = at ? `Последняя копия: ${new Date(at).toLocaleDateString('ru-RU')}.` : 'Копию ещё не сохраняли.';
+}
+
+$('backupBtn').addEventListener('click', async () => {
+  // сначала записываем всё несохранённое
+  persistProgress();
+  if (project) await idbSet('project:' + cur(), project);
+  await saveSources();
+  const data = await makeBackup();
+  const day = new Date().toISOString().slice(0, 10);
+  const file = new File([JSON.stringify(data)], `diktor-backup-${day}.json`, { type: 'application/json' });
+  if (await shareOrDownload(file)) {
+    try { localStorage.setItem('kd.backupAt', String(Date.now())); } catch { /* ignore */ }
+    renderBackupInfo();
+  }
+});
+
+$('restoreBtn').addEventListener('click', () => $('restoreInput').click());
+$('obRestore').addEventListener('click', () => $('restoreInput').click());
+$('restoreInput').addEventListener('change', async (e) => {
+  const f = e.target.files?.[0];
+  e.target.value = '';
+  if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    const when = data?.at ? new Date(data.at).toLocaleString('ru-RU') : 'неизвестно когда';
+    if (!confirm(`Заменить все данные приложения копией от ${when}? Текущие настройки и конспекты будут заменены.`)) return;
+    resetDictation();
+    dict.rec.stop();
+    await restoreBackup(data);
+    toast('Данные восстановлены');
+    setTimeout(() => location.reload(), 600);
+  } catch (err) {
+    toast('Не получилось восстановить: ' + (err.message || err), 6000);
+  }
+});
+
 // ---------- Предметы ----------
 
 function renderSubject() {
@@ -1464,6 +1511,7 @@ async function init() {
   // просим браузер не удалять данные приложения (настройки, конспекты, озвучку), когда на телефоне мало места
   navigator.storage?.persist?.().catch(() => {});
   renderSettings();
+  renderBackupInfo();
   renderWarnings();
   $('appInfo').textContent = 'Данные хранятся только на этом устройстве. Позиция диктовки сохраняется автоматически.';
   loadVoices().then(renderVoices);
