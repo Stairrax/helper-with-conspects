@@ -1,7 +1,8 @@
 // Service worker: оболочка приложения работает офлайн, библиотеки с CDN кэшируются при первом использовании.
 // Запросы к API нейросетей никогда не кэшируются.
 
-const VERSION = 'kd-v17';
+// При выпуске новой версии поднимайте VERSION и ?v= в index.html (importmap и app.js) — одно и то же число.
+const VERSION = 'kd-v18';
 const SHELL = [
   './',
   'index.html',
@@ -31,7 +32,8 @@ const SHELL = [
 const CDN = /^https:\/\/(cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|unpkg\.com)\//;
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache: 'reload' — мимо кэша браузера, иначе в новую версию могут попасть старые файлы
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -61,10 +63,14 @@ self.addEventListener('fetch', (e) => {
   if (url.origin !== self.location.origin) return;
 
   // Свои файлы: сначала сеть (чтобы обновления приходили сразу), при офлайне — кэш.
+  // cache: 'no-cache' — всегда сверяемся с сервером: файлы разных версий не перемешаются.
+  const fresh = req.mode === 'navigate' ? fetch(req.url, { cache: 'no-cache' }) : fetch(req, { cache: 'no-cache' });
   e.respondWith(
-    fetch(req)
+    fresh
       .then((res) => {
         if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }
+        // на переход по ссылке нельзя отвечать ответом после редиректа — отдаём его как обычный
+        if (req.mode === 'navigate' && res.redirected) return new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers });
         return res;
       })
       .catch(async () => (await caches.match(req, { ignoreSearch: true })) ||

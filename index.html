@@ -452,6 +452,57 @@
 
   <div id="toast" class="toast"></div>
 
-  <script type="module" src="js/app.js"></script>
+  <!-- Все файлы приложения одной версии загружаются вместе (?v= совпадает с VERSION в sw.js — поднимайте оба при выпуске). -->
+  <script type="importmap">
+  {
+    "imports": {
+      "./js/ai.js": "./js/ai.js?v=18",
+      "./js/analyze.js": "./js/analyze.js?v=18",
+      "./js/anthropic.js": "./js/anthropic.js?v=18",
+      "./js/app.js": "./js/app.js?v=18",
+      "./js/cloud.js": "./js/cloud.js?v=18",
+      "./js/dictation.js": "./js/dictation.js?v=18",
+      "./js/extract.js": "./js/extract.js?v=18",
+      "./js/gemini.js": "./js/gemini.js?v=18",
+      "./js/media.js": "./js/media.js?v=18",
+      "./js/neural.js": "./js/neural.js?v=18",
+      "./js/onboarding.js": "./js/onboarding.js?v=18",
+      "./js/openai.js": "./js/openai.js?v=18",
+      "./js/speech.js": "./js/speech.js?v=18",
+      "./js/storage.js": "./js/storage.js?v=18"
+    }
+  }
+  </script>
+  <script>
+    // Новая версия не запустилась (например, часть файлов пришла из старого кэша) — данные не трогаем:
+    // один раз перезагружаемся со свежими файлами, а если не помогло — честно говорим, что случилось.
+    (function () {
+      var done = false;
+      function refresh() {
+        var jobs = [];
+        try { jobs.push(caches.keys().then(function (ks) { return Promise.all(ks.filter(function (k) { return /^kd-v/.test(k); }).map(function (k) { return caches.delete(k); })); })); } catch (e) { /* нет кэша */ }
+        try { jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.update(); })); })); } catch (e) { /* нет service worker */ }
+        Promise.all(jobs).catch(function () {}).then(function () { location.reload(); });
+      }
+      function show(reason) {
+        var d = document.createElement('div');
+        d.className = 'boot-fail';
+        d.innerHTML = '<b>Приложение не запустилось.</b> Ваши настройки и конспекты на месте — дело в обновлении. Закройте приложение и откройте снова через пару минут.<br><button type="button">Обновить сейчас</button><small></small>';
+        d.querySelector('small').textContent = reason || '';
+        d.querySelector('button').onclick = refresh;
+        document.body.appendChild(d);
+      }
+      window.__kdFail = function (reason) {
+        if (done || window.__kdReady) return;
+        done = true;
+        var again = false;
+        try { again = sessionStorage.getItem('kd.recover') === '1'; sessionStorage.setItem('kd.recover', '1'); } catch (e) { /* ignore */ }
+        if (again) show(reason); else refresh();
+      };
+      window.addEventListener('error', function (e) { window.__kdFail(e.message); });
+      setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
+    })();
+  </script>
+  <script type="module" src="js/app.js?v=18"></script>
 </body>
 </html>

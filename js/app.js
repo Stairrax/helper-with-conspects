@@ -1489,4 +1489,10 @@ async function init() {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') persistProgress(); });
 }
 
-init();
+init().then(() => {
+  window.__kdReady = true;
+  try { sessionStorage.removeItem('kd.recover'); } catch { /* ignore */ }
+}).catch((e) => {
+  console.error(e);
+  window.__kdFail?.(e.message || String(e));
+});
