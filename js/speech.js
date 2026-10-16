@@ -94,14 +94,15 @@ function speakCloud(text, opts) {
   const myEpoch = epoch;
   return new Promise((resolve) => {
     const rec = remember(text, echoTail);
-    let done = false, audio = null, url = null, wd = null;
+    let done = false, audio = null, url = null, wd = null, slow = null;
     const fin = (r) => {
       if (done) return;
       done = true;
-      clearTimeout(wd);
+      clearTimeout(wd); // снимает и setTimeout, и setInterval
+      clearTimeout(slow);
       rec.end = Date.now();
       if (current?.fin === fin) current = null;
-      if (audio) { audio.onended = audio.onerror = null; audio.pause(); }
+      if (audio) { audio.onended = audio.onerror = audio.onpause = null; audio.pause(); }
       if (url) URL.revokeObjectURL(url);
       if (r === 'end') failures = 0;
       resolve(r);
@@ -110,10 +111,13 @@ function speakCloud(text, opts) {
     const fail = (err) => {
       if (done || myEpoch !== epoch) return fin('cancel');
       done = true;
+      clearTimeout(slow);
       if (current?.fin === fin) current = null;
       recent.splice(recent.indexOf(rec), 1);
       engineFailed(err, text, opts, resolve);
     };
+    // сервис молчит слишком долго (плохая связь) — эту фразу говорим голосом Android, а не стоим в тишине
+    slow = setTimeout(() => { if (!audio) fail(new Error('облачный голос слишком долго не отвечает')); }, 15000);
     const plan = cloud.speedPlan(cloudCfg.provider, rate);
     cloud.audioFor({ ...cloudCfg, speed: plan.speed }, text).then((blob) => {
       if (done || myEpoch !== epoch) return fin('cancel');
@@ -123,10 +127,19 @@ function speakCloud(text, opts) {
       audio.playbackRate = plan.playbackRate; // для Яндекса — 1: скорость уже задана при синтезе, без искажений
       audio.onended = () => fin('end');
       audio.onerror = () => fail(new Error('не удалось воспроизвести звук'));
+      // Android ставит звук на паузу, когда кто-то занимает аудио (микрофон, уведомление), — продолжаем с того же места
+      audio.onpause = () => setTimeout(() => { if (!done && audio.paused && !audio.ended) audio.play().catch(() => {}); }, 250);
       audio.play().then(() => {
         onStart?.();
-        const sec = Number.isFinite(audio.duration) ? audio.duration : 60;
-        wd = setTimeout(() => fin('end'), (sec / audio.playbackRate) * 1000 + 5000);
+        // сторож по реальному ходу воспроизведения: пауза системы не обрывает кусок, а зависание — повторяется с начала
+        let last = -1, still = Date.now();
+        wd = setInterval(() => {
+          if (done) return;
+          if (audio.ended) return fin('end');
+          if (audio.currentTime !== last) { last = audio.currentTime; still = Date.now(); return; }
+          if (audio.paused) audio.play().catch(() => {});
+          if (Date.now() - still > 8000) fin('error');
+        }, 500);
       }).catch(async (err) => {
         // браузер не дал запустить звук элементом <audio> — играем через Web Audio (он разблокирован касанием)
         if (done || myEpoch !== epoch) return fin('cancel');
@@ -149,9 +162,10 @@ function speakCloud(text, opts) {
 }
 
 function remember(text, echoTail) {
-  const rec = { text, start: Date.now(), end: 0, tail: echoTail };
+  // короткое окно (< 0,5 с) — реплика, на которую ждём ответ («Продолжаем?»)
+  const rec = { text, start: Date.now(), end: 0, tail: echoTail, prompt: echoTail < 500 };
   recent.push(rec);
-  while (recent.length > 4) recent.shift();
+  while (recent.length > 10) recent.shift();
   return rec;
 }
 
@@ -261,27 +275,37 @@ export function norm(s) {
 }
 const stem = (w) => w.slice(0, 5);
 
-/**
- * true, если распознанный текст похож на только что произнесённое синтезатором:
- * слова идут в том же порядке, что и в озвученном тексте, и первое слово тоже оттуда.
- * Вопрос («почему…», «а что…») эхом не считается, даже если повторяет термины из куска.
- */
-export function isEcho(text) {
-  const now = Date.now();
-  const spoken = recent.filter((r) => !r.end || now - r.end < r.tail);
-  if (!spoken.length) return false;
-  const words = norm(text).split(' ').filter((x) => x.length > 1).map(stem);
-  if (!words.length) return true;
+const ECHO_LATE_MS = 25000;
+
+/** Доля слов, идущих в том же порядке, что и в озвученном тексте (первое слово обязано оттуда быть). */
+function orderedMatch(words, spoken) {
   const src = spoken.flatMap((r) => norm(r.text).split(' ')).filter((x) => x.length > 1).map(stem);
   const set = new Set(src);
-  if (!set.has(words[0])) return false;
-  if (words.length <= 2) return words.every((x) => set.has(x));
+  if (!set.has(words[0])) return 0;
+  if (words.length <= 2) return words.every((x) => set.has(x)) ? 1 : 0;
   let j = 0, matched = 0;
   for (const x of words) {
     const k = src.indexOf(x, j);
     if (k >= 0) { matched++; j = k + 1; }
   }
-  return matched / words.length >= 0.7;
+  return matched / words.length;
+}
+
+/**
+ * true, если распознанный текст похож на только что произнесённое синтезатором:
+ * слова идут в том же порядке, что и в озвученном тексте, и первое слово тоже оттуда.
+ * Вопрос («почему…», «а что…») эхом не считается, даже если повторяет термины из куска.
+ * late: заодно отсеивать запоздавшее распознавание и то, как студент вполголоса повторяет
+ * продиктованное, пока пишет (до 25 с назад, только фразы от трёх слов и почти дословно).
+ */
+export function isEcho(text, late = false) {
+  const now = Date.now();
+  const words = norm(text).split(' ').filter((x) => x.length > 1).map(stem);
+  const live = recent.filter((r) => !r.end || now - r.end < r.tail);
+  if (live.length && (!words.length || orderedMatch(words, live) >= 0.7)) return true;
+  if (!late || words.length < 3) return false;
+  const old = recent.filter((r) => r.end && now - r.end < ECHO_LATE_MS);
+  return old.length > 0 && orderedMatch(words, old) >= 0.8;
 }
 
 export function ttsRecentlyActive() {
@@ -302,7 +326,9 @@ const COMMANDS = [
   ['slower', w('медленнее|помедленнее|медленней|помедленней')],
   ['faster', w('быстрее|побыстрее|быстрей|побыстрей')],
   ['continue', w('продолжай(?:те)?|продолжить|продолжаем|продолжи|поехали|давай(?:те)? дальше|едем дальше')],
-  ['next', w('дальше|следующий|следующее|пропусти(?:те)?|далее|готово|записал[а]?|записано')],
+  // «записал» — студент дописал предыдущий кусок: в паузе это «дальше», а во время чтения нового куска его не пропускаем
+  ['written', w('записал[аи]?|записано|написал[аи]?|готово|успел[аи]?')],
+  ['next', w('дальше|следующий|следующее|пропусти(?:те)?|далее')],
 ];
 const SPELL = w('по буквам|как пишется|как это пишется|как писать|по слогам');
 
@@ -349,12 +375,33 @@ export class Recognizer {
     this.rec = null;
     this.backoff = 250;
     this.active = false;
+    this.held = false;
   }
 
   start() {
     if (!SR || this.wanted) return;
     this.wanted = true;
     this._start();
+  }
+
+  /**
+   * Пауза микрофона на время речи. На Android включённое распознавание забирает звук себе:
+   * голос прерывается, глохнет и звучит «как по телефону».
+   */
+  hold(on) {
+    on = !!on;
+    if (on === this.held) return;
+    this.held = on;
+    clearTimeout(this.timer);
+    if (on) {
+      const rec = this.rec;
+      this.rec = null;
+      try { rec?.abort(); } catch { /* ignore */ }
+      if (this.active) this._setActive(false);
+    } else if (this.wanted && !this.rec) {
+      this.backoff = 250;
+      this._start();
+    }
   }
 
   stop() {
@@ -368,7 +415,7 @@ export class Recognizer {
   _setActive(v) { this.active = v; this.onState(v); }
 
   _start() {
-    if (!this.wanted) return;
+    if (!this.wanted || this.held || this.rec) return;
     const rec = new SR();
     this.rec = rec;
     const sid = ++this.session;
@@ -377,8 +424,9 @@ export class Recognizer {
     rec.interimResults = true;
     rec.maxAlternatives = 1;
     const startedAt = Date.now();
-    rec.onstart = () => this._setActive(true);
+    rec.onstart = () => { if (this.rec === rec) this._setActive(true); };
     rec.onresult = (e) => {
+      if (this.rec !== rec) return; // результат уже остановленной сессии
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i];
         this.onResult({ id: `${sid}:${i}`, text: r[0].transcript, final: r.isFinal });
@@ -397,15 +445,18 @@ export class Recognizer {
       }
     };
     rec.onend = () => {
-      if (this.rec === rec) this.rec = null;
+      // сессия, которую мы сами остановили (стоп/пауза на время речи), — новую не запускаем, она уже есть или не нужна
+      if (this.rec !== rec) return;
+      this.rec = null;
       this._setActive(false);
-      if (!this.wanted) return;
+      if (!this.wanted || this.held) return;
       // быстрые обрывы подряд — увеличиваем задержку перезапуска
       if (Date.now() - startedAt < 1000) this.backoff = Math.min(this.backoff * 2, 4000);
       else this.backoff = 250;
       this.timer = setTimeout(() => this._start(), this.backoff);
     };
     try { rec.start(); } catch {
+      this.rec = null;
       this.timer = setTimeout(() => this._start(), 1000);
     }
   }

@@ -173,6 +173,8 @@ function resetDictation() {
   dict.clearQuestion();
   dict.resumePos = null;
   dict.lastSpoken = null;
+  dict.cur = null;
+  dict.cancelAutoResume();
   dict.announced = null;
   dict.gap = null;
   dict.state = 'idle';
@@ -811,8 +813,9 @@ function sendQuestion() {
 $('askBtn').addEventListener('click', sendQuestion);
 $('questionInput').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuestion(); } });
 $('questionInput').addEventListener('focus', () => {
-  // начали печатать вопрос — останавливаем диктовку
+  // начали печатать вопрос — останавливаем диктовку и сами её не продолжаем
   if (['speaking', 'gap', 'waiting', 'topicEnd', 'reviewing'].includes(dict.state)) dict.interrupt('question');
+  dict.cancelAutoResume();
 });
 
 // ---------- Настройки ----------
@@ -877,6 +880,9 @@ function renderSettings() {
       : 'С голосом Android можно только понизить тон. Полный эффект — с нейросетевым голосом.';
   $('voiceCommands').checked = settings.voiceCommands;
   $('bargeIn').checked = settings.bargeIn;
+  $('listenWhileSpeaking').checked = settings.listenWhileSpeaking;
+  $('listenWhileSpeakingRow').classList.toggle('hidden', !settings.voiceCommands);
+  $('bargeInRow').classList.toggle('hidden', !settings.voiceCommands || !settings.listenWhileSpeaking);
   $('coverageCheck').checked = settings.coverageCheck;
   document.querySelectorAll('input[name=mode]').forEach((r) => { r.checked = r.value === settings.mode; });
   $('voice').value = settings.voiceURI;
@@ -1193,12 +1199,20 @@ function enableHeadset() {
   updateMedia(dictTitle(), ['speaking', 'gap', 'waiting', 'reviewing'].includes(dict.state));
 }
 bind('bargeIn', 'bargeIn');
+$('listenWhileSpeaking').addEventListener('change', (e) => {
+  settings.listenWhileSpeaking = e.target.checked;
+  saveSettings(settings);
+  // если сейчас звучит голос — сразу включаем или выключаем микрофон
+  if (dict.holdDepth) dict.rec.hold(!settings.listenWhileSpeaking);
+  renderSettings();
+});
 bind('coverageCheck', 'coverageCheck');
 bind('voice', 'voiceURI');
 $('voiceCommands').addEventListener('change', (e) => {
   settings.voiceCommands = e.target.checked;
   saveSettings(settings);
   if (!settings.voiceCommands) { if (!dict.micForced) dict.rec.stop(); } else if (dict.state !== 'idle' && dict.state !== 'finished') dict.mic(false);
+  renderSettings();
   render();
 });
 document.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener('change', () => {

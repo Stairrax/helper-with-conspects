@@ -15,6 +15,9 @@ export const DEFAULT_SETTINGS = {
   voiceURI: '',
   mode: 'all',          // 'all' — всё подряд, 'topic' — по теме с вопросами после каждой
   voiceCommands: true,
+  // микрофон и во время речи (мгновенный «стоп» голосом). На Android распознавание забирает звук:
+  // голос обрывается и глохнет, поэтому там по умолчанию слушаем только в паузах
+  listenWhileSpeaking: typeof navigator === 'undefined' || !/Android/i.test(navigator.userAgent),
   bargeIn: false,       // прерывать при любой речи (только с наушниками)
   scalePause: true,     // пауза зависит от сложности темы и длины куска
   coverageCheck: true,

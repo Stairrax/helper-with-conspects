@@ -313,8 +313,9 @@
           <label><input type="radio" name="mode" value="all"><span>Всё подряд</span></label>
           <label><input type="radio" name="mode" value="topic"><span>С вопросами после каждой темы</span></label>
         </div>
-        <label class="switch"><span>Голосовые команды<small>с Bluetooth-наушниками звук может стать «как по телефону» — тогда выключите и останавливайте кнопкой «СТОП» или кнопкой на наушниках</small></span><input id="voiceCommands" type="checkbox"><i></i></label>
-        <label class="switch"><span>Прерывать при любой моей речи<small>только в наушниках</small></span><input id="bargeIn" type="checkbox"><i></i></label>
+        <label class="switch"><span>Голосовые команды<small>«записал», «повтори», «стоп», вопросы — в паузах между кусками</small></span><input id="voiceCommands" type="checkbox"><i></i></label>
+        <label class="switch" id="listenWhileSpeakingRow"><span>Слушать, пока говорю<small>«стоп» голосом посреди фразы. На Android голос из-за этого обрывается и глохнет — лучше выключить</small></span><input id="listenWhileSpeaking" type="checkbox"><i></i></label>
+        <label class="switch" id="bargeInRow"><span>Прерывать при любой моей речи<small>только в наушниках и при «Слушать, пока говорю»</small></span><input id="bargeIn" type="checkbox"><i></i></label>
         <div class="card-title mt">Пауза после куска</div>
         <div class="seg">
           <label><input type="radio" name="pauseMode" value="time"><span>По времени</span></label>
@@ -336,7 +337,7 @@
             <li><b>дальше</b>, <b>повтори</b>, <b>повтори тему</b>, <b>пропусти тему</b></li>
             <li><b>медленнее</b>, <b>быстрее</b></li>
             <li><b>как пишется …</b> / <b>по буквам</b> — продиктовать слово по буквам</li>
-            <li><b>готово</b> / <b>записал</b> — дальше (в режиме «пока не скажу»)</li>
+            <li><b>записал</b> / <b>готово</b> — в паузе: дальше; пока читается новый кусок — ничего не пропускается</li>
             <li>сразу вопросом: <b>почему…</b>, <b>что такое…</b>, <b>вопрос…</b></li>
             <li>после ответа: <b>да</b> / <b>дальше</b></li>
           </ul>

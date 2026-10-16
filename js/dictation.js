@@ -2,7 +2,7 @@
 // самопроверка после темы, быстрое повторение, «по буквам», перерывы.
 
 import {
-  speak, stopSpeaking, prefetch, isEcho, ttsRecentlyActive, matchCommand, isYes, isNo, looksLikeQuestion, stripCue, norm,
+  speak, stopSpeaking, prefetch, isEcho, matchCommand, isYes, isNo, looksLikeQuestion, stripCue, norm,
   spellTarget, isDontKnow, Recognizer, srSupported, keepAwake,
 } from './speech.js';
 import { stream, conn } from './ai.js';
@@ -14,6 +14,8 @@ const PAUSED = ['paused', 'listening', 'confirm', 'topicEnd', 'break'];
 const MAX_CONTEXT = 400000;
 const DAY = 24 * 3600 * 1000;
 const BREAK_MS = 5 * 60 * 1000;
+const CMD_REPEAT_MS = 1500;    // одна и та же команда голосом чаще не выполняется (распознавание присылает её дважды)
+const FALSE_STOP_MS = 6000;    // остановились «на вопрос», а вопроса так и не было — продолжаем сами
 
 export const STATE_TEXT = {
   idle: 'Готов к диктовке',
@@ -93,6 +95,11 @@ export class Dictation {
     this.waiter = null;
     this.review = null;
     this.breakUntil = 0;
+    this.cur = null;            // кусок, который сейчас звучит: { topicId, chunk }
+    this.lastCmd = null;        // последняя голосовая команда: { cmd, at }
+    this.holdDepth = 0;
+    this.holdTimer = null;
+    this.autoTimer = null;
     this.rec = new Recognizer({
       onResult: (r) => this.onSpeech(r),
       onState: (on) => { this.micOn = on; this.h.emit(); },
@@ -191,6 +198,21 @@ export class Dictation {
     if (!this.settings.voiceCommands) this.rec.stop();
   }
 
+  /** Пока звучит голос, микрофон выключен (если не включено «Слушать, пока говорю»). */
+  holdMic(on) {
+    if (on) {
+      this.holdDepth++;
+      clearTimeout(this.holdTimer);
+      if (!this.settings.listenWhileSpeaking) this.rec.hold(true);
+      return;
+    }
+    this.holdDepth = Math.max(0, this.holdDepth - 1);
+    if (this.holdDepth) return;
+    clearTimeout(this.holdTimer);
+    // между фразами подряд микрофон не дёргаем — включаем, только если голос действительно замолчал
+    this.holdTimer = setTimeout(() => { if (!this.holdDepth) this.rec.hold(false); }, 350);
+  }
+
   // ---------- Основной цикл ----------
 
   start() {
@@ -240,7 +262,7 @@ export class Dictation {
     this.save();
     if (active) return this.run();
     if (st === 'idle' || st === 'finished') return this.set('idle');
-    this.resumePos = { topicId: t.id, chunk: i };
+    this.resumePos = { topicId: t.id, chunk: i, partial: true }; // «повтори» — именно выбранный кусок
     this.set('paused');
   }
 
@@ -262,6 +284,7 @@ export class Dictation {
     this.micAfterResume();
     this.mic(false);
     while (my === this.token) {
+      this.cur = null;
       const topic = this.currentTopic();
       if (!topic) return this.finish(my);
       if (topic.status !== 'ready') {
@@ -293,7 +316,7 @@ export class Dictation {
         this.set('speaking');
         const r = await this.say(`Тема: ${topic.title}.`);
         if (my !== this.token) return;
-        if (r !== 'error') this.announced = topic.id;
+        if (r === 'end') this.announced = topic.id;
         await sleep(600);
         if (my !== this.token) return;
       }
@@ -312,6 +335,7 @@ export class Dictation {
       this.set('speaking');
       this.save();
       prefetch(topic.chunks.slice(idx + 1, idx + 4).map((c) => c.t), { rate: this.settings.rate });
+      this.cur = { topicId: topic.id, chunk: idx };
       let r = await this.say(chunk.t);
       if (my !== this.token) return;
       if (r === 'error') {
@@ -325,6 +349,7 @@ export class Dictation {
           return this.set('paused', 'Синтез речи не отвечает. Нажмите «Продолжить». Проверьте, установлен ли русский голос.');
         }
       }
+      this.cur = null;
       this.lastSpoken = { topicId: topic.id, chunk: idx };
       this.pos.chunk = idx + 1;
       this.pos.spoken = (this.pos.spoken || 0) + 1;
@@ -355,9 +380,14 @@ export class Dictation {
   }
 
   /** prompt: короткая реплика, на которую ждём ответ, — окно защиты от эха после неё минимальное. */
-  say(text, prompt = false, rateK = 1) {
+  async say(text, prompt = false, rateK = 1) {
     const s = this.settings;
-    return speak(text, { rate: Math.min(2, s.rate * rateK), voiceURI: s.voiceURI, echoTail: prompt ? 250 : 900 });
+    this.holdMic(true);
+    try {
+      return await speak(text, { rate: Math.min(2, s.rate * rateK), voiceURI: s.voiceURI, echoTail: prompt ? 250 : 900 });
+    } finally {
+      this.holdMic(false);
+    }
   }
 
   async endOfTopic(my, topic) {
@@ -594,14 +624,20 @@ export class Dictation {
 
   // ---------- Прерывание ----------
 
-  /** Мгновенная остановка. kind: 'question' — слушаем вопрос, 'pause' — просто пауза. */
-  interrupt(kind = 'question') {
+  /**
+   * Мгновенная остановка. kind: 'question' — слушаем вопрос, 'pause' — просто пауза.
+   * guess: остановились по догадке (похоже на вопрос) — если вопроса не будет, через несколько секунд продолжим сами.
+   */
+  interrupt(kind = 'question', guess = false) {
     const st = this.state;
     stopSpeaking();
     this.token++;
     this.gap = null;
     this.resolveWaiter(null);
-    if (DICTATING.includes(st)) this.resumePos = { topicId: this.pos.topicId, chunk: this.pos.chunk };
+    this.cancelAutoResume();
+    // кусок прервали на середине (или ещё до него — на «Тема: …») — после вопроса и на «повтори» он прозвучит с начала
+    if (DICTATING.includes(st)) this.resumePos = { topicId: this.pos.topicId, chunk: this.pos.chunk, partial: st === 'speaking' };
+    this.cur = null;
     if (['quiz', 'quizListen', 'quizGrade'].includes(st)) this.quiz = null; // самопроверку не продолжаем
     if (QA_STATES.includes(st) || st === 'quizGrade') this.abortAnswer();
     if (st === 'idle' || st === 'finished') {
@@ -610,9 +646,21 @@ export class Dictation {
     }
     this.mic(true);
     this.set(kind === 'pause' ? 'paused' : 'listening');
+    if (guess && DICTATING.includes(st)) {
+      this.autoTimer = setTimeout(() => {
+        this.autoTimer = null;
+        if (this.state === 'listening' && !this.qBuf && !this.qTimer) this.resume();
+      }, FALSE_STOP_MS);
+    }
+  }
+
+  cancelAutoResume() {
+    clearTimeout(this.autoTimer);
+    this.autoTimer = null;
   }
 
   resume() {
+    this.cancelAutoResume();
     stopSpeaking();
     this.abortAnswer();
     this.clearQuestion();
@@ -637,8 +685,16 @@ export class Dictation {
       this.save();
       return this.runReview();
     }
-    if (st === 'speaking') { stopSpeaking(); this.pos.chunk++; this.run(); }
-    else if (st === 'gap' || st === 'waiting') { this.run(); }
+    if (st === 'speaking') {
+      // во время «Тема: …» или «Продолжаем тему…» пропускаем только объявление, а не кусок
+      const c = this.cur;
+      stopSpeaking();
+      if (c && c.topicId === this.pos.topicId && c.chunk === this.pos.chunk) this.pos.chunk++;
+      else if (this.pos.chunk === 0) this.announced = this.pos.topicId;
+      this.resumeNote = false;
+      this.cur = null;
+      this.run();
+    } else if (st === 'gap' || st === 'waiting') { this.run(); }
     else if (st === 'idle') this.start();
     else this.resume();
   }
@@ -652,10 +708,11 @@ export class Dictation {
     if (st === 'reviewing') return this.runReview();
     // просят повторить — значит, не успевают: пауза немного длиннее
     this.pos.pauseBoost = Math.min(2, (this.pos.pauseBoost || 1) * 1.15);
+    this.cancelAutoResume();
     if (st === 'speaking') { /* та же позиция */ }
     else if (st === 'gap') this.pos.chunk = Math.max(0, this.pos.chunk - 1);
+    else if (this.resumePos?.partial || (this.resumePos && !this.lastSpoken)) { this.pos.topicId = this.resumePos.topicId; this.pos.chunk = this.resumePos.chunk; }
     else if (this.lastSpoken) { this.pos.topicId = this.lastSpoken.topicId; this.pos.chunk = this.lastSpoken.chunk; }
-    else if (this.resumePos) { this.pos.topicId = this.resumePos.topicId; this.pos.chunk = this.resumePos.chunk; }
     this.resumePos = null;
     this.run();
   }
@@ -716,6 +773,11 @@ export class Dictation {
       case 'stop': return this.interrupt('question');
       case 'pause': return this.interrupt('pause');
       case 'next': return this.next();
+      // «записал/готово»: в паузе — дальше; пока читается новый кусок — ничего не пропускаем
+      case 'written':
+        if (this.state === 'speaking' || this.state === 'waiting' || this.state === 'spelling') return null;
+        if (this.state === 'reviewing') return null;
+        return this.next();
       case 'continue':
         if (this.state === 'gap' && this.settings.pauseMode === 'wait') return this.next();
         return ['speaking', 'gap', 'reviewing'].includes(this.state) ? null : this.resume();
@@ -733,10 +795,12 @@ export class Dictation {
   onSpeech(r) {
     const text = r.text.trim();
     if (!norm(text)) return;
-    if (ttsRecentlyActive() && isEcho(text)) return; // эхо синтезатора
+    const st = this.state;
+    const dictating = DICTATING.includes(st) || st === 'reviewing' || st === 'spelling';
+    // эхо синтезатора; во время диктовки — и запоздавшее эхо, и повтор продиктованного вслух, пока пишут
+    if (isEcho(text, dictating || st === 'topicEnd')) return;
     this.heard = text;
     this.h.emit();
-    const st = this.state;
     const words = norm(text).split(' ');
 
     if (this.consumed.has(r.id)) {
@@ -748,41 +812,51 @@ export class Dictation {
       return;
     }
     const cmd = matchCommand(text);
+    // одну и ту же команду распознавание часто присылает дважды (промежуточный и финальный вариант,
+    // а на Android — ещё и повтором в следующем результате): второй раз не выполняем
+    if (cmd && cmd !== 'spell' && this.lastCmd?.cmd === cmd && Date.now() - this.lastCmd.at < CMD_REPEAT_MS) {
+      this.consumed.add(r.id);
+      return;
+    }
+    const run = (c) => { this.lastCmd = { cmd: c, at: Date.now() }; this.consumed.add(r.id); return this.command(c, text); };
 
-    if (DICTATING.includes(st) || st === 'reviewing' || st === 'spelling') {
+    if (dictating) {
       if (cmd === 'spell' && !r.final) return; // ждём слово целиком
-      if (cmd && cmd !== 'continue' || cmd === 'continue' && st === 'gap') { this.consumed.add(r.id); this.command(cmd, text); return; }
-      if (st !== 'spelling' && (looksLikeQuestion(text) || (this.settings.bargeIn && words.length >= 2))) {
+      if (cmd && cmd !== 'continue' || cmd === 'continue' && st === 'gap') { run(cmd); return; }
+      if (st !== 'spelling' && (this.isQuestion(text, r.final) || (this.settings.bargeIn && words.length >= 2))) {
         this.consumed.add(r.id);
-        this.interrupt('question');
+        this.interrupt('question', true);
         if (r.final) this.addQuestionPart(stripCue(text));
       }
       return;
     }
 
     if (st === 'quiz' || st === 'quizGrade') {
-      if (cmd === 'stop' || cmd === 'pause') { this.consumed.add(r.id); this.interrupt(cmd === 'stop' ? 'question' : 'pause'); }
+      if (cmd === 'stop' || cmd === 'pause') run(cmd);
       return;
     }
 
     if (QA_STATES.includes(st)) {
-      if (cmd === 'stop' || cmd === 'pause') { this.consumed.add(r.id); this.interrupt(cmd === 'stop' ? 'question' : 'pause'); }
-      else if (cmd === 'continue' || cmd === 'next') { this.consumed.add(r.id); this.resume(); }
+      if (cmd === 'stop' || cmd === 'pause') run(cmd);
+      else if (cmd === 'continue' || cmd === 'next' || cmd === 'written') { this.lastCmd = { cmd, at: Date.now() }; this.consumed.add(r.id); this.resume(); }
       return;
     }
 
     if (!r.final) {
       if (this.qTimer) this.armQuestionTimer(); // человек ещё говорит
-      if (st === 'topicEnd' && !isNo(text) && !cmd) { this.token++; stopSpeaking(); this.set('listening'); }
+      if (this.autoTimer && words.length >= 2) this.cancelAutoResume(); // начали говорить вопрос
+      if (st === 'topicEnd' && !isNo(text) && !cmd && words.length >= 2) { this.token++; stopSpeaking(); this.set('listening'); }
       return;
     }
     this.consumed.add(r.id);
+    if (cmd) this.lastCmd = { cmd, at: Date.now() };
 
     if (st === 'quizListen') {
       if (!this.qBuf) {
         if (cmd === 'stop' || cmd === 'pause') return this.interrupt(cmd === 'stop' ? 'question' : 'pause');
         if (cmd === 'repeat') return this.resolveWaiter({ type: 'repeat' });
         if (cmd === 'next') return this.resolveWaiter({ type: 'skip' });
+        if (cmd === 'written') return; // дописывали последний кусок — это не ответ
         if (cmd === 'skipTopic') return this.resolveWaiter({ type: 'end' });
         if (isDontKnow(text)) return this.resolveWaiter({ type: 'dontknow' });
       }
@@ -796,7 +870,7 @@ export class Dictation {
       return;
     }
     if (st === 'topicEnd') {
-      if (isNo(text) || cmd === 'continue' || cmd === 'next') return this.resume();
+      if (isNo(text) || cmd === 'continue' || cmd === 'next' || cmd === 'written') return this.resume();
       if (cmd) return this.command(cmd, text);
       if (/^(да|есть|ага|угу)( есть)?( вопрос\p{L}*)?$/u.test(norm(text))) { this.token++; stopSpeaking(); return this.set('listening'); }
       if (words.length >= 2) return this.addQuestionPart(stripCue(text));
@@ -812,8 +886,19 @@ export class Dictation {
     }
   }
 
+  /** Похоже на начало вопроса? Одиночное «а», «как», «что» (часто это шум или чужая речь) — ещё нет. */
+  isQuestion(text, final) {
+    const n = norm(stripCue(text));
+    if (/^вопрос/.test(norm(text))) return true;
+    const count = n ? n.split(' ').length : 0;
+    if (!looksLikeQuestion(n)) return false;
+    if (/^а( |$)/.test(n)) return count >= 3;
+    return final ? count >= 2 : count >= 3;
+  }
+
   addQuestionPart(t) {
     if (!t) return;
+    this.cancelAutoResume();
     this.qBuf = (this.qBuf + ' ' + t).trim();
     this.heard = this.qBuf;
     this.armQuestionTimer();
@@ -887,6 +972,16 @@ ${prevQa ? `\nПРЕДЫДУЩИЕ ВОПРОСЫ В ЭТОЙ СЕССИИ:\n${p
 
   /** Потоковый запрос к нейросети с озвучкой по предложениям. entry.a накапливает текст. */
   async streamSpeak(my, req, entry, onError) {
+    // между предложениями ответа микрофон не включаем — иначе на Android голос будет обрываться
+    this.holdMic(true);
+    try {
+      await this.streamAndSpeak(my, req, entry, onError);
+    } finally {
+      this.holdMic(false);
+    }
+  }
+
+  async streamAndSpeak(my, req, entry, onError) {
     const ctrl = new AbortController();
     this.answerCtrl = ctrl;
     const s = this.settings;
