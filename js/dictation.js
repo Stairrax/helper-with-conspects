@@ -2,7 +2,7 @@
 // самопроверка после темы, быстрое повторение, «по буквам», перерывы.
 
 import {
-  speak, stopSpeaking, prefetch, isEcho, matchCommand, isYes, isNo, looksLikeQuestion, stripCue, norm,
+  speak, stopSpeaking, prefetch, isEcho, matchCommand, isYes, isNo, looksLikeQuestion, stripCue, norm, mergeText,
   spellTarget, isDontKnow, Recognizer, srSupported, keepAwake,
 } from './speech.js';
 import { stream, conn } from './ai.js';
@@ -198,8 +198,8 @@ export class Dictation {
     if (!this.settings.voiceCommands) this.rec.stop();
   }
 
-  /** Пока звучит голос, микрофон выключен (если не включено «Слушать, пока говорю»). */
-  holdMic(on) {
+  /** Пока звучит голос, микрофон выключен (если не включено «Слушать, пока говорю»). after — через сколько включить снова. */
+  holdMic(on, after = 350) {
     if (on) {
       this.holdDepth++;
       clearTimeout(this.holdTimer);
@@ -210,7 +210,7 @@ export class Dictation {
     if (this.holdDepth) return;
     clearTimeout(this.holdTimer);
     // между фразами подряд микрофон не дёргаем — включаем, только если голос действительно замолчал
-    this.holdTimer = setTimeout(() => { if (!this.holdDepth) this.rec.hold(false); }, 350);
+    this.holdTimer = setTimeout(() => { if (!this.holdDepth) this.rec.hold(false); }, after);
   }
 
   // ---------- Основной цикл ----------
@@ -386,7 +386,7 @@ export class Dictation {
     try {
       return await speak(text, { rate: Math.min(2, s.rate * rateK), voiceURI: s.voiceURI, echoTail: prompt ? 250 : 900 });
     } finally {
-      this.holdMic(false);
+      this.holdMic(false, prompt ? 0 : 350); // после «Продолжаем?» ответ ждём сразу
     }
   }
 
@@ -798,8 +798,9 @@ export class Dictation {
     const st = this.state;
     const dictating = DICTATING.includes(st) || st === 'reviewing' || st === 'spelling';
     // эхо синтезатора; во время диктовки — и запоздавшее эхо, и повтор продиктованного вслух, пока пишут
-    if (isEcho(text, dictating || st === 'topicEnd')) return;
-    this.heard = text;
+    if (isEcho(text, dictating || st === 'topicEnd', r.since)) return;
+    // пока человек договаривает вопрос — показываем всё сказанное целиком, а не только последний кусок
+    this.heard = this.qBuf && !dictating ? mergeText(this.qBuf, text) : text;
     this.h.emit();
     const words = norm(text).split(' ');
 
@@ -899,7 +900,7 @@ export class Dictation {
   addQuestionPart(t) {
     if (!t) return;
     this.cancelAutoResume();
-    this.qBuf = (this.qBuf + ' ' + t).trim();
+    this.qBuf = mergeText(this.qBuf, t);
     this.heard = this.qBuf;
     this.armQuestionTimer();
     this.h.emit();
@@ -912,7 +913,7 @@ export class Dictation {
       const q = this.qBuf.trim();
       this.qBuf = '';
       if (q) this.submitText(q);
-    }, this.state === 'quizListen' ? 1800 : 1400);
+    }, this.state === 'quizListen' ? 2500 : 2200); // на Android после паузы в речи микрофон перезапускается ~1 с — даём договорить
   }
 
   clearQuestion() {

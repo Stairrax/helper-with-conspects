@@ -297,11 +297,12 @@ function orderedMatch(words, spoken) {
  * Вопрос («почему…», «а что…») эхом не считается, даже если повторяет термины из куска.
  * late: заодно отсеивать запоздавшее распознавание и то, как студент вполголоса повторяет
  * продиктованное, пока пишет (до 25 с назад, только фразы от трёх слов и почти дословно).
+ * since: когда включился микрофон — то, что отзвучало раньше, он услышать не мог.
  */
-export function isEcho(text, late = false) {
+export function isEcho(text, late = false, since = 0) {
   const now = Date.now();
   const words = norm(text).split(' ').filter((x) => x.length > 1).map(stem);
-  const live = recent.filter((r) => !r.end || now - r.end < r.tail);
+  const live = recent.filter((r) => (!r.end || now - r.end < r.tail) && (!r.end || r.end > since));
   if (live.length && (!words.length || orderedMatch(words, live) >= 0.7)) return true;
   if (!late || words.length < 3) return false;
   const old = recent.filter((r) => r.end && now - r.end < ECHO_LATE_MS);
@@ -351,6 +352,56 @@ export const isNo = (t) => { const n = norm(t); return n.split(' ').length <= 3 
 export function spellTarget(text) {
   const m = String(text).match(/(?:пишется|писать|по буквам|по слогам)\s+(?:слово\s+)?(.+)$/i);
   return m ? m[1].replace(/[?.!,]+$/g, '').trim() : '';
+}
+
+// ---------- Склейка распознанного текста ----------
+
+/** Остаток raw после prefix (по словам, без учёта регистра и знаков) или null, если raw с него не начинается. */
+function afterPrefix(raw, prefix) {
+  const pw = norm(prefix).split(' ').filter(Boolean);
+  const tokens = String(raw).trim().split(/\s+/);
+  let j = 0, k = 0;
+  while (k < tokens.length && j < pw.length) {
+    const n = norm(tokens[k]);
+    if (!n) { k++; continue; }
+    const parts = n.split(' ');
+    if (!parts.every((p, q) => pw[j + q] === p)) return null;
+    j += parts.length;
+    k++;
+  }
+  return j >= pw.length ? tokens.slice(k).join(' ') : null;
+}
+
+/**
+ * Склеивает распознанные куски речи без повторов. Chrome на Android присылает текст с наложением:
+ * следующий кусок повторяет предыдущий целиком или частично, иногда чуть исправленным.
+ */
+export function mergeText(buf, part) {
+  buf = String(buf || '').trim();
+  part = String(part || '').trim();
+  if (!buf || !norm(buf)) return part;
+  if (!part || !norm(part)) return buf;
+  if (afterPrefix(part, buf) !== null) return part; // новый кусок уже содержит всё сказанное
+  const bw = norm(buf).split(' '), pw = norm(part).split(' ');
+  if (pw.length <= bw.length && bw.slice(-pw.length).join(' ') === pw.join(' ')) return buf; // повтор конца
+  // исправленный вариант всего сказанного: почти все слова (по основам) на месте и в том же порядке
+  if (bw.length >= 3) {
+    const ps = pw.map(stem);
+    let j = 0, matched = 0;
+    for (const x of bw.map(stem)) {
+      const k = ps.indexOf(x, j);
+      if (k >= 0 && k < j + 3) { matched++; j = k + 1; }
+    }
+    if (matched / bw.length >= 0.8) return part;
+  }
+  // конец сказанного совпадает с началом нового куска (от двух слов)
+  for (let k = Math.min(bw.length, pw.length - 1); k >= 2; k--) {
+    if (bw.slice(-k).join(' ') === pw.slice(0, k).join(' ')) {
+      const rest = afterPrefix(part, pw.slice(0, k).join(' '));
+      if (rest) return `${buf} ${rest}`;
+    }
+  }
+  return `${buf} ${part}`;
 }
 
 export const isDontKnow = (t) => /^(я )?(не знаю|не помню|забыл[аи]?|без понятия|понятия не имею|сдаюсь|подскажи)/.test(norm(t));
@@ -419,6 +470,8 @@ export class Recognizer {
     const rec = new SR();
     this.rec = rec;
     const sid = ++this.session;
+    let phrase = 0;   // номер фразы в сессии: промежуточный и финальный варианты одной фразы получают один id
+    let last = null;  // последний финальный результат сессии: { text, at }
     rec.lang = 'ru-RU';
     rec.continuous = true;
     rec.interimResults = true;
@@ -429,7 +482,23 @@ export class Recognizer {
       if (this.rec !== rec) return; // результат уже остановленной сессии
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i];
-        this.onResult({ id: `${sid}:${i}`, text: r[0].transcript, final: r.isFinal });
+        const raw = r[0].transcript;
+        let text = raw;
+        // Android: каждый следующий результат повторяет всё, что сказано раньше, — оставляем только новое
+        const before = i > 0 ? e.results[i - 1] : null;
+        const prev = before?.isFinal ? before[0]?.transcript : last?.text;
+        if (prev) {
+          const rest = afterPrefix(raw, prev);
+          if (rest !== null) {
+            if (!norm(rest)) {
+              // тот же финальный результат пришёл ещё раз; через пару секунд это уже новая такая же фраза
+              if (r.isFinal && (!last || Date.now() - last.at < 2000)) { if (last) last.at = Date.now(); continue; }
+              if (!r.isFinal) continue;
+            } else text = rest;
+          }
+        }
+        this.onResult({ id: `${sid}:${phrase}`, text, final: r.isFinal, since: startedAt });
+        if (r.isFinal) { last = { text: raw, at: Date.now() }; phrase++; }
       }
     };
     rec.onerror = (e) => {
