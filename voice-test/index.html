@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Сравнение голосов — Диктор</title>
+<style>
+  :root { --bg: #0f1218; --surface: #181d26; --line: #262d3a; --text: #e6e9f0; --muted: #9aa3b5; --accent: #8ab4ff; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: 20px max(16px, env(safe-area-inset-right)) 48px max(16px, env(safe-area-inset-left)); }
+  main { max-width: 620px; margin: 0 auto; display: grid; gap: 20px; }
+  h1 { font-size: 24px; line-height: 1.25; margin: 0; }
+  h2 { font-size: 18px; margin: 0; }
+  p { margin: 0; }
+  .lead { color: var(--muted); }
+  .text { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; color: var(--muted); font-size: 15px; }
+  .group { display: grid; gap: 8px; }
+  .note { color: var(--muted); font-size: 14px; }
+  ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 10px; }
+  .voice { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: grid; gap: 8px; }
+  .vh { display: flex; align-items: baseline; gap: 10px; }
+  .num { color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; min-width: 1.5em; }
+  .g { color: var(--muted); font-size: 14px; margin-left: auto; }
+  audio { width: 100%; height: 40px; }
+  .foot { color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Какой голос звучит живее?</h1>
+  <p class="lead">Один и тот же абзац, озвученный разными голосами. Громкость у всех выровнена. Послушайте в тех же наушниках и напишите номера голосов, которые понравились больше всего.</p>
+  <p class="text">Итак, давайте разберём, что такое производная. Представьте, что вы едете на машине, и спидометр в каждый момент показывает скорость — это и есть производная пути по времени. Запишите определение: производная функции в точке — это предел отношения приращения функции к приращению аргумента, когда приращение аргумента стремится к нулю. Обратите внимание: если производная положительна, функция возрастает.</p>
+    <section class="group">
+      <h2>Kokoro-ru</h2>
+      <p class="note">Озвучены профессиональными актёрами с их согласия. Ударения ставит отдельная нейросеть. Лицензия открытая. На телефон — около 140 МБ на модель.</p>
+      <ul>
+      <li class="voice">
+        <div class="vh"><span class="num">1</span><b>Света</b><span class="g">женский</span></div>
+        <audio controls preload="none" src="kokoro-sveta.mp3"></audio>
+      </li>
+      <li class="voice">
+        <div class="vh"><span class="num">2</span><b>Маша</b><span class="g">женский</span></div>
+        <audio controls preload="none" src="kokoro-masha.mp3"></audio>
+      </li>
+      <li class="voice">
+        <div class="vh"><span class="num">3</span><b>Дима</b><span class="g">мужской</span></div>
+        <audio controls preload="none" src="kokoro-dima.mp3"></audio>
+      </li>
+      </ul>
+    </section>
+    <section class="group">
+      <h2>Silero v5</h2>
+      <p class="note">Очень быстрая: полминуты речи за секунду. Лицензия некоммерческая — для бесплатного приложения подходит. Около 150 МБ.</p>
+      <ul>
+      <li class="voice">
+        <div class="vh"><span class="num">4</span><b>Ксения (xenia)</b><span class="g">женский</span></div>
+        <audio controls preload="none" src="silero-xenia.mp3"></audio>
+      </li>
+      <li class="voice">
+        <div class="vh"><span class="num">5</span><b>Бая</b><span class="g">женский</span></div>
+        <audio controls preload="none" src="silero-baya.mp3"></audio>
+      </li>
+      <li class="voice">
+        <div class="vh"><span class="num">6</span><b>Ксения (kseniya)</b><span class="g">женский</span></div>
+        <audio controls preload="none" src="silero-kseniya.mp3"></audio>
+      </li>
+      <li class="voice">
+        <div class="vh"><span class="num">7</span><b>Айдар</b><span class="g">мужской</span></div>
+        <audio controls preload="none" src="silero-aidar.mp3"></audio>
+      </li>
+      <li class="voice">
+        <div class="vh"><span class="num">8</span><b>Евгений</b><span class="g">мужской</span></div>
+        <audio controls preload="none" src="silero-eugene.mp3"></audio>
+      </li>
+      </ul>
+    </section>
+    <section class="group">
+      <h2>Vosk TTS</h2>
+      <p class="note">Самая тяжёлая: около 900 МБ вместе со словарём и языковой моделью. Для телефона, скорее всего, слишком большая.</p>
+      <ul>
+      <li class="voice">
+        <div class="vh"><span class="num">9</span><b>Голос 1</b><span class="g">женский</span></div>
+        <audio controls preload="none" src="vosk-0.mp3"></audio>
+      </li>
+      <li class="voice">
+        <div class="vh"><span class="num">10</span><b>Голос 2</b><span class="g">женский</span></div>
+        <audio controls preload="none" src="vosk-1.mp3"></audio>
+      </li>
+      <li class="voice">
+        <div class="vh"><span class="num">11</span><b>Голос 3</b><span class="g">женский</span></div>
+        <audio controls preload="none" src="vosk-2.mp3"></audio>
+      </li>
+      <li class="voice">
+        <div class="vh"><span class="num">12</span><b>Голос 4</b><span class="g">мужской</span></div>
+        <audio controls preload="none" src="vosk-3.mp3"></audio>
+      </li>
+      <li class="voice">
+        <div class="vh"><span class="num">13</span><b>Голос 5</b><span class="g">мужской</span></div>
+        <audio controls preload="none" src="vosk-4.mp3"></audio>
+      </li>
+      </ul>
+    </section>
+    <section class="group">
+      <h2>Piper — как сейчас</h2>
+      <p class="note">Голоса «Нейросеть на телефоне», которые у вас уже работают. Для сравнения.</p>
+      <ul>
+      <li class="voice">
+        <div class="vh"><span class="num">14</span><b>Ирина</b><span class="g">женский</span></div>
+        <audio controls preload="none" src="piper-irina.mp3"></audio>
+      </li>
+      <li class="voice">
+        <div class="vh"><span class="num">15</span><b>Дмитрий</b><span class="g">мужской</span></div>
+        <audio controls preload="none" src="piper-dmitri.mp3"></audio>
+      </li>
+      </ul>
+    </section>
+    <section class="group">
+      <h2>Яндекс — облако</h2>
+      <p class="note">Через вашу функцию в Yandex Cloud. Для сравнения: работает только через интернет.</p>
+      <ul>
+      <li class="voice">
+        <div class="vh"><span class="num">16</span><b>Алёна</b><span class="g">женский</span></div>
+        <audio controls preload="none" src="yandex-alena.mp3"></audio>
+      </li>
+      <li class="voice">
+        <div class="vh"><span class="num">17</span><b>Филипп</b><span class="g">мужской</span></div>
+        <audio controls preload="none" src="yandex-filipp.mp3"></audio>
+      </li>
+      </ul>
+    </section>
+  <p class="foot">Временная страница для выбора голоса — после выбора её удалим.</p>
+</main>
+</body>
+</html>
