@@ -68,10 +68,18 @@ async function sha(text) {
   return [...new Uint8Array(d)].slice(0, 16).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** Качество звука в ключе кэша (для Яндекса; прежний Opus — без пометки, чтобы старый кэш остался рабочим). */
+const fmtTag = (cfg) => (cfg.provider === 'yandex' && cfg.format && cfg.format !== 'ogg' ? `.${cfg.format}` : '');
+
 async function cacheUrl(cfg, text) {
   const sp = cfg.speed && cfg.speed !== 1 ? `@${cfg.speed}` : '';
-  return `https://tts.cache/${cfg.provider}/${encodeURIComponent(cfg.voice)}${sp}/${await sha(text)}`;
+  return `https://tts.cache/${cfg.provider}/${encodeURIComponent(cfg.voice)}${fmtTag(cfg)}${sp}/${await sha(text)}`;
 }
+
+let noticeCb = () => {};
+/** Подсказки пользователю (например, «обновите функцию»). */
+export function onCloudNotice(fn) { noticeCb = fn; }
+let oldFunctionNoticed = false;
 
 /**
  * Как получить нужную скорость речи без искажений: скорость задаёт сам сервис,
@@ -171,9 +179,19 @@ async function yandex(cfg, text, signal) {
   if (!cfg.url) throw new CloudError('Яндекс ещё не настроен: нужна функция-посредник в Yandex Cloud — инструкция в «Как подключить» (Настройки → Голос).', { fatal: true });
   const headers = { 'Content-Type': 'application/json' };
   if (cfg.key) headers['X-Api-Key'] = cfg.key;
-  const res = await net('Яндекс', cfg.url, { method: 'POST', headers, body: JSON.stringify({ text, voice: cfg.voice, speed: cfg.speed || 1 }), signal });
+  const format = cfg.format || 'ogg';
+  const res = await net('Яндекс', cfg.url, { method: 'POST', headers, body: JSON.stringify({ text, voice: cfg.voice, speed: cfg.speed || 1, format }), signal });
   if (!res.ok) throw httpError('Яндекс', res.status, await readError(res));
-  return res.blob();
+  const blob = await res.blob();
+  // функция старой версии не умеет выбирать качество и всегда присылает Opus — играем его, но не сохраняем как WAV/MP3
+  if (format !== 'ogg' && /ogg/i.test(res.headers.get('content-type') || '')) {
+    blob.noCache = true;
+    if (!oldFunctionNoticed) {
+      oldFunctionNoticed = true;
+      noticeCb('Чтобы включить качество звука «' + (format === 'wav' ? 'Высокое' : 'MP3') + '», обновите функцию в Yandex Cloud: Настройки → Голос → «Как подключить» → «Скопировать код функции», вставьте в index.js и нажмите «Сохранить изменения».');
+    }
+  }
+  return blob;
 }
 
 // Модели синтеза речи Google меняются часто: пробуем по очереди и запоминаем ту, что ответила.
@@ -257,7 +275,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * Сначала — память и сохранённая озвучка, потом — запрос с повторами.
  */
 export function audioFor(cfg, text) {
-  const key = `${cfg.provider}|${cfg.voice}|${cfg.speed || 1}|${text}`;
+  const key = `${cfg.provider}|${cfg.voice}${fmtTag(cfg)}|${cfg.speed || 1}|${text}`;
   if (!memory.has(key)) {
     const p = (async () => {
       const saved = await fromCache(cfg, text);
@@ -267,7 +285,7 @@ export function audioFor(cfg, text) {
         try {
           const blob = await IMPL[cfg.provider](cfg, text);
           if (!blob?.size) throw new CloudError('пустой звук');
-          toCache(cfg, text, blob);
+          if (!blob.noCache) toCache(cfg, text, blob);
           return blob;
         } catch (e) {
           lastErr = e;

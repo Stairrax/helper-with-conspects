@@ -296,6 +296,13 @@
           <label class="field" id="cloudKeyField">Ключ
             <input id="cloudKey" type="password" autocomplete="off" spellcheck="false">
           </label>
+          <label class="field" id="yandexFormatField">Качество звука
+            <select id="yandexFormat">
+              <option value="wav">Высокое — без сжатия (лучше всего в наушниках)</option>
+              <option value="mp3">Среднее — MP3</option>
+              <option value="ogg">Как раньше — Opus (бывает «как по телефону»)</option>
+            </select>
+          </label>
           <label class="field" id="cloudUrlField">Адрес функции-посредника
             <input id="cloudUrl" type="text" inputmode="url" spellcheck="false" autocapitalize="off" placeholder="https://functions.yandexcloud.net/…">
           </label>
@@ -469,20 +476,20 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/ai.js": "./js/ai.js?v=20",
-      "./js/analyze.js": "./js/analyze.js?v=20",
-      "./js/anthropic.js": "./js/anthropic.js?v=20",
-      "./js/app.js": "./js/app.js?v=20",
-      "./js/cloud.js": "./js/cloud.js?v=20",
-      "./js/dictation.js": "./js/dictation.js?v=20",
-      "./js/extract.js": "./js/extract.js?v=20",
-      "./js/gemini.js": "./js/gemini.js?v=20",
-      "./js/media.js": "./js/media.js?v=20",
-      "./js/neural.js": "./js/neural.js?v=20",
-      "./js/onboarding.js": "./js/onboarding.js?v=20",
-      "./js/openai.js": "./js/openai.js?v=20",
-      "./js/speech.js": "./js/speech.js?v=20",
-      "./js/storage.js": "./js/storage.js?v=20"
+      "./js/ai.js": "./js/ai.js?v=21",
+      "./js/analyze.js": "./js/analyze.js?v=21",
+      "./js/anthropic.js": "./js/anthropic.js?v=21",
+      "./js/app.js": "./js/app.js?v=21",
+      "./js/cloud.js": "./js/cloud.js?v=21",
+      "./js/dictation.js": "./js/dictation.js?v=21",
+      "./js/extract.js": "./js/extract.js?v=21",
+      "./js/gemini.js": "./js/gemini.js?v=21",
+      "./js/media.js": "./js/media.js?v=21",
+      "./js/neural.js": "./js/neural.js?v=21",
+      "./js/onboarding.js": "./js/onboarding.js?v=21",
+      "./js/openai.js": "./js/openai.js?v=21",
+      "./js/speech.js": "./js/speech.js?v=21",
+      "./js/storage.js": "./js/storage.js?v=21"
     }
   }
   </script>
@@ -516,6 +523,6 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=20"></script>
+  <script type="module" src="js/app.js?v=21"></script>
 </body>
 </html>

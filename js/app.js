@@ -12,7 +12,7 @@ import { listModels, conn, PROVIDERS, providerName } from './ai.js';
 import {
   loadVoices, getVoices, speak, stopSpeaking, setEngine, setStyle, setCloud, srSupported, ttsSupported, hasBtHeadset, onBtChange,
 } from './speech.js';
-import { CLOUD_PROVIDERS, audioFor, isCached, clearCache, cacheSizeMB, listElevenVoices, speedPlan } from './cloud.js';
+import { CLOUD_PROVIDERS, audioFor, isCached, clearCache, cacheSizeMB, listElevenVoices, speedPlan, onCloudNotice } from './cloud.js';
 import { prepare as prepareNeural, isDownloaded, NEURAL_VOICES, VOICE_STYLES, audioContext } from './neural.js';
 import { enableMedia, disableMedia, updateMedia, mediaSupported } from './media.js';
 import { Dictation, STATE_TEXT } from './dictation.js';
@@ -989,7 +989,10 @@ function cloudCfg() {
   const key = prov === 'gemini'
     ? settings.cloudKey?.gemini || settings.profiles?.gemini?.apiKey || (settings.provider === 'gemini' ? settings.apiKey : '')
     : settings.cloudKey?.[prov] || '';
-  return { provider: prov, voice: settings.cloudVoice?.[prov] || def.voice, key, url: settings.yandexUrl, model: def.model };
+  return {
+    provider: prov, voice: settings.cloudVoice?.[prov] || def.voice, key, url: settings.yandexUrl, model: def.model,
+    format: prov === 'yandex' ? settings.yandexFormat || 'wav' : undefined,
+  };
 }
 
 let elevenCustom = null; // голоса из аккаунта ElevenLabs
@@ -1003,6 +1006,8 @@ function renderCloud() {
   $('cloudVoice').value = cfg.voice;
   $('cloudKeyField').classList.toggle('hidden', prov === 'yandex');
   $('cloudUrlField').classList.toggle('hidden', prov !== 'yandex');
+  $('yandexFormatField').classList.toggle('hidden', prov !== 'yandex');
+  $('yandexFormat').value = settings.yandexFormat || 'wav';
   $('elevenVoices').classList.toggle('hidden', prov !== 'elevenlabs');
   if (document.activeElement !== $('cloudKey')) $('cloudKey').value = cfg.key;
   if (document.activeElement !== $('cloudUrl')) $('cloudUrl').value = settings.yandexUrl;
@@ -1035,6 +1040,13 @@ $('cloudVoice').addEventListener('change', (e) => {
   saveSettings(settings);
   applyEngine();
 });
+$('yandexFormat').addEventListener('change', (e) => {
+  settings.yandexFormat = e.target.value;
+  saveSettings(settings);
+  applyEngine();
+  $('cloudStatus').textContent = 'Нажмите 🔊, чтобы послушать. Сохранённая озвучка в прежнем качестве больше не используется — её можно удалить кнопкой ниже.';
+});
+onCloudNotice((msg) => toast(msg, 12000));
 $('cloudKey').addEventListener('change', (e) => {
   (settings.cloudKey ||= {})[settings.cloudProvider] = e.target.value.trim();
   saveSettings(settings);
