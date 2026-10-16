@@ -296,6 +296,7 @@
           <label class="field" id="cloudKeyField">Ключ
             <input id="cloudKey" type="password" autocomplete="off" spellcheck="false">
           </label>
+          <label class="switch" id="clarityRow"><span>Чёткость голоса<small>эквалайзер: у голоса Яндекса приглушены частоты, которые делают речь ясной, — без него в наушниках он звучит глухо, «как по телефону». Включите и выключите, нажимая 🔊, чтобы сравнить</small></span><input id="voiceClarity" type="checkbox"><i></i></label>
           <label class="field" id="yandexFormatField">Качество звука
             <select id="yandexFormat">
               <option value="wav">Высокое — без сжатия (лучше всего в наушниках)</option>
@@ -476,20 +477,20 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/ai.js": "./js/ai.js?v=21",
-      "./js/analyze.js": "./js/analyze.js?v=21",
-      "./js/anthropic.js": "./js/anthropic.js?v=21",
-      "./js/app.js": "./js/app.js?v=21",
-      "./js/cloud.js": "./js/cloud.js?v=21",
-      "./js/dictation.js": "./js/dictation.js?v=21",
-      "./js/extract.js": "./js/extract.js?v=21",
-      "./js/gemini.js": "./js/gemini.js?v=21",
-      "./js/media.js": "./js/media.js?v=21",
-      "./js/neural.js": "./js/neural.js?v=21",
-      "./js/onboarding.js": "./js/onboarding.js?v=21",
-      "./js/openai.js": "./js/openai.js?v=21",
-      "./js/speech.js": "./js/speech.js?v=21",
-      "./js/storage.js": "./js/storage.js?v=21"
+      "./js/ai.js": "./js/ai.js?v=22",
+      "./js/analyze.js": "./js/analyze.js?v=22",
+      "./js/anthropic.js": "./js/anthropic.js?v=22",
+      "./js/app.js": "./js/app.js?v=22",
+      "./js/cloud.js": "./js/cloud.js?v=22",
+      "./js/dictation.js": "./js/dictation.js?v=22",
+      "./js/extract.js": "./js/extract.js?v=22",
+      "./js/gemini.js": "./js/gemini.js?v=22",
+      "./js/media.js": "./js/media.js?v=22",
+      "./js/neural.js": "./js/neural.js?v=22",
+      "./js/onboarding.js": "./js/onboarding.js?v=22",
+      "./js/openai.js": "./js/openai.js?v=22",
+      "./js/speech.js": "./js/speech.js?v=22",
+      "./js/storage.js": "./js/storage.js?v=22"
     }
   }
   </script>
@@ -523,6 +524,6 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=21"></script>
+  <script type="module" src="js/app.js?v=22"></script>
 </body>
 </html>

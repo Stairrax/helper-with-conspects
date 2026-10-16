@@ -127,6 +127,13 @@ function speakCloud(text, opts) {
       audio.playbackRate = plan.playbackRate; // для Яндекса — 1: скорость уже задана при синтезе, без искажений
       audio.onended = () => fin('end');
       audio.onerror = () => fail(new Error('не удалось воспроизвести звук'));
+      // «Чёткость голоса»: звук идёт через эквалайзер — только если звуковой контекст уже работает, иначе была бы тишина
+      if (cloudCfg.clarity) {
+        try {
+          const ac = neural.audioContext();
+          if (ac.state === 'running') ac.createMediaElementSource(audio).connect(neural.clarityInput());
+        } catch { /* играем как есть */ }
+      }
       // Android ставит звук на паузу, когда кто-то занимает аудио (микрофон, уведомление), — продолжаем с того же места
       audio.onpause = () => setTimeout(() => { if (!done && audio.paused && !audio.ended) audio.play().catch(() => {}); }, 250);
       audio.play().then(() => {
@@ -149,7 +156,7 @@ function speakCloud(text, opts) {
           if (done || myEpoch !== epoch) return fin('cancel');
           const src = ac.createBufferSource();
           src.buffer = buf;
-          src.connect(ac.destination);
+          src.connect(cloudCfg.clarity ? neural.clarityInput() : ac.destination);
           src.onended = () => fin('end');
           audio = { pause: () => { try { src.stop(); } catch { /* ignore */ } } };
           onStart?.();

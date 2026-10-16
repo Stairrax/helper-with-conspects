@@ -31,6 +31,7 @@ export const DEFAULT_SETTINGS = {
   cloudVoice: {},          // выбранный голос для каждого сервиса
   cloudKey: {},            // ключи gemini / elevenlabs
   yandexUrl: '',           // адрес функции-посредника Яндекса
+  voiceClarity: true,      // «чёткость голоса»: эквалайзер для голоса Яндекса
   yandexFormat: 'wav',     // качество звука Яндекса: 'wav' — без сжатия, 'mp3', 'ogg' — Opus (звучит «как по телефону»)
   pauseMode: 'time',      // 'time' — пауза по времени, 'wait' — ждать «дальше»
   adaptivePause: true,    // удлинять паузу, если часто просят повторить

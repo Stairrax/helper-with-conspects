@@ -992,6 +992,7 @@ function cloudCfg() {
   return {
     provider: prov, voice: settings.cloudVoice?.[prov] || def.voice, key, url: settings.yandexUrl, model: def.model,
     format: prov === 'yandex' ? settings.yandexFormat || 'wav' : undefined,
+    clarity: prov === 'yandex' && settings.voiceClarity !== false,
   };
 }
 
@@ -1007,6 +1008,8 @@ function renderCloud() {
   $('cloudKeyField').classList.toggle('hidden', prov === 'yandex');
   $('cloudUrlField').classList.toggle('hidden', prov !== 'yandex');
   $('yandexFormatField').classList.toggle('hidden', prov !== 'yandex');
+  $('clarityRow').classList.toggle('hidden', prov !== 'yandex');
+  $('voiceClarity').checked = settings.voiceClarity !== false;
   $('yandexFormat').value = settings.yandexFormat || 'wav';
   $('elevenVoices').classList.toggle('hidden', prov !== 'elevenlabs');
   if (document.activeElement !== $('cloudKey')) $('cloudKey').value = cfg.key;
@@ -1047,6 +1050,12 @@ $('yandexFormat').addEventListener('change', (e) => {
   $('cloudStatus').textContent = 'Нажмите 🔊, чтобы послушать. Сохранённая озвучка в прежнем качестве больше не используется — её можно удалить кнопкой ниже.';
 });
 onCloudNotice((msg) => toast(msg, 12000));
+$('voiceClarity').addEventListener('change', (e) => {
+  settings.voiceClarity = e.target.checked;
+  saveSettings(settings);
+  applyEngine();
+  toast(e.target.checked ? 'Чёткость включена — нажмите 🔊' : 'Чёткость выключена — нажмите 🔊, чтобы сравнить');
+});
 $('cloudKey').addEventListener('change', (e) => {
   (settings.cloudKey ||= {})[settings.cloudProvider] = e.target.value.trim();
   saveSettings(settings);
@@ -1230,7 +1239,8 @@ $('testNeural').addEventListener('click', async () => {
 
 // звук Web Audio и кнопки наушников включаются только после касания экрана
 document.addEventListener('pointerdown', () => {
-  if (settings.voiceEngine === 'neural') audioContext();
+  // звуковой контекст запускается только касанием: нужен нейроголосу и эквалайзеру облачного голоса
+  if (settings.voiceEngine === 'neural' || settings.voiceEngine === 'cloud') audioContext();
   if (settings.headsetButtons && project) enableHeadset();
 }, { capture: true });
 
