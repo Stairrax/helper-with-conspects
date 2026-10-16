@@ -119,21 +119,32 @@ function speakCloud(text, opts) {
     // сервис молчит слишком долго (плохая связь) — эту фразу говорим голосом Android, а не стоим в тишине
     slow = setTimeout(() => { if (!audio) fail(new Error('облачный голос слишком долго не отвечает')); }, 8000);
     const plan = cloud.speedPlan(cloudCfg.provider, rate);
-    cloud.audioFor({ ...cloudCfg, speed: plan.speed }, text).then((blob) => {
-      if (done || myEpoch !== epoch) return fin('cancel');
+    // Через Web Audio — тем же путём, что и голос на телефоне: элемент <audio> на части телефонов
+    // в Bluetooth-наушниках звучит глухо, «как по телефону». Ускорение (Gemini) — только через <audio>, без смены тона.
+    const viaWebAudio = async (blob) => {
+      const ac = neural.audioContext();
+      if (ac.state !== 'running' || plan.playbackRate !== 1) return false;
+      let buf;
+      try { buf = await ac.decodeAudioData(await blob.arrayBuffer()); } catch { return false; }
+      if (done || myEpoch !== epoch) { fin('cancel'); return true; }
+      const src = ac.createBufferSource();
+      src.buffer = buf;
+      src.connect(cloudCfg.clarity ? neural.clarityInput() : ac.destination);
+      src.onended = () => fin('end');
+      audio = { pause: () => { try { src.stop(); } catch { /* уже остановлен */ } } };
+      onStart?.();
+      src.start();
+      // если звук не пошёл (контекст остановлен системой) — фраза повторится с начала
+      wd = setTimeout(() => fin(ac.state === 'running' ? 'end' : 'error'), buf.duration * 1000 + 5000);
+      return true;
+    };
+    const viaElement = (blob) => {
       url = URL.createObjectURL(blob);
       audio = new Audio(url);
       audio.preservesPitch = true;  // скорость меняем без изменения тона
-      audio.playbackRate = plan.playbackRate; // для Яндекса — 1: скорость уже задана при синтезе, без искажений
+      audio.playbackRate = plan.playbackRate;
       audio.onended = () => fin('end');
       audio.onerror = () => fail(new Error('не удалось воспроизвести звук'));
-      // «Чёткость голоса»: звук идёт через эквалайзер — только если звуковой контекст уже работает, иначе была бы тишина
-      if (cloudCfg.clarity) {
-        try {
-          const ac = neural.audioContext();
-          if (ac.state === 'running') ac.createMediaElementSource(audio).connect(neural.clarityInput());
-        } catch { /* играем как есть */ }
-      }
       // Android ставит звук на паузу, когда кто-то занимает аудио (микрофон, уведомление), — продолжаем с того же места
       audio.onpause = () => setTimeout(() => { if (!done && audio.paused && !audio.ended) audio.play().catch(() => {}); }, 250);
       audio.play().then(() => {
@@ -147,23 +158,11 @@ function speakCloud(text, opts) {
           if (audio.paused) audio.play().catch(() => {});
           if (Date.now() - still > 8000) fin('error');
         }, 500);
-      }).catch(async (err) => {
-        // браузер не дал запустить звук элементом <audio> — играем через Web Audio (он разблокирован касанием)
-        if (done || myEpoch !== epoch) return fin('cancel');
-        try {
-          const ac = neural.audioContext();
-          const buf = await ac.decodeAudioData(await blob.arrayBuffer());
-          if (done || myEpoch !== epoch) return fin('cancel');
-          const src = ac.createBufferSource();
-          src.buffer = buf;
-          src.connect(cloudCfg.clarity ? neural.clarityInput() : ac.destination);
-          src.onended = () => fin('end');
-          audio = { pause: () => { try { src.stop(); } catch { /* ignore */ } } };
-          onStart?.();
-          src.start();
-          wd = setTimeout(() => fin('end'), buf.duration * 1000 + 5000);
-        } catch { fail(err); }
-      });
+      }).catch(fail);
+    };
+    cloud.audioFor({ ...cloudCfg, speed: plan.speed }, text).then(async (blob) => {
+      if (done || myEpoch !== epoch) return fin('cancel');
+      if (!(await viaWebAudio(blob)) && !done) viaElement(blob);
     }).catch(fail);
   });
 }
