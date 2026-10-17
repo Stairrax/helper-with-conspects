@@ -156,6 +156,11 @@
         <input id="seek" class="seek" type="range" min="1" max="1" step="1" value="1" aria-label="Перемотка по кускам">
       </div>
 
+      <div class="seg compact listen-seg" id="listenSeg">
+        <label><input type="radio" name="listenOnly" value="write"><span>Записываю</span></label>
+        <label><input type="radio" name="listenOnly" value="listen"><span>Только слушаю</span></label>
+      </div>
+
       <div id="chunkBox" class="chunk" role="button" tabindex="0" aria-label="Скрыть или показать текст">
         <span id="chunkKind" class="kind"></span>
         <p id="chunkText"></p>
@@ -482,21 +487,21 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/abbr.js": "./js/abbr.js?v=26",
-      "./js/ai.js": "./js/ai.js?v=26",
-      "./js/analyze.js": "./js/analyze.js?v=26",
-      "./js/anthropic.js": "./js/anthropic.js?v=26",
-      "./js/app.js": "./js/app.js?v=26",
-      "./js/cloud.js": "./js/cloud.js?v=26",
-      "./js/dictation.js": "./js/dictation.js?v=26",
-      "./js/extract.js": "./js/extract.js?v=26",
-      "./js/gemini.js": "./js/gemini.js?v=26",
-      "./js/media.js": "./js/media.js?v=26",
-      "./js/neural.js": "./js/neural.js?v=26",
-      "./js/onboarding.js": "./js/onboarding.js?v=26",
-      "./js/openai.js": "./js/openai.js?v=26",
-      "./js/speech.js": "./js/speech.js?v=26",
-      "./js/storage.js": "./js/storage.js?v=26"
+      "./js/abbr.js": "./js/abbr.js?v=27",
+      "./js/ai.js": "./js/ai.js?v=27",
+      "./js/analyze.js": "./js/analyze.js?v=27",
+      "./js/anthropic.js": "./js/anthropic.js?v=27",
+      "./js/app.js": "./js/app.js?v=27",
+      "./js/cloud.js": "./js/cloud.js?v=27",
+      "./js/dictation.js": "./js/dictation.js?v=27",
+      "./js/extract.js": "./js/extract.js?v=27",
+      "./js/gemini.js": "./js/gemini.js?v=27",
+      "./js/media.js": "./js/media.js?v=27",
+      "./js/neural.js": "./js/neural.js?v=27",
+      "./js/onboarding.js": "./js/onboarding.js?v=27",
+      "./js/openai.js": "./js/openai.js?v=27",
+      "./js/speech.js": "./js/speech.js?v=27",
+      "./js/storage.js": "./js/storage.js?v=27"
     }
   }
   </script>
@@ -530,6 +535,6 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=26"></script>
+  <script type="module" src="js/app.js?v=27"></script>
 </body>
 </html>

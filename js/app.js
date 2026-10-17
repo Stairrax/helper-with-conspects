@@ -663,7 +663,10 @@ function renderDictation() {
 
   $('dictState').textContent = st === 'idle' && progress?.review?.ids?.length ? `Нажмите ▶ — продолжу повторение (${progress.review.i + 1} из ${progress.review.ids.length})`
     : st === 'idle' && progress?.spoken > 0 && t && chunk ? 'Нажмите ▶ — продолжу с этого места'
-      : STATE_TEXT[st] || st;
+      : dict.listenOnly && (st === 'speaking' || st === 'gap') ? 'Читаю подряд, без пауз'
+        : dict.listenOnly && st === 'finished' ? 'Конспект прослушан'
+          : STATE_TEXT[st] || st;
+  document.querySelectorAll('input[name=listenOnly]').forEach((r) => { r.checked = r.value === (settings.listenOnly ? 'listen' : 'write'); });
   $('stateDot').className = 'dot s-' + st;
   $('dictMsg').textContent = dict.message || '';
   $('heard').textContent = dict.heard && st !== 'idle' ? `«${dict.heard}»` : '';
@@ -959,6 +962,15 @@ $('headsetButtons').addEventListener('change', (e) => {
   saveSettings(settings);
   if (settings.headsetButtons) { enableHeadset(); toast('Попробуйте кнопку пуск/пауза на наушниках во время диктовки'); } else disableMedia();
 });
+// «Записываю» / «Только слушаю» — переключается и посреди диктовки: следующая пауза уже короткая
+document.querySelectorAll('input[name=listenOnly]').forEach((r) => r.addEventListener('change', () => {
+  settings.listenOnly = r.value === 'listen';
+  saveSettings(settings);
+  render();
+  toast(settings.listenOnly
+    ? 'Только слушаю: текст пойдёт подряд — без пауз на запись, самопроверки и вопросов после тем. Остановить — «СТОП».'
+    : 'Записываю: снова паузы, чтобы успеть записать', 4500);
+}));
 document.querySelectorAll('input[name=pauseMode]').forEach((r) => r.addEventListener('change', () => {
   settings.pauseMode = r.value;
   saveSettings(settings);

@@ -6,7 +6,7 @@ import {
   spellTarget, isDontKnow, Recognizer, srSupported, keepAwake, hasBtHeadset, onBtChange, checkAudioDevices,
 } from './speech.js';
 import { stream, conn } from './ai.js';
-import { activeSeq, pauseFor } from './analyze.js';
+import { activeSeq, pauseFor, LISTEN_GAP_MS } from './analyze.js';
 import { abbreviate } from './abbr.js';
 
 const DICTATING = ['speaking', 'gap', 'waiting'];
@@ -207,6 +207,9 @@ export class Dictation {
   /** Слушать и пока звучит голос (настройка «Всегда»). */
   listenDuring() { return !!this.settings.listenWhileSpeaking && this.micFree(); }
 
+  /** Режим «Только слушать» (в транспорте): текст подряд, без пауз на запись, самопроверки и перерывов. */
+  get listenOnly() { return !!this.settings.listenOnly; }
+
   /** Микрофон работает только после «СТОП» из-за Bluetooth-наушников. */
   get btMicOff() { return !!this.settings.voiceCommands && !this.micFree(); }
 
@@ -334,10 +337,11 @@ export class Dictation {
           this.pos.chunk = 0;
           continue;
         }
-        return this.endOfTopic(my, topic);
+        if ((await this.endOfTopic(my, topic)) === 'next') continue;
+        return;
       }
       if (this.pos.chunk === 0 && this.endedTopic === topic.id) this.endedTopic = null; // тему начали заново
-      if (this.needBreak()) return this.takeBreak(my);
+      if (!this.listenOnly && this.needBreak()) return this.takeBreak(my);
       if (this.pos.chunk === 0 && this.announced !== topic.id) {
         this.set('speaking');
         const r = await this.say(`Тема: ${topic.title}.`);
@@ -388,12 +392,20 @@ export class Dictation {
 
   /** Пауза после куска: по времени или пока не скажут «дальше». false — если прервали. */
   async doGap(my, topic, text) {
+    if (this.listenOnly) {
+      // микрофон не открываем (say держит его закрытым дольше паузы) — звук не уходит в «режим звонка»
+      this.gap = { start: Date.now(), ms: LISTEN_GAP_MS };
+      this.set('gap');
+      await sleep(LISTEN_GAP_MS);
+      this.gap = null;
+      return my === this.token;
+    }
     if (this.settings.pauseMode === 'wait') {
       this.gap = { wait: true };
       this.set('gap', 'Скажите «дальше» или нажмите ⏭, когда запишете');
-      while (my === this.token) await sleep(150);
+      while (my === this.token && !this.listenOnly) await sleep(150);
       this.gap = null;
-      return false; // продолжит next()
+      return my === this.token; // false — продолжит next(); true — включили «Только слушать»
     }
     const boost = this.settings.adaptivePause ? (this.pos.pauseBoost || 1) : 1;
     const ms = Math.round(pauseFor(topic, text, this.settings) * boost);
@@ -403,7 +415,7 @@ export class Dictation {
     // микрофон выключаем чуть раньше конца паузы — к следующему куску звук уже обычный, без «режима звонка»
     const early = !this.listenDuring() && ms >= SETTLE_MS + 1000;
     let held = false;
-    while (Date.now() < end && my === this.token) {
+    while (Date.now() < end && my === this.token && !this.listenOnly) {
       if (early && !held && end - Date.now() <= SETTLE_MS) { held = true; this.holdMic(true); }
       await sleep(100);
     }
@@ -427,7 +439,8 @@ export class Dictation {
       }
       return await speak(text, { rate: Math.min(2, s.rate * rateK), voiceURI: s.voiceURI, echoTail: prompt ? 250 : 900 });
     } finally {
-      this.holdMic(false, prompt ? 0 : 350); // после «Продолжаем?» ответ ждём сразу
+      // после «Продолжаем?» ответ ждём сразу; в режиме «Только слушать» между кусками микрофон не включаем
+      this.holdMic(false, prompt ? 0 : this.listenOnly && DICTATING.includes(this.state) ? 3000 : 350);
     }
   }
 
@@ -439,6 +452,16 @@ export class Dictation {
     const nextId = this.nextTopicId(topic.id);
     this.resumePos = nextId ? { topicId: nextId, chunk: 0 } : null;
     this.schedule(topic.id);
+    if (this.listenOnly) {
+      // слушаем подряд: без самопроверки и «Есть вопросы?» — сразу следующая тема
+      if (!nextId) return this.finish(my);
+      this.resumePos = null;
+      this.pos.topicId = nextId;
+      this.pos.chunk = 0;
+      this.save();
+      await sleep(900);
+      return my === this.token ? 'next' : undefined;
+    }
     if (this.settings.selfCheck && topic.quiz?.length) {
       await this.runQuiz(my, topic);
       if (my !== this.token) return;
@@ -461,7 +484,7 @@ export class Dictation {
     this.resumePos = null;
     this.h.saveProgress();
     this.set('finished');
-    await this.say(`Диктовка завершена${this.a}. Если остались вопросы — нажмите «Стоп, вопрос».`);
+    await this.say(this.listenOnly ? `Конспект прослушан${this.a}.` : `Диктовка завершена${this.a}. Если остались вопросы — нажмите «Стоп, вопрос».`);
     if (my !== this.token) return;
     keepAwake(false);
     this.micForced = false;
@@ -1015,7 +1038,7 @@ ${prevQa ? `\nПРЕДЫДУЩИЕ ВОПРОСЫ В ЭТОЙ СЕССИИ:\n${p
   /** Текст куска для показа и озвучки: с сокращениями («физ. лиц», «НДФЛ»), если они включены. */
   chunkText(c) {
     if (!c) return '';
-    return this.settings.abbreviate ? abbreviate(c.t) : c.t;
+    return this.settings.abbreviate && !this.listenOnly ? abbreviate(c.t) : c.t;
   }
 
   /** Потоковый запрос к нейросети с озвучкой по предложениям. entry.a накапливает текст. */

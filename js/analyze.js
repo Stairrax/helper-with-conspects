@@ -225,7 +225,11 @@ export function orderTopics(topics, priority) {
 
 // ---------- Оценка времени ----------
 
+export const LISTEN_GAP_MS = 450;
+
+/** Пауза после куска, мс. В режиме «Только слушать» — обычная пауза между фразами. */
 export function pauseFor(topic, chunkText, settings) {
+  if (settings.listenOnly) return LISTEN_GAP_MS;
   let p = settings.pause;
   if (settings.scalePause) {
     const d = topic?.difficulty || 3;
@@ -268,7 +272,7 @@ export function fitPause(project, settings) {
   const rate = settings.rate || 1;
   let speak = 0, pauseUnits = 0;
   for (const t of seq) {
-    const one = { ...settings, pause: 1 };
+    const one = { ...settings, pause: 1, listenOnly: false };
     if (t.chunks?.length) {
       for (const c of t.chunks) { speak += c.t.length / (CHARS_PER_SEC * rate); pauseUnits += pauseFor(t, c.t, one) / 1000; }
     } else {
