@@ -4,6 +4,15 @@
 
 Без сборки и без бэкенда: обычные статические файлы. Целевая платформа — Chrome на Android.
 
+<p>
+  <img src="screenshots/dictate.png" width="190" alt="Диктовка">
+  <img src="screenshots/answer.png" width="190" alt="Ответ на вопрос">
+  <img src="screenshots/listen.png" width="190" alt="Только слушаю">
+  <img src="screenshots/voice.png" width="190" alt="Живой голос «Бая»">
+  <img src="screenshots/plan.png" width="190" alt="План">
+  <img src="screenshots/welcome-voice.png" width="190" alt="Первый запуск: включить живой голос">
+</p>
+
 ## Возможности
 
 - **Материал**: несколько конспектов; вставка текста, файлы `.txt`, `.md`, `.pdf` (pdf.js), `.docx` (mammoth.js), фото страниц (распознаёт Gemini). PDF-сканы без текстового слоя автоматически отправляются в Gemini как изображения.

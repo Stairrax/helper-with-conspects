@@ -48,6 +48,12 @@ const persistProgress = () => { if (progress) saveProgress(progress, cur()); };
 
 // ---------- Утилиты ----------
 
+/** «1 тема», «2 темы», «5 тем». */
+function plural(n, forms) {
+  const a = n % 100, b = n % 10;
+  return a >= 11 && a <= 14 ? forms[2] : b === 1 ? forms[0] : b >= 2 && b <= 4 ? forms[1] : forms[2];
+}
+
 function fmtDur(sec) {
   sec = Math.max(0, Math.round(sec));
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
@@ -355,7 +361,7 @@ function renderPlan() {
   if (total > budget * 1.05) line = `<span class="warn">Не укладываемся на ≈${fmtDur(total - budget)} — пропустите часть тем или уменьшите паузу.</span>`;
   else if (total < budget * 0.8) line = `Есть запас ≈${fmtDur(budget - total)}.`;
   else line = 'Укладываемся в отведённое время.';
-  $('planSummary').innerHTML = `<div class="plan-sum"><span class="big">${seq.length} тем · ≈${fmtDur(total)}</span>` +
+  $('planSummary').innerHTML = `<div class="plan-sum"><span class="big">${seq.length} ${plural(seq.length, ['тема', 'темы', 'тем'])} · ≈${fmtDur(total)}</span>` +
     `<span class="muted">из ${fmtDur(budget)}. ${line}</span></div>`;
   $('fitPauseBtn').classList.toggle('hidden', !(total > budget * 1.05 || total < budget * 0.8));
   $('genStatus').textContent = ready < seq.length
@@ -404,7 +410,7 @@ function renderPlan() {
       let stLong = '';
       if (t.status === 'ready') {
         const c = t.coverage || { total: 0, covered: 0 };
-        stLong = `${t.chunks.length} кусков · покрыто пунктов ${c.covered} из ${c.total}${c.checked ? '' : ' (без проверки)'}`;
+        stLong = `${t.chunks.length} ${plural(t.chunks.length, ['кусок', 'куска', 'кусков'])} · покрыто пунктов ${c.covered} из ${c.total}${c.checked ? '' : ' (без проверки)'}`;
       } else if (t.status === 'generating') stLong = 'Готовится…';
       else if (t.status === 'error') stLong = `<span class="bad">${esc(t.error)}</span>`;
       else stLong = 'В очереди на подготовку';

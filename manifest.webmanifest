@@ -60,11 +60,25 @@
       "label": "Диктовка с мгновенной остановкой"
     },
     {
+      "src": "screenshots/listen.png",
+      "sizes": "412x915",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "«Только слушаю» — без пауз, в транспорте"
+    },
+    {
       "src": "screenshots/answer.png",
       "sizes": "412x915",
       "type": "image/png",
       "form_factor": "narrow",
       "label": "Ответ на вопрос и продолжение"
+    },
+    {
+      "src": "screenshots/voice.png",
+      "sizes": "412x915",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Живой голос «Бая» прямо на телефоне"
     },
     {
       "src": "screenshots/plan.png",
