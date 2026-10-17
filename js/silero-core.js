@@ -601,6 +601,156 @@
     }
   }
 
+  // ---------- Омографы: «з+амок» или «зам+ок» — по смыслу фразы ----------
+  // Порт HomoSolver из Silero: сначала готовые фразы-правила, иначе небольшая BERT-модель (homo.onnx)
+  // смотрит на 150 символов слева и справа от слова и выбирает один из двух вариантов ударения.
+
+  const HOMO_WINDOW = 300;
+  const HOMO_WORD_RE = /(?=.*[а-яё])[а-яё+]+/gi;
+  const escapeRe = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const isPunctChar = (c) => /[!-/:-@[-`{-~]/.test(c) || /\p{P}/u.test(c);
+
+  /** Очистка контекста — как HomoSolver._clean_text. */
+  function homoCleanText(text, isStart) {
+    if (!text) return '';
+    let t = text.replace(/[^a-zA-Zа-яА-ЯёЁ0-9\s.!?,-]/g, '');
+    t = t.replace(/\s+/g, ' ').replace(/-{2,}/g, ' - ').replace(/([.!?])\1+/g, '$1').replace(/,{2,}/g, ',')
+      .replace(/\s+([.,!?])/g, '$1').replace(/([.!?])\1+/g, '$1').replace(/,{2,}/g, ',')
+      .replace(/([.,!?])(?=\S)/g, '$1 ').replace(/\s+/g, ' ').trim();
+    if (isStart) {
+      t = t.replace(/^[ .,!?-]+/, '');
+      if (t) t = t[0].toUpperCase() + t.slice(1).toLowerCase();
+    } else {
+      if (t) t = t[0] + t.slice(1).toLowerCase();
+      if (t && !'.!?'.includes(t[t.length - 1])) t += '.';
+    }
+    return t;
+  }
+
+  class HomoSolver {
+    /**
+     * meta — homo.json, vocabText — homo-vocab.txt, embInt8 — homo-emb.bin,
+     * infer(emb Float32Array [T×dim], T, start, end) -> Promise<logit>.
+     */
+    constructor(meta, vocabText, embInt8, infer) {
+      this.meta = meta;
+      this.dict = meta.homodict;
+      this.phrases = meta.phrases;
+      this.vocab = new Map();
+      vocabText.split('\n').forEach((t, i) => this.vocab.set(t, i));
+      this.emb = embInt8;
+      this.infer = infer;
+      this.patterns = new Map();
+      this.cache = new Map();
+    }
+
+    pattern(word) {
+      let re = this.patterns.get(word);
+      if (re === undefined) {
+        const vs = this.phrases[word];
+        re = vs ? new RegExp(vs.map(([, ps]) => `((?<![а-яА-ЯёЁ-])(?:${ps.map(escapeRe).join('|')})(?![а-яА-ЯёЁ-]))`).join('|'), 'i') : null;
+        this.patterns.set(word, re);
+      }
+      return re;
+    }
+
+    /** Вариант по готовой фразе (например, «закрыть на замок»). */
+    byPhrase(word, rawMark) {
+      const re = this.pattern(word);
+      const m = re && re.exec(rawMark);
+      if (!m) return null;
+      const g = m.findIndex((x, i) => i > 0 && x !== undefined);
+      return this.phrases[word][g - 1][0];
+    }
+
+    /** Токены WordPiece — как SimpleBertTokenizer (без перевода в нижний регистр). */
+    tokenize(text) {
+      const { vocab } = this;
+      const words = [];
+      for (const w of text.replace(/\s+/g, ' ').trim().split(' ')) {
+        if (!w) continue;
+        if (w === '[HOMO]' || w === '[/HOMO]') { words.push(w); continue; }
+        let cur = '';
+        for (const c of w) {
+          if (isPunctChar(c)) { if (cur) words.push(cur); words.push(c); cur = ''; } else cur += c;
+        }
+        if (cur) words.push(cur);
+      }
+      const ids = [this.meta.cls];
+      for (const w of words) {
+        const chars = [...w];
+        if (chars.length > 100) { ids.push(this.meta.unk); continue; }
+        const sub = [];
+        let start = 0, bad = false;
+        while (start < chars.length) {
+          let end = chars.length, hit;
+          while (start < end) {
+            const piece = (start > 0 ? '##' : '') + chars.slice(start, end).join('');
+            if (vocab.has(piece)) { hit = vocab.get(piece); break; }
+            end--;
+          }
+          if (hit === undefined) { bad = true; break; }
+          sub.push(hit);
+          start = end;
+        }
+        if (bad) ids.push(this.meta.unk); else ids.push(...sub);
+      }
+      ids.push(this.meta.sep);
+      return ids;
+    }
+
+    async byModel(word, rawMark) {
+      const ids = this.tokenize(rawMark);
+      const { dim, scale, zero_point: zp } = this.meta;
+      const T = ids.length;
+      const x = new Float32Array(T * dim);
+      ids.forEach((id, t) => {
+        const off = id * dim;
+        for (let k = 0; k < dim; k++) x[t * dim + k] = scale * (this.emb[off + k] - zp);
+      });
+      const logit = await this.infer(x, T, ids.indexOf(this.meta.homo_start), ids.indexOf(this.meta.homo_end));
+      return this.dict[word][logit > 0 ? 1 : 0]; // round(sigmoid(logit))
+    }
+
+    /** Ставит ударения (и «ё») в омографах фразы; остальные слова не трогает. */
+    async solve(sentence) {
+      const found = [];
+      for (const m of sentence.matchAll(HOMO_WORD_RE)) {
+        const word = m[0], lower = word.toLowerCase();
+        if (!this.dict[lower] && !this.phrases[lower]) continue;
+        const start = m.index, end = start + word.length;
+        const left = homoCleanText(sentence.slice(0, start), true).slice(-HOMO_WINDOW / 2);
+        const right = homoCleanText(sentence.slice(end), false).slice(0, HOMO_WINDOW / 2);
+        const rawMark = `${left} [HOMO] ${lower} [/HOMO] ${right}`.trim();
+        let variant = this.byPhrase(lower, rawMark);
+        if (variant === null) {
+          if (!this.dict[lower]) continue;
+          variant = this.cache.get(rawMark);
+          if (variant === undefined) {
+            variant = await this.byModel(lower, rawMark);
+            if (this.cache.size > 2000) this.cache.clear();
+            this.cache.set(rawMark, variant);
+          }
+        }
+        found.push({ start, end, word, variant });
+      }
+      let out = sentence, offset = 0;
+      for (const { start, end, word, variant } of found) {
+        const stress = variant.indexOf('+');
+        const plain = variant.replace('+', '');
+        let w = '';
+        for (let i = 0; i < Math.min(word.length, plain.length); i++) {
+          const c1 = word[i];
+          w += c1 !== c1.toUpperCase() ? plain[i].toLowerCase() : plain[i].toUpperCase(); // регистр — как в исходном слове
+        }
+        w = `${w.slice(0, stress)}+${w.slice(stress)}`;
+        out = out.slice(0, start + offset) + w + out.slice(end + offset);
+        offset += w.length - (end - start);
+      }
+      return out;
+    }
+  }
+
   // ---------- Вход модели ----------
 
   /** Готовит фразу так же, как prepare_text_input в Silero. */
@@ -619,18 +769,20 @@
   }
 
   class Frontend {
-    constructor(tts, accentor) {
+    constructor(tts, accentor, homo = null) {
       this.tts = tts;
       this.acc = accentor;
+      this.homo = homo;
       this.allowed = new Set([...tts.symbols.slice(3), '^']);
     }
 
     /** Текст фразы -> { ids, types, accented } или null, если букв нет. */
-    encode(rawText) {
+    async encode(rawText) {
       const original = normalize(rawText);
       const sentence = prepare(original, this.allowed);
       if (!sentence.replace(/[^а-яё]/g, '')) return null;
-      const accented = this.acc.accentuate(sentence);
+      // как SileroStress: сначала омографы, затем остальные слова
+      const accented = this.acc.accentuate(this.homo ? await this.homo.solve(sentence) : sentence);
       const toks = [this.tts.sos, ...accented, this.tts.eos];
       const ids = toks.map((c) => this.tts.symbol_to_id[c]).filter((v) => v !== undefined);
       // тип каждого предложения — для интонации вопроса и восклицания
@@ -872,7 +1024,7 @@
   }
 
   async function synthesizeOne(frontend, run, tensor, text, { speaker = 'baya', rate = 1, pitch: pitchCoef = 1 } = {}) {
-    const enc = frontend.encode(text);
+    const enc = await frontend.encode(text);
     if (!enc) return new Float32Array(0);
     const tts = frontend.tts;
     const T = enc.ids.length;
@@ -901,5 +1053,5 @@
     return istft(v.re.data, v.im.data, bins, frames, tts.window, tts.n_fft, tts.hop);
   }
 
-  root.SileroCore = { normalize, numberWords, ordinalWords, classifyText, classifySentence, charSentIds, Accentor, Frontend, durations, istft, splitLong, synthesize, prepare };
+  root.SileroCore = { normalize, numberWords, ordinalWords, classifyText, classifySentence, charSentIds, Accentor, HomoSolver, homoCleanText, Frontend, durations, istft, splitLong, synthesize, prepare };
 })(typeof self !== 'undefined' ? self : globalThis);

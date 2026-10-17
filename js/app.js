@@ -13,7 +13,7 @@ import {
   loadVoices, getVoices, speak, stopSpeaking, setEngine, setStyle, setCloud, srSupported, ttsSupported, hasBtHeadset, onBtChange,
 } from './speech.js';
 import { CLOUD_PROVIDERS, audioFor, isCached, clearCache, cacheSizeMB, listElevenVoices, speedPlan, onCloudNotice } from './cloud.js';
-import { prepare as prepareNeural, isDownloaded, NEURAL_VOICES, VOICE_STYLES, audioContext, isSilero, voiceSizeMB } from './neural.js';
+import { prepare as prepareNeural, missingMB, NEURAL_VOICES, VOICE_STYLES, audioContext, isSilero } from './neural.js';
 import { enableMedia, disableMedia, updateMedia, mediaSupported } from './media.js';
 import { Dictation, STATE_TEXT } from './dictation.js';
 import { initOnboarding, onboardingDone } from './onboarding.js';
@@ -1198,8 +1198,9 @@ async function downloadNeural(also = null) {
   const st = { set textContent(t) { out.textContent = t; if (also) also.textContent = t; } };
   const id = settings.neuralVoice;
   setEngine('system'); // пока голос качается, говорим системным
-  const downloaded = await isDownloaded(id);
-  st.textContent = downloaded ? 'Загружаю голос…' : `Скачиваю голос (около ${voiceSizeMB(id)} МБ)…`;
+  const mb = await missingMB(id);
+  const downloaded = mb === 0;
+  st.textContent = downloaded ? 'Загружаю голос…' : `Скачиваю голос (около ${mb} МБ)…`;
   const busy = !['idle', 'finished'].includes(dict.state);
   if (busy) toast(`${downloaded ? 'Загружаю' : 'Скачиваю'} голос «${NEURAL_VOICES[id].replace(/ \(.*\)/, '')}» — пока говорю голосом Android`, 5000);
   try {

@@ -34,7 +34,13 @@ const SILERO_FILES = {
   'dec_pre.onnx': 5460679,
   'dec_post.onnx': 6099427,
   'vocoder.onnx': 58290543,
+  // ударения в омографах (зáмок/замóк) — без них голос тоже работает
+  'homo.json': 1879053,
+  'homo-vocab.txt': 946009,
+  'homo-emb.bin': 19646016,
+  'homo.onnx': 5290929,
 };
+const SILERO_OPTIONAL = /^homo/;
 const SILERO_BASE = new URL('../voices/silero-ru/', import.meta.url).href;
 
 function voiceSpec(id) {
@@ -44,7 +50,9 @@ function voiceSpec(id) {
       kind: 'silero',
       key: 'silero-ru', // одна модель на все голоса Silero
       speaker: id.slice(7),
-      files: Object.entries(SILERO_FILES).map(([name, size]) => ({ name, size, urls: [`${SILERO_BASE}${name}?r=${SILERO_REV}`] })),
+      files: Object.entries(SILERO_FILES).map(([name, size]) => ({
+        name, size, optional: SILERO_OPTIONAL.test(name), urls: [`${SILERO_BASE}${name}?r=${SILERO_REV}`],
+      })),
     };
   }
   const file = `ru_RU-${id}-medium.onnx`;
@@ -132,18 +140,24 @@ export function synth(text, { voice = 'irina', rate = 1 } = {}) {
   return cache.get(key);
 }
 
-/** Есть ли уже скачанный голос (чтобы не начинать загрузку посреди диктовки). */
-export async function isDownloaded(voiceId) {
+/** Сколько мегабайт голоса ещё не скачано (0 — всё на телефоне). */
+export async function missingMB(voiceId) {
+  const spec = voiceSpec(voiceId);
   try {
     const c = await caches.open('kd-voices');
-    const spec = voiceSpec(voiceId);
     if (spec.files) {
-      for (const f of spec.files) if (!(await c.match(f.urls[0]))) return false;
-      return true;
+      let bytes = 0;
+      for (const f of spec.files) if (!(await c.match(f.urls[0]))) bytes += f.size;
+      return Math.ceil(bytes / 1e6);
     }
-    for (const u of spec.model) if (await c.match(u)) return true;
+    for (const u of spec.model) if (await c.match(u)) return 0;
   } catch { /* ignore */ }
-  return false;
+  return voiceSizeMB(voiceId);
+}
+
+/** Есть ли уже скачанный голос (чтобы не начинать загрузку посреди диктовки). */
+export async function isDownloaded(voiceId) {
+  return (await missingMB(voiceId)) === 0;
 }
 
 // ---------- Чёткость голоса ----------

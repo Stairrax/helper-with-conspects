@@ -105,15 +105,24 @@ const SILERO_MODELS = ['prosody', 'encoder', 'dec_pre', 'dec_post', 'vocoder'];
 async function initSilero(voice) {
   if (!self.SileroCore) importScripts('silero-core.js' + self.location.search);
   const file = (name) => voice.files.find((f) => f.name === name).urls;
-  // сначала скачиваем всё (общий прогресс), потом по одной загружаем модели в память
-  const total = voice.files.reduce((a, f) => a + f.size, 0);
-  let done = 0;
-  for (const f of voice.files) {
-    const buf = await fetchCached(f.urls, (loaded) => post({ type: 'progress', stage: 'model', loaded: done + Math.min(loaded, f.size), total }));
-    if (buf.byteLength !== f.size) {
-      // вместо файла пришло что-то другое (обрыв, страница входа в Wi-Fi) — не храним, в следующий раз скачаем заново
-      await caches.open(CACHE).then((c) => Promise.all(f.urls.map((u) => c.delete(u)))).catch(() => {});
-      throw new Error('файл голоса скачался не полностью');
+  // сначала скачиваем недостающее (общий прогресс), потом по одной загружаем модели в память
+  const cache = await caches.open(CACHE);
+  const missing = [];
+  for (const f of voice.files) if (!(await cache.match(f.urls[0]))) missing.push(f);
+  const total = missing.reduce((a, f) => a + f.size, 0);
+  let done = 0, homoOk = true;
+  for (const f of missing) {
+    try {
+      const buf = await fetchCached(f.urls, (loaded) => post({ type: 'progress', stage: 'model', loaded: done + Math.min(loaded, f.size), total }));
+      if (buf.byteLength !== f.size) {
+        // вместо файла пришло что-то другое (обрыв, страница входа в Wi-Fi) — не храним, в следующий раз скачаем заново
+        await Promise.all(f.urls.map((u) => cache.delete(u))).catch(() => {});
+        throw new Error('файл голоса скачался не полностью');
+      }
+    } catch (e) {
+      // без модели омографов голос работает (ударения как раньше) — докачаем при следующем запуске
+      if (!f.optional) throw e;
+      homoOk = false;
     }
     done += f.size;
   }
@@ -134,7 +143,24 @@ async function initSilero(voice) {
     for (const s of Object.values(sessions)) { try { await s.release(); } catch { /* ignore */ } }
     throw e;
   }
-  silero = { sessions, frontend: new SileroCore.Frontend(tts, accentor) };
+  let homo = null;
+  if (homoOk) {
+    try {
+      sessions.homo = await ort.InferenceSession.create(await fetchCached(file('homo.onnx')));
+      const infer = async (x, T, start, end) => {
+        const i64 = (v) => new ort.Tensor('int64', BigInt64Array.from([BigInt(v)]), [1]);
+        const r = await sessions.homo.run({ emb: new ort.Tensor('float32', x, [1, T, x.length / T]), start: i64(start), end: i64(end) });
+        return r.logit.data[0];
+      };
+      homo = new SileroCore.HomoSolver(
+        await json('homo.json'),
+        new TextDecoder().decode(await fetchCached(file('homo-vocab.txt'))),
+        new Int8Array(await fetchCached(file('homo-emb.bin'))),
+        infer,
+      );
+    } catch { homo = null; }
+  }
+  silero = { sessions, frontend: new SileroCore.Frontend(tts, accentor, homo) };
   loadedKey = keyOf(voice);
 }
 
