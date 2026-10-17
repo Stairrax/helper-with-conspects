@@ -2,14 +2,13 @@
 // Запросы к API нейросетей никогда не кэшируются.
 
 // При выпуске новой версии поднимайте VERSION и ?v= в index.html (importmap и app.js) — одно и то же число.
-const VERSION = 'kd-v32';
+const VERSION = 'kd-v33';
 const SHELL = [
   './',
   'index.html',
   'css/styles.css',
   'js/app.js',
   'js/abbr.js',
-  'js/cloud.js',
   'js/ai.js',
   'js/analyze.js',
   'js/anthropic.js',
@@ -25,7 +24,6 @@ const SHELL = [
   'js/speech.js',
   'js/storage.js',
   'manifest.webmanifest',
-  'yandex-function/index.js',
   'icons/icon.svg',
   'icons/icon-192.png',
   'icons/icon-512.png',
@@ -41,7 +39,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== VERSION && k !== 'kd-cdn' && k !== 'kd-voices' && k !== 'kd-tts').map((k) => caches.delete(k)))) // скачанный голос не удаляем
+      .then((keys) => Promise.all(keys.filter((k) => k !== VERSION && k !== 'kd-cdn' && k !== 'kd-voices').map((k) => caches.delete(k)))) // скачанный голос не удаляем
       .then(() => self.clients.claim()),
   );
 });

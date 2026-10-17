@@ -10,9 +10,8 @@ import {
 } from './analyze.js';
 import { listModels, conn, PROVIDERS, providerName } from './ai.js';
 import {
-  loadVoices, getVoices, speak, stopSpeaking, setEngine, setStyle, setIntonation, setCloud, srSupported, ttsSupported, hasBtHeadset, onBtChange,
+  loadVoices, getVoices, speak, stopSpeaking, setEngine, setStyle, setIntonation, srSupported, ttsSupported, hasBtHeadset, onBtChange,
 } from './speech.js';
-import { CLOUD_PROVIDERS, audioFor, isCached, clearCache, cacheSizeMB, listElevenVoices, speedPlan, onCloudNotice } from './cloud.js';
 import { prepare as prepareNeural, missingMB, NEURAL_VOICES, VOICE_STYLES, audioContext, isSilero } from './neural.js';
 import { enableMedia, disableMedia, updateMedia, mediaSupported } from './media.js';
 import { Dictation, STATE_TEXT } from './dictation.js';
@@ -885,15 +884,12 @@ function renderSettings() {
   document.querySelectorAll('input[name=voiceEngine]').forEach((r) => { r.checked = r.value === settings.voiceEngine; });
   $('systemVoiceBox').classList.toggle('hidden', settings.voiceEngine !== 'system');
   $('neuralBox').classList.toggle('hidden', settings.voiceEngine !== 'neural');
-  $('cloudBox').classList.toggle('hidden', settings.voiceEngine !== 'cloud');
-  renderCloud();
   $('neuralVoice').value = settings.neuralVoice;
   $('intonation').checked = settings.intonation !== false;
   $('intonationRow').classList.toggle('hidden', !isSilero(settings.neuralVoice));
   $('voiceStyle').value = settings.voiceStyle;
   $('address').value = settings.address;
   $('styleHint').textContent = settings.voiceStyle !== 'jarvis' ? ''
-    : settings.voiceEngine === 'cloud' ? 'Для облачного голоса звуковой стиль не применяется — выберите подходящий голос в списке ниже. Обращение работает.'
     : settings.voiceEngine === 'neural'
       ? 'Стилизация под ИИ-ассистента из кино: тон ниже, «цифровой» оттенок и лёгкое эхо. Это не голос актёра — копировать чужой голос без разрешения нельзя. Лучше всего звучит с мужскими голосами.'
       : 'С голосом Android можно только понизить тон. Полный эффект — с нейросетевым голосом.';
@@ -982,182 +978,6 @@ document.querySelectorAll('input[name=pauseMode]').forEach((r) => r.addEventList
   saveSettings(settings);
 }));
 
-// ---------- Облачный голос ----------
-
-const CLOUD_HELP = {
-  yandex: `<ol>
-    <li>Откройте <a href="https://console.yandex.cloud" target="_blank" rel="noopener">console.yandex.cloud</a>, войдите через Яндекс ID и создайте платёжный аккаунт (новым пользователям обычно дают стартовый грант).</li>
-    <li><b>Сервисные аккаунты</b> → «Создать» → имя <b>tts</b> → роль <b>ai.speechkit-tts.user</b> → «Создать».</li>
-    <li><b>Cloud Functions</b> → «Создать функцию» → имя <b>tts</b> → среда <b>Node.js 18</b> или новее.</li>
-    <li>В редакторе: файл <b>index.js</b> → вставьте код <button class="btn text" id="copyYandexCode" type="button">Скопировать код функции</button>; точка входа <b>index.handler</b>; сервисный аккаунт <b>tts</b>; таймаут 10 с → «Сохранить изменения».</li>
-    <li>На вкладке «Обзор» включите <b>Публичная функция</b>, скопируйте ссылку вида https://functions.yandexcloud.net/… и вставьте в поле «Адрес функции-посредника».</li>
-    <li>Нажмите 🔊. Ключ в приложение вводить не нужно.</li></ol>
-    <p>Цена — по тарифам SpeechKit: обычный конспект обходится примерно в сотню-другую рублей, повторное прослушивание бесплатно.</p>`,
-  gemini: `<ol>
-    <li>Включите VPN — из России Google не отвечает.</li>
-    <li>Откройте <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> → <b>Create API key</b> → скопируйте и вставьте в поле «Ключ».</li>
-    <li>Нажмите 🔊.</li></ol>
-    <p>Бесплатно, но с дневным лимитом запросов (каждый кусок — один запрос; точное число видно в AI Studio, обычно от нескольких до сотни в день) — хватит попробовать голос, но не на целый конспект. Звук Gemini не сохраняется на телефоне (он слишком объёмный), поэтому при повторе запрашивается снова.</p>`,
-  elevenlabs: `<ol>
-    <li>Включите VPN. Зарегистрируйтесь на <a href="https://elevenlabs.io" target="_blank" rel="noopener">elevenlabs.io</a>.</li>
-    <li>Профиль → <b>API Keys</b> → «Create» (разрешите Text to Speech) → скопируйте ключ в поле «Ключ».</li>
-    <li>Нажмите «Загрузить голоса из моего аккаунта», выберите голос и нажмите 🔊.</li></ol>
-    <p>Бесплатно — около 10 минут речи в месяц, дальше нужна подписка (оплата зарубежной картой).</p>`,
-};
-
-function cloudCfg() {
-  const prov = settings.cloudProvider;
-  const def = CLOUD_PROVIDERS[prov];
-  const key = prov === 'gemini'
-    ? settings.cloudKey?.gemini || settings.profiles?.gemini?.apiKey || (settings.provider === 'gemini' ? settings.apiKey : '')
-    : settings.cloudKey?.[prov] || '';
-  return {
-    provider: prov, voice: settings.cloudVoice?.[prov] || def.voice, key, url: settings.yandexUrl, model: def.model,
-    format: prov === 'yandex' ? settings.yandexFormat || 'wav' : undefined,
-    clarity: prov === 'yandex' && settings.voiceClarity !== false,
-  };
-}
-
-let elevenCustom = null; // голоса из аккаунта ElevenLabs
-function renderCloud() {
-  const prov = settings.cloudProvider;
-  const cfg = cloudCfg();
-  $('cloudProvider').value = prov;
-  const voices = prov === 'elevenlabs' && elevenCustom ? Object.fromEntries(elevenCustom.map((v) => [v.id, v.name])) : CLOUD_PROVIDERS[prov].voices;
-  if (!voices[cfg.voice]) voices[cfg.voice] = cfg.voice;
-  $('cloudVoice').innerHTML = Object.entries(voices).map(([id, n]) => `<option value="${esc(id)}">${esc(n)}</option>`).join('');
-  $('cloudVoice').value = cfg.voice;
-  $('cloudKeyField').classList.toggle('hidden', prov === 'yandex');
-  $('cloudUrlField').classList.toggle('hidden', prov !== 'yandex');
-  $('yandexFormatField').classList.toggle('hidden', prov !== 'yandex');
-  $('clarityRow').classList.toggle('hidden', prov !== 'yandex');
-  $('voiceClarity').checked = settings.voiceClarity !== false;
-  $('yandexFormat').value = settings.yandexFormat || 'wav';
-  $('elevenVoices').classList.toggle('hidden', prov !== 'elevenlabs');
-  if (document.activeElement !== $('cloudKey')) $('cloudKey').value = cfg.key;
-  if (document.activeElement !== $('cloudUrl')) $('cloudUrl').value = settings.yandexUrl;
-  $('cloudKey').placeholder = prov === 'gemini' ? 'AIza…' : 'sk_…';
-  $('cloudHelpText').innerHTML = CLOUD_HELP[prov];
-  $('prerenderBtn').classList.toggle('hidden', settings.voiceEngine !== 'cloud' || !CLOUD_PROVIDERS[prov].persistent);
-}
-
-async function copyYandexCode() {
-  try {
-    const code = await (await fetch('yandex-function/index.js')).text();
-    await navigator.clipboard.writeText(code);
-    toast('Код функции скопирован — вставьте его в index.js');
-  } catch {
-    toast('Не удалось скопировать — откройте файл yandex-function/index.js в репозитории', 5000);
-  }
-}
-
-$('cloudHelpText').addEventListener('click', (e) => { if (e.target.closest('#copyYandexCode')) copyYandexCode(); });
-$('cloudProvider').innerHTML = Object.entries(CLOUD_PROVIDERS).map(([id, p]) => `<option value="${id}">${esc(p.name)}</option>`).join('');
-$('cloudProvider').addEventListener('change', (e) => {
-  settings.cloudProvider = e.target.value;
-  saveSettings(settings);
-  $('cloudStatus').textContent = '';
-  renderSettings();
-  applyEngine();
-});
-$('cloudVoice').addEventListener('change', (e) => {
-  (settings.cloudVoice ||= {})[settings.cloudProvider] = e.target.value;
-  saveSettings(settings);
-  applyEngine();
-});
-$('yandexFormat').addEventListener('change', (e) => {
-  settings.yandexFormat = e.target.value;
-  saveSettings(settings);
-  applyEngine();
-  $('cloudStatus').textContent = 'Нажмите 🔊, чтобы послушать. Сохранённая озвучка в прежнем качестве больше не используется — её можно удалить кнопкой ниже.';
-});
-onCloudNotice((msg) => toast(msg, 12000));
-$('voiceClarity').addEventListener('change', (e) => {
-  settings.voiceClarity = e.target.checked;
-  saveSettings(settings);
-  applyEngine();
-  toast(e.target.checked ? 'Чёткость включена — нажмите 🔊' : 'Чёткость выключена — нажмите 🔊, чтобы сравнить');
-});
-$('cloudKey').addEventListener('change', (e) => {
-  (settings.cloudKey ||= {})[settings.cloudProvider] = e.target.value.trim();
-  saveSettings(settings);
-  applyEngine();
-});
-$('cloudUrl').addEventListener('change', (e) => {
-  settings.yandexUrl = e.target.value.trim();
-  saveSettings(settings);
-  applyEngine();
-});
-$('elevenVoices').addEventListener('click', async () => {
-  const cfg = cloudCfg();
-  if (!cfg.key) return toast('Сначала вставьте ключ ElevenLabs');
-  $('cloudStatus').textContent = 'Загружаю голоса…';
-  try {
-    elevenCustom = await listElevenVoices(cfg.key);
-    $('cloudStatus').textContent = `Найдено голосов: ${elevenCustom.length}`;
-    renderCloud();
-  } catch (e) { $('cloudStatus').textContent = '✗ ' + e.message; }
-});
-$('testCloud').addEventListener('click', async () => {
-  const cfg = cloudCfg();
-  stopSpeaking();
-  $('cloudStatus').textContent = 'Запрашиваю голос…';
-  try {
-    await audioFor(cfg, 'Привет! Так звучит облачный голос. Определение: производная — это скорость изменения функции.');
-    $('cloudStatus').textContent = '✓ Работает.';
-    applyEngine();
-    speak('Привет! Так звучит облачный голос. Определение: производная — это скорость изменения функции.', { rate: settings.rate });
-  } catch (e) {
-    $('cloudStatus').textContent = '✗ ' + (e.message || e);
-  }
-});
-$('clearCloud').addEventListener('click', async () => {
-  if (!confirm('Удалить сохранённую озвучку? Её придётся запрашивать заново.')) return;
-  await clearCache();
-  showCloudCache();
-  toast('Сохранённая озвучка удалена');
-});
-async function showCloudCache() {
-  const mb = await cacheSizeMB();
-  $('cloudCache').textContent = mb !== null ? `Сейчас занято ≈${mb} МБ.` : '';
-}
-
-// Озвучить весь конспект заранее
-let prerendering = null;
-$('prerenderBtn').addEventListener('click', async () => {
-  if (prerendering) { prerendering.stop = true; return; }
-  if (!project) return;
-  const cfg = { ...cloudCfg(), speed: speedPlan(settings.cloudProvider, settings.rate).speed };
-  const texts = [];
-  const seq = activeSeq(project);
-  const start = Math.max(0, seq.findIndex((t) => t.id === progress?.topicId));
-  for (const t of [...seq.slice(start), ...seq.slice(0, start)]) {
-    if (t.status !== 'ready') continue;
-    texts.push(`Тема: ${t.title}.`, ...t.chunks.map((c) => dict.chunkText(c)));
-  }
-  const job = (prerendering = { stop: false });
-  const btn = $('prerenderBtn');
-  btn.textContent = 'Остановить озвучку';
-  let done = 0, failed = 0, chars = 0;
-  for (const text of texts) {
-    if (job.stop) break;
-    if (!(await isCached(cfg, text))) {
-      try { await audioFor(cfg, text); chars += text.length; } catch (e) {
-        failed++;
-        if (e.fatal) { $('prerenderStatus').textContent = '✗ ' + e.message; break; }
-      }
-    }
-    done++;
-    $('prerenderStatus').textContent = `Озвучено ${done} из ${texts.length} кусков${failed ? `, ошибок: ${failed}` : ''}`;
-  }
-  prerendering = null;
-  btn.textContent = 'Озвучить весь конспект заранее';
-  if (done === texts.length) $('prerenderStatus').textContent = `✓ Готово: весь конспект озвучен и сохранён на телефоне${chars ? ` (новых символов: ${chars})` : ''}.`;
-  const notReady = activeSeq(project).filter((t) => t.status !== 'ready').length;
-  if (notReady) $('prerenderStatus').textContent += ` Ещё готовятся тем: ${notReady} — нажмите позже, чтобы озвучить и их.`;
-  showCloudCache();
-});
-
 // ---------- Нейросетевой голос ----------
 
 $('voiceStyle').innerHTML = Object.entries(VOICE_STYLES).map(([id, st]) => `<option value="${id}">${esc(st.name)}</option>`).join('');
@@ -1189,25 +1009,10 @@ const MALE_VOICE = { irina: 'dmitri', 'silero-baya': 'silero-eugene', 'silero-xe
   $('neuralVoice').innerHTML = `<optgroup label="Живые голоса (Silero)">${opts(true)}</optgroup><optgroup label="Другие (Piper)">${opts(false)}</optgroup>`;
 }
 let neuralFailNotified = false;
-let cloudRetry = null;
 
 function applyEngine() {
   setStyle(settings.voiceStyle);
   setIntonation(settings.intonation !== false);
-  if (settings.voiceEngine === 'cloud') {
-    setCloud(cloudCfg());
-    clearTimeout(cloudRetry);
-    setEngine('cloud', null, (err) => {
-      setEngine('system');
-      const msg = err?.message || 'неизвестная ошибка';
-      $('cloudStatus').textContent = '✗ ' + msg;
-      if (err?.fatal) { toast('Облачный голос не сработал, говорю голосом Android. Причина: ' + msg, 9000); return; }
-      // временный сбой (связь, сервис долго не отвечает) — настройки не меняем и через минуту снова пробуем облачный голос
-      toast('Облачный голос не отвечает — пока говорю голосом Android, через минуту попробую снова. ' + msg, 7000);
-      cloudRetry = setTimeout(() => { if (settings.voiceEngine === 'cloud') applyEngine(); }, 60000);
-    });
-    return;
-  }
   setEngine(settings.voiceEngine, settings.neuralVoice, (err) => {
     // нейроголос не сработал посреди занятия — дальше говорим голосом Android
     setEngine('system');
@@ -1248,15 +1053,6 @@ document.querySelectorAll('input[name=voiceEngine]').forEach((r) => r.addEventLi
   saveSettings(settings);
   renderSettings();
   if (settings.voiceEngine === 'neural') downloadNeural(); else applyEngine();
-  if (settings.voiceEngine === 'cloud') {
-    showCloudCache();
-    // сервис ещё не настроен — сразу показываем, что сделать
-    const c = cloudCfg();
-    if ((c.provider === 'yandex' && !c.url) || (c.provider !== 'yandex' && !c.key)) {
-      $('cloudHelp').open = true;
-      $('cloudStatus').textContent = 'Сервис ещё не настроен — пока будет говорить голос Android. Инструкция ниже.';
-    }
-  }
 }));
 $('intonation').addEventListener('change', (e) => {
   settings.intonation = e.target.checked;
@@ -1280,8 +1076,8 @@ $('testNeural').addEventListener('click', async () => {
 
 // звук Web Audio и кнопки наушников включаются только после касания экрана
 document.addEventListener('pointerdown', () => {
-  // звуковой контекст запускается только касанием: нужен нейроголосу и эквалайзеру облачного голоса
-  if (settings.voiceEngine === 'neural' || settings.voiceEngine === 'cloud') audioContext();
+  // звуковой контекст запускается только касанием: нужен нейроголосу
+  if (settings.voiceEngine === 'neural') audioContext();
   if (settings.headsetButtons && project) enableHeadset();
 }, { capture: true });
 

@@ -128,8 +128,6 @@
             <button id="reviewAllBtn" class="btn outline">Все пройденные</button>
           </div>
           <button id="exportBtn" class="btn text">Сохранить конспект и вопросы в файл</button>
-          <button id="prerenderBtn" class="btn text hidden">Озвучить весь конспект заранее</button>
-          <div id="prerenderStatus" class="status small"></div>
         </div>
         <ol id="planList" class="plan"></ol>
         <p class="muted small center">Нажмите на тему, чтобы переставить, пропустить или начать с неё.</p>
@@ -246,7 +244,6 @@
         <div class="seg" id="engineSeg">
           <label><input type="radio" name="voiceEngine" value="system"><span>Android</span></label>
           <label><input type="radio" name="voiceEngine" value="neural"><span>Нейросеть на телефоне</span></label>
-          <label><input type="radio" name="voiceEngine" value="cloud"><span>Облачный</span></label>
         </div>
         <div class="row mt">
           <label class="field grow">Стиль
@@ -289,35 +286,6 @@
           <label class="switch" id="intonationRow"><span>Живая интонация<small>голос выделяет главное, как лектор: термин перед «— это», слова в «кавычках», «не …, а …», «важно»; разговорные ударения — «нá руки», «зá город», «нé был». Выключите и включите, нажимая 🔊, чтобы сравнить</small></span><input id="intonation" type="checkbox"><i></i></label>
           <p class="hint">Работает прямо на телефоне, без интернета и лимитов. Живые голоса (Бая, Ксения, Ксюша, Айдар, Евгений) один раз скачиваются вместе — около 120 МБ, остальные — около 65 МБ каждый; лучше по Wi-Fi. Если голос не загрузится, приложение будет говорить голосом Android.</p>
           <p class="hint">Живые голоса — модель <a href="https://github.com/snakers4/silero-models" target="_blank" rel="noopener">Silero</a> (© Silero Team, лицензия <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.ru" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>: только некоммерческое использование). Остальные — <a href="https://github.com/rhasspy/piper" target="_blank" rel="noopener">Piper</a>.</p>
-        </div>
-        <div id="cloudBox" class="hidden">
-          <label class="field mt">Сервис
-            <select id="cloudProvider"></select>
-          </label>
-          <label class="field">Голос
-            <div class="row">
-              <select id="cloudVoice"></select>
-              <button id="testCloud" class="icon-btn" aria-label="Прослушать"><svg><use href="#i-volume"/></svg></button>
-            </div>
-          </label>
-          <label class="field" id="cloudKeyField">Ключ
-            <input id="cloudKey" type="password" autocomplete="off" spellcheck="false">
-          </label>
-          <label class="switch" id="clarityRow"><span>Чёткость голоса<small>эквалайзер: у голоса Яндекса приглушены частоты, которые делают речь ясной, — без него в наушниках он звучит глухо, «как по телефону». Включите и выключите, нажимая 🔊, чтобы сравнить</small></span><input id="voiceClarity" type="checkbox"><i></i></label>
-          <label class="field" id="yandexFormatField">Качество звука
-            <select id="yandexFormat">
-              <option value="wav">Высокое — без сжатия (лучше всего в наушниках)</option>
-              <option value="mp3">Среднее — MP3</option>
-              <option value="ogg">Как раньше — Opus (бывает «как по телефону»)</option>
-            </select>
-          </label>
-          <label class="field" id="cloudUrlField">Адрес функции-посредника
-            <input id="cloudUrl" type="text" inputmode="url" spellcheck="false" autocapitalize="off" placeholder="https://functions.yandexcloud.net/…">
-          </label>
-          <button id="elevenVoices" class="btn text hidden">Загрузить голоса из моего аккаунта</button>
-          <div id="cloudStatus" class="status small"></div>
-          <details class="mini" id="cloudHelp"><summary>Как подключить</summary><div id="cloudHelpText" class="cmds"></div></details>
-          <p class="hint">Озвученные куски сохраняются на телефоне — повторное прослушивание бесплатно и без интернета. Весь конспект можно озвучить заранее на вкладке «План». <span id="cloudCache"></span> <button id="clearCloud" class="btn text">Удалить сохранённую озвучку</button></p>
         </div>
         <label class="field">Скорость речи <b id="rateVal"></b>
           <input id="rate" type="range" min="0.5" max="2" step="0.1">
@@ -487,21 +455,20 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/abbr.js": "./js/abbr.js?v=32",
-      "./js/ai.js": "./js/ai.js?v=32",
-      "./js/analyze.js": "./js/analyze.js?v=32",
-      "./js/anthropic.js": "./js/anthropic.js?v=32",
-      "./js/app.js": "./js/app.js?v=32",
-      "./js/cloud.js": "./js/cloud.js?v=32",
-      "./js/dictation.js": "./js/dictation.js?v=32",
-      "./js/extract.js": "./js/extract.js?v=32",
-      "./js/gemini.js": "./js/gemini.js?v=32",
-      "./js/media.js": "./js/media.js?v=32",
-      "./js/neural.js": "./js/neural.js?v=32",
-      "./js/onboarding.js": "./js/onboarding.js?v=32",
-      "./js/openai.js": "./js/openai.js?v=32",
-      "./js/speech.js": "./js/speech.js?v=32",
-      "./js/storage.js": "./js/storage.js?v=32"
+      "./js/abbr.js": "./js/abbr.js?v=33",
+      "./js/ai.js": "./js/ai.js?v=33",
+      "./js/analyze.js": "./js/analyze.js?v=33",
+      "./js/anthropic.js": "./js/anthropic.js?v=33",
+      "./js/app.js": "./js/app.js?v=33",
+      "./js/dictation.js": "./js/dictation.js?v=33",
+      "./js/extract.js": "./js/extract.js?v=33",
+      "./js/gemini.js": "./js/gemini.js?v=33",
+      "./js/media.js": "./js/media.js?v=33",
+      "./js/neural.js": "./js/neural.js?v=33",
+      "./js/onboarding.js": "./js/onboarding.js?v=33",
+      "./js/openai.js": "./js/openai.js?v=33",
+      "./js/speech.js": "./js/speech.js?v=33",
+      "./js/storage.js": "./js/storage.js?v=33"
     }
   }
   </script>
@@ -535,6 +502,6 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=32"></script>
+  <script type="module" src="js/app.js?v=33"></script>
 </body>
 </html>

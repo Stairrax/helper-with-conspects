@@ -30,12 +30,6 @@ export const DEFAULT_SETTINGS = {
   listenOnly: false,      // «Только слушаю»: текст подряд, без пауз на запись (в транспорте)
   voiceStyle: 'none',     // 'none' | 'jarvis' — стиль ИИ-ассистента
   address: '',            // обращение: '' | 'сэр' | 'мэм'
-  cloudProvider: 'yandex', // облачный голос: 'yandex' | 'gemini' | 'elevenlabs'
-  cloudVoice: {},          // выбранный голос для каждого сервиса
-  cloudKey: {},            // ключи gemini / elevenlabs
-  yandexUrl: '',           // адрес функции-посредника Яндекса
-  voiceClarity: true,      // «чёткость голоса»: эквалайзер для голоса Яндекса
-  yandexFormat: 'wav',     // качество звука Яндекса: 'wav' — без сжатия, 'mp3', 'ogg' — Opus (звучит «как по телефону»)
   pauseMode: 'time',      // 'time' — пауза по времени, 'wait' — ждать «дальше»
   adaptivePause: true,    // удлинять паузу, если часто просят повторить
   selfCheck: true,        // самопроверка после каждой темы
@@ -50,6 +44,16 @@ export function loadSettings() {
   if (saved.apiKey !== undefined && !saved.provider) {
     saved.provider = 'gemini';
     if (!saved.model) saved.model = 'gemini-2.5-flash';
+  }
+  // облачного голоса больше нет: в наушниках он звучал «как по телефону» — переходим на живой голос на телефоне
+  const cloudKeys = ['cloudProvider', 'cloudVoice', 'cloudKey', 'yandexUrl', 'voiceClarity', 'yandexFormat'];
+  if (saved.voiceEngine === 'cloud' || cloudKeys.some((k) => k in saved)) {
+    if (saved.voiceEngine === 'cloud') {
+      saved.voiceEngine = 'neural';
+      saved.neuralVoice = 'silero-baya';
+    }
+    for (const k of cloudKeys) delete saved[k]; // ключи облачных сервисов больше не храним
+    saveSettings(saved);
   }
   return { ...DEFAULT_SETTINGS, profiles: {}, ...saved };
 }

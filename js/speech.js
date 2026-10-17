@@ -1,8 +1,7 @@
-// Синтез речи (системный SpeechSynthesis или нейросетевой Piper), распознавание (SpeechRecognition),
+// Синтез речи (системный SpeechSynthesis или нейросетевой голос на телефоне), распознавание (SpeechRecognition),
 // команды и защита от эха.
 
 import * as neural from './neural.js';
-import * as cloud from './cloud.js';
 
 const synth = window.speechSynthesis;
 export const ttsSupported = !!synth && 'SpeechSynthesisUtterance' in window;
@@ -45,9 +44,8 @@ export function isSpeaking() {
 
 // ---------- Выбор движка ----------
 
-let engine = 'system';        // 'system' | 'neural' | 'cloud'
-let cloudCfg = null;          // { provider, voice, key, url, model }
-let failures = 0;             // подряд неудачных фраз нейро/облачного голоса
+let engine = 'system';        // 'system' | 'neural'
+let failures = 0;             // подряд неудачных фраз нейроголоса
 let neuralVoice = 'irina';
 let voiceStyle = 'none';      // 'none' | 'jarvis'
 
@@ -60,15 +58,13 @@ const neuralRate = (rate) => rate / stylePitch();
 let onNeuralError = () => {};
 
 export function setEngine(kind, voice, onError) {
-  engine = kind === 'neural' || kind === 'cloud' ? kind : 'system';
+  engine = kind === 'neural' ? kind : 'system';
   if (voice) neuralVoice = voice;
   if (onError) onNeuralError = onError;
   failures = 0;
 }
 
-export function setCloud(cfg) { cloudCfg = cfg; }
-
-/** Сбой нейро/облачного голоса: эту фразу говорим голосом Android; после трёх сбоев подряд (или ошибки ключа) — сообщаем. */
+/** Сбой нейроголоса: эту фразу говорим голосом Android; после трёх сбоев подряд — сообщаем. */
 function engineFailed(err, text, opts, resolve) {
   failures++;
   if (err?.fatal || failures >= 3) { failures = 0; onNeuralError(err); }
@@ -78,95 +74,12 @@ function engineFailed(err, text, opts, resolve) {
 /** Готовит следующие куски заранее (только для нейроголоса — системному не нужно). */
 export function prefetch(texts, { rate = 1 } = {}) {
   if (engine === 'neural') for (const t of texts) if (t) neural.synth(t, { voice: neuralVoice, rate: neuralRate(rate), expressive: intonation }).catch(() => {});
-  if (engine === 'cloud' && cloudCfg) {
-    const cfg = { ...cloudCfg, speed: cloud.speedPlan(cloudCfg.provider, rate).speed };
-    for (const t of texts) if (t) cloud.audioFor(cfg, t).catch(() => {});
-  }
 }
 
 /** Произносит текст. Promise -> 'end' | 'cancel' | 'error'. */
 export function speak(text, opts = {}) {
   if (engine === 'neural') return speakNeural(text, opts);
-  if (engine === 'cloud' && cloudCfg) return speakCloud(text, opts);
   return speakSystem(text, opts);
-}
-
-function speakCloud(text, opts) {
-  const { rate = 1, onStart, echoTail = 900 } = opts;
-  const myEpoch = epoch;
-  return new Promise((resolve) => {
-    const rec = remember(text, echoTail);
-    let done = false, audio = null, url = null, wd = null, slow = null;
-    const fin = (r) => {
-      if (done) return;
-      done = true;
-      clearTimeout(wd); // снимает и setTimeout, и setInterval
-      clearTimeout(slow);
-      rec.end = Date.now();
-      if (current?.fin === fin) current = null;
-      if (audio) { audio.onended = audio.onerror = audio.onpause = null; audio.pause(); }
-      if (url) URL.revokeObjectURL(url);
-      if (r === 'end') failures = 0;
-      resolve(r);
-    };
-    current = { fin, text };
-    const fail = (err) => {
-      if (done || myEpoch !== epoch) return fin('cancel');
-      done = true;
-      clearTimeout(slow);
-      if (current?.fin === fin) current = null;
-      recent.splice(recent.indexOf(rec), 1);
-      engineFailed(err, text, opts, resolve);
-    };
-    // сервис молчит слишком долго (плохая связь) — эту фразу говорим голосом Android, а не стоим в тишине
-    slow = setTimeout(() => { if (!audio) fail(new Error('облачный голос слишком долго не отвечает')); }, 8000);
-    const plan = cloud.speedPlan(cloudCfg.provider, rate);
-    // Через Web Audio — тем же путём, что и голос на телефоне: элемент <audio> на части телефонов
-    // в Bluetooth-наушниках звучит глухо, «как по телефону». Ускорение (Gemini) — только через <audio>, без смены тона.
-    const viaWebAudio = async (blob) => {
-      const ac = neural.audioContext();
-      if (ac.state !== 'running' || plan.playbackRate !== 1) return false;
-      let buf;
-      try { buf = await ac.decodeAudioData(await blob.arrayBuffer()); } catch { return false; }
-      if (done || myEpoch !== epoch) { fin('cancel'); return true; }
-      const src = ac.createBufferSource();
-      src.buffer = buf;
-      src.connect(cloudCfg.clarity ? neural.clarityInput() : ac.destination);
-      src.onended = () => fin('end');
-      audio = { pause: () => { try { src.stop(); } catch { /* уже остановлен */ } } };
-      onStart?.();
-      src.start();
-      // если звук не пошёл (контекст остановлен системой) — фраза повторится с начала
-      wd = setTimeout(() => fin(ac.state === 'running' ? 'end' : 'error'), buf.duration * 1000 + 5000);
-      return true;
-    };
-    const viaElement = (blob) => {
-      url = URL.createObjectURL(blob);
-      audio = new Audio(url);
-      audio.preservesPitch = true;  // скорость меняем без изменения тона
-      audio.playbackRate = plan.playbackRate;
-      audio.onended = () => fin('end');
-      audio.onerror = () => fail(new Error('не удалось воспроизвести звук'));
-      // Android ставит звук на паузу, когда кто-то занимает аудио (микрофон, уведомление), — продолжаем с того же места
-      audio.onpause = () => setTimeout(() => { if (!done && audio.paused && !audio.ended) audio.play().catch(() => {}); }, 250);
-      audio.play().then(() => {
-        onStart?.();
-        // сторож по реальному ходу воспроизведения: пауза системы не обрывает кусок, а зависание — повторяется с начала
-        let last = -1, still = Date.now();
-        wd = setInterval(() => {
-          if (done) return;
-          if (audio.ended) return fin('end');
-          if (audio.currentTime !== last) { last = audio.currentTime; still = Date.now(); return; }
-          if (audio.paused) audio.play().catch(() => {});
-          if (Date.now() - still > 8000) fin('error');
-        }, 500);
-      }).catch(fail);
-    };
-    cloud.audioFor({ ...cloudCfg, speed: plan.speed }, text).then(async (blob) => {
-      if (done || myEpoch !== epoch) return fin('cancel');
-      if (!(await viaWebAudio(blob)) && !done) viaElement(blob);
-    }).catch(fail);
-  });
 }
 
 function remember(text, echoTail) {

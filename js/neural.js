@@ -161,38 +161,6 @@ export async function isDownloaded(voiceId) {
   return (await missingMB(voiceId)) === 0;
 }
 
-// ---------- Чёткость голоса ----------
-// У голоса Яндекса частоты 1–5 кГц (разборчивость, «присутствие») на 10–15 дБ тише, чем у обычной речи:
-// в наушниках он звучит глухо, «как по телефону». Эквалайзер поднимает эту середину.
-
-/** Цепочка эквалайзера к узлу dest; возвращает её вход. */
-export function clarityChain(ac, dest) {
-  const filter = (type, freq, q, gain) => {
-    const f = ac.createBiquadFilter();
-    f.type = type; f.frequency.value = freq; f.Q.value = q; f.gain.value = gain;
-    return f;
-  };
-  const nodes = [
-    filter('highpass', 90, 0.7, 0),
-    filter('peaking', 1300, 1.0, 5),
-    filter('peaking', 3000, 0.9, 9),
-    filter('peaking', 4500, 1.2, 4),
-  ];
-  const trim = ac.createGain(); trim.gain.value = 0.9; // громкость та же, что без эквалайзера (−19 LUFS на фразе Яндекса)
-  const limit = ac.createDynamicsCompressor(); // только от редких пиков
-  limit.threshold.value = -2; limit.knee.value = 2; limit.ratio.value = 12; limit.attack.value = 0.003; limit.release.value = 0.1;
-  [...nodes, trim, limit].reduce((a, b) => { a.connect(b); return b; }).connect(dest);
-  return nodes[0];
-}
-
-let clarity = null;
-/** Вход эквалайзера «чёткость голоса» в общем звуковом контексте. */
-export function clarityInput() {
-  const ac = audioContext();
-  if (!clarity) clarity = clarityChain(ac, ac.destination);
-  return clarity;
-}
-
 // ---------- Стиль голоса ----------
 // «Ассистент в стиле Джарвиса» — стилизация, а не копия чьего-то голоса:
 // тон чуть ниже, чёткая середина, лёгкий «цифровой» металлический оттенок и короткое эхо.
