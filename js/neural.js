@@ -1,4 +1,5 @@
-// Нейросетевой голос (Piper) — работает прямо на телефоне, без интернета после первой загрузки.
+// Нейросетевой голос — работает прямо на телефоне, без интернета после первой загрузки.
+// Silero (живые голоса: Бая и др.; файлы лежат рядом с приложением, voices/silero-ru) и Piper (с Hugging Face).
 // Синтез — в фоновом потоке (neural-worker.js), воспроизведение — через Web Audio.
 
 const HF = [
@@ -7,19 +8,56 @@ const HF = [
 ];
 
 export const NEURAL_VOICES = {
+  'silero-baya': 'Бая (женский, живой)',
+  'silero-xenia': 'Ксения (женский, живой)',
+  'silero-kseniya': 'Ксюша (женский, живой)',
+  'silero-aidar': 'Айдар (мужской, живой)',
+  'silero-eugene': 'Евгений (мужской, живой)',
   irina: 'Ирина (женский)',
   dmitri: 'Дмитрий (мужской)',
   denis: 'Денис (мужской)',
   ruslan: 'Руслан (мужской)',
 };
 
+export const isSilero = (id) => id.startsWith('silero-');
+
+// Файлы Silero и их размер (для прогресса загрузки). При замене файлов поднимайте SILERO_REV —
+// иначе у тех, кто уже скачал голос, останутся старые.
+const SILERO_REV = 1;
+const SILERO_FILES = {
+  'tts.json': 47335,
+  'accentor.json': 1304184,
+  'accentor-ngrams.txt': 1087501,
+  'accentor-emb.bin': 2024368,
+  'prosody.onnx': 3281005,
+  'encoder.onnx': 14205067,
+  'dec_pre.onnx': 5460679,
+  'dec_post.onnx': 6099427,
+  'vocoder.onnx': 58290543,
+};
+const SILERO_BASE = new URL('../voices/silero-ru/', import.meta.url).href;
+
 function voiceSpec(id) {
+  if (isSilero(id)) {
+    return {
+      id,
+      kind: 'silero',
+      key: 'silero-ru', // одна модель на все голоса Silero
+      speaker: id.slice(7),
+      files: Object.entries(SILERO_FILES).map(([name, size]) => ({ name, size, urls: [`${SILERO_BASE}${name}?r=${SILERO_REV}`] })),
+    };
+  }
   const file = `ru_RU-${id}-medium.onnx`;
   return {
     id,
     model: HF.map((b) => `${b}/${id}/medium/${file}`),
     config: HF.map((b) => `${b}/${id}/medium/${file}.json`),
   };
+}
+
+/** Сколько мегабайт скачивается для голоса. */
+export function voiceSizeMB(id) {
+  return isSilero(id) ? Math.round(Object.values(SILERO_FILES).reduce((a, b) => a + b, 0) / 1e6) : 65;
 }
 
 let worker = null;
@@ -31,7 +69,8 @@ let ctx = null;
 
 function getWorker() {
   if (!worker) {
-    worker = new Worker(new URL('./neural-worker.js', import.meta.url));
+    // та же версия, что у приложения (?v=…), — чтобы не смешались файлы разных версий
+    worker = new Worker(new URL('./neural-worker.js' + new URL(import.meta.url).search, import.meta.url));
     worker.onmessage = (e) => {
       const m = e.data;
       if (m.type === 'progress') { progressCb?.(m); return; }
@@ -66,7 +105,7 @@ export function audioContext() {
   return ctx;
 }
 
-/** Загружает голос (первый раз ~65 МБ). onProgress({stage, loaded, total}). */
+/** Загружает голос (первый раз 65–90 МБ). onProgress({stage, loaded, total}). */
 export async function prepare(voiceId, onProgress) {
   progressCb = onProgress;
   try {
@@ -82,7 +121,7 @@ export function synth(text, { voice = 'irina', rate = 1 } = {}) {
   if (!cache.has(key)) {
     const p = call({ type: 'synth', voice: voiceSpec(voice), text, rate }).then((m) => {
       const ac = audioContext();
-      const buf = ac.createBuffer(1, m.pcm.length, m.sampleRate);
+      const buf = ac.createBuffer(1, Math.max(1, m.pcm.length), m.sampleRate); // пустой буфер создать нельзя
       buf.copyToChannel(m.pcm, 0);
       return buf;
     });
@@ -98,6 +137,10 @@ export async function isDownloaded(voiceId) {
   try {
     const c = await caches.open('kd-voices');
     const spec = voiceSpec(voiceId);
+    if (spec.files) {
+      for (const f of spec.files) if (!(await c.match(f.urls[0]))) return false;
+      return true;
+    }
     for (const u of spec.model) if (await c.match(u)) return true;
   } catch { /* ignore */ }
   return false;

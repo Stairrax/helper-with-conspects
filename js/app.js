@@ -13,7 +13,7 @@ import {
   loadVoices, getVoices, speak, stopSpeaking, setEngine, setStyle, setCloud, srSupported, ttsSupported, hasBtHeadset, onBtChange,
 } from './speech.js';
 import { CLOUD_PROVIDERS, audioFor, isCached, clearCache, cacheSizeMB, listElevenVoices, speedPlan, onCloudNotice } from './cloud.js';
-import { prepare as prepareNeural, isDownloaded, NEURAL_VOICES, VOICE_STYLES, audioContext } from './neural.js';
+import { prepare as prepareNeural, isDownloaded, NEURAL_VOICES, VOICE_STYLES, audioContext, isSilero, voiceSizeMB } from './neural.js';
 import { enableMedia, disableMedia, updateMedia, mediaSupported } from './media.js';
 import { Dictation, STATE_TEXT } from './dictation.js';
 import { initOnboarding, onboardingDone } from './onboarding.js';
@@ -1144,8 +1144,9 @@ $('voiceStyle').addEventListener('change', (e) => {
   if (settings.voiceStyle === 'jarvis') {
     if (!settings.address) settings.address = 'сэр';
     // для этого стиля лучше подходит мужской голос
-    if (settings.voiceEngine === 'neural' && settings.neuralVoice === 'irina') {
-      settings.neuralVoice = 'dmitri';
+    const male = MALE_VOICE[settings.neuralVoice];
+    if (settings.voiceEngine === 'neural' && male) {
+      settings.neuralVoice = male;
       saveSettings(settings);
       renderSettings();
       setStyle(settings.voiceStyle);
@@ -1158,7 +1159,13 @@ $('voiceStyle').addEventListener('change', (e) => {
 });
 $('address').addEventListener('change', (e) => { settings.address = e.target.value; saveSettings(settings); });
 
-$('neuralVoice').innerHTML = Object.entries(NEURAL_VOICES).map(([id, name]) => `<option value="${id}">${esc(name)}</option>`).join('');
+// женский голос -> мужской того же движка (для стиля «Джарвис»)
+const MALE_VOICE = { irina: 'dmitri', 'silero-baya': 'silero-eugene', 'silero-xenia': 'silero-eugene', 'silero-kseniya': 'silero-eugene' };
+{
+  const opts = (live) => Object.entries(NEURAL_VOICES).filter(([id]) => isSilero(id) === live)
+    .map(([id, name]) => `<option value="${id}">${esc(name.replace(', живой', ''))}</option>`).join('');
+  $('neuralVoice').innerHTML = `<optgroup label="Живые голоса (Silero)">${opts(true)}</optgroup><optgroup label="Другие (Piper)">${opts(false)}</optgroup>`;
+}
 let neuralFailNotified = false;
 let cloudRetry = null;
 
@@ -1185,12 +1192,14 @@ function applyEngine() {
   });
 }
 
-async function downloadNeural() {
-  const st = $('neuralStatus');
+/** Загружает выбранный нейроголос; also — ещё один элемент для статуса (в мастере первого запуска). */
+async function downloadNeural(also = null) {
+  const out = $('neuralStatus');
+  const st = { set textContent(t) { out.textContent = t; if (also) also.textContent = t; } };
   const id = settings.neuralVoice;
   setEngine('system'); // пока голос качается, говорим системным
   const downloaded = await isDownloaded(id);
-  st.textContent = downloaded ? 'Загружаю голос…' : 'Скачиваю голос (около 90 МБ)…';
+  st.textContent = downloaded ? 'Загружаю голос…' : `Скачиваю голос (около ${voiceSizeMB(id)} МБ)…`;
   const busy = !['idle', 'finished'].includes(dict.state);
   if (busy) toast(`${downloaded ? 'Загружаю' : 'Скачиваю'} голос «${NEURAL_VOICES[id].replace(/ \(.*\)/, '')}» — пока говорю голосом Android`, 5000);
   try {
@@ -1203,8 +1212,10 @@ async function downloadNeural() {
     applyEngine();
     st.textContent = '✓ Голос готов и работает без интернета.';
     if (busy) toast(`✓ Голос «${NEURAL_VOICES[id].replace(/ \(.*\)/, '')}» включён`);
+    return true;
   } catch (e) {
     st.textContent = '✗ Не удалось загрузить голос: ' + (e.message || e) + '. Пока говорю голосом Android — попробуйте позже или через Wi-Fi.';
+    return false;
   }
 }
 
@@ -1506,6 +1517,14 @@ function renderWarnings() {
 const wizard = initOnboarding({
   getSettings: () => settings,
   save: () => { saveSettings(settings); renderSettings(); },
+  liveVoice: (statusEl) => {
+    settings.voiceEngine = 'neural';
+    settings.neuralVoice = 'silero-baya';
+    saveSettings(settings);
+    renderSettings();
+    audioContext();
+    return downloadNeural(statusEl);
+  },
   onFinish: (goSettings) => {
     renderSettings();
     if (goSettings) { $('manualAi').open = true; switchTab('settings'); } else switchTab(project ? activeTab : 'load');

@@ -241,7 +241,7 @@
         <div class="seg" id="engineSeg">
           <label><input type="radio" name="voiceEngine" value="system"><span>Android</span></label>
           <label><input type="radio" name="voiceEngine" value="neural"><span>Нейросеть на телефоне</span></label>
-          <label><input type="radio" name="voiceEngine" value="cloud"><span>Облачный — как живой</span></label>
+          <label><input type="radio" name="voiceEngine" value="cloud"><span>Облачный</span></label>
         </div>
         <div class="row mt">
           <label class="field grow">Стиль
@@ -281,7 +281,8 @@
             </div>
           </label>
           <div id="neuralStatus" class="status small"></div>
-          <p class="hint">Работает прямо на телефоне, без интернета и лимитов. Один раз скачивается около 90 МБ — лучше по Wi-Fi. Если голос не загрузится, приложение будет говорить голосом Android.</p>
+          <p class="hint">Работает прямо на телефоне, без интернета и лимитов. Живые голоса (Бая, Ксения, Ксюша, Айдар, Евгений) один раз скачиваются вместе — около 92 МБ, остальные — около 65 МБ каждый; лучше по Wi-Fi. Если голос не загрузится, приложение будет говорить голосом Android.</p>
+          <p class="hint">Живые голоса — модель <a href="https://github.com/snakers4/silero-models" target="_blank" rel="noopener">Silero</a> (© Silero Team, лицензия <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.ru" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>: только некоммерческое использование). Остальные — <a href="https://github.com/rhasspy/piper" target="_blank" rel="noopener">Piper</a>.</p>
         </div>
         <div id="cloudBox" class="hidden">
           <label class="field mt">Сервис
@@ -461,9 +462,11 @@
     <section class="ob-step hidden">
       <div class="ob-num">Шаг 2 из 2</div>
       <h2>Звук и микрофон</h2>
-      <p class="muted">Проверьте, что слышно голос, и разрешите микрофон — он нужен для команд «стоп», «дальше» и вопросов голосом.</p>
+      <p class="muted">Проверьте, что слышно голос, и разрешите микрофон — он нужен для команд «стоп», «дальше» и вопросов голосом. Голос Android звучит механически. Живой голос «Бая» работает прямо на телефоне, без интернета: его один раз скачивают — около 92&nbsp;МБ, лучше по Wi-Fi.</p>
       <button id="obVoice" class="btn tonal wide">Прослушать голос</button>
       <div id="obVoiceStatus" class="ob-status"></div>
+      <button id="obLive" class="btn tonal wide">Включить живой голос «Бая»</button>
+      <div id="obLiveStatus" class="ob-status"></div>
       <button id="obMic" class="btn tonal wide">Разрешить микрофон</button>
       <div id="obMicStatus" class="ob-status"></div>
       <p class="muted small">Совет: в наушниках голосовые команды срабатывают надёжнее.</p>
@@ -477,20 +480,20 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/ai.js": "./js/ai.js?v=23",
-      "./js/analyze.js": "./js/analyze.js?v=23",
-      "./js/anthropic.js": "./js/anthropic.js?v=23",
-      "./js/app.js": "./js/app.js?v=23",
-      "./js/cloud.js": "./js/cloud.js?v=23",
-      "./js/dictation.js": "./js/dictation.js?v=23",
-      "./js/extract.js": "./js/extract.js?v=23",
-      "./js/gemini.js": "./js/gemini.js?v=23",
-      "./js/media.js": "./js/media.js?v=23",
-      "./js/neural.js": "./js/neural.js?v=23",
-      "./js/onboarding.js": "./js/onboarding.js?v=23",
-      "./js/openai.js": "./js/openai.js?v=23",
-      "./js/speech.js": "./js/speech.js?v=23",
-      "./js/storage.js": "./js/storage.js?v=23"
+      "./js/ai.js": "./js/ai.js?v=24",
+      "./js/analyze.js": "./js/analyze.js?v=24",
+      "./js/anthropic.js": "./js/anthropic.js?v=24",
+      "./js/app.js": "./js/app.js?v=24",
+      "./js/cloud.js": "./js/cloud.js?v=24",
+      "./js/dictation.js": "./js/dictation.js?v=24",
+      "./js/extract.js": "./js/extract.js?v=24",
+      "./js/gemini.js": "./js/gemini.js?v=24",
+      "./js/media.js": "./js/media.js?v=24",
+      "./js/neural.js": "./js/neural.js?v=24",
+      "./js/onboarding.js": "./js/onboarding.js?v=24",
+      "./js/openai.js": "./js/openai.js?v=24",
+      "./js/speech.js": "./js/speech.js?v=24",
+      "./js/storage.js": "./js/storage.js?v=24"
     }
   }
   </script>
@@ -524,6 +527,6 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=23"></script>
+  <script type="module" src="js/app.js?v=24"></script>
 </body>
 </html>

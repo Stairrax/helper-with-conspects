@@ -62,7 +62,7 @@ async function freeModels() {
 // ---------- Мастер ----------
 
 /**
- * hooks: getSettings(), save(), onFinish(goSettings)
+ * hooks: getSettings(), save(), liveVoice(statusEl) -> Promise<boolean>, onFinish(goSettings)
  */
 export function initOnboarding(hooks) {
   const root = $('onboard');
@@ -134,6 +134,19 @@ export function initOnboarding(hooks) {
       ? 'Голос не воспроизвёлся. Проверьте громкость и что в Android установлен «Синтезатор речи Google».'
       : ru ? 'Если голос слышно — всё в порядке.'
         : 'Русского голоса нет: установите русский язык в Настройки Android → Синтез речи → Google.';
+  });
+
+  $('obLive').addEventListener('click', async () => {
+    const btn = $('obLive');
+    btn.disabled = true;
+    const st = $('obLiveStatus');
+    st.className = 'ob-status';
+    const ok = await hooks.liveVoice(st);
+    btn.disabled = false;
+    if (!ok) { st.className = 'ob-status err'; return; }
+    st.className = 'ob-status ok';
+    stopSpeaking();
+    speak('Привет! Меня зовут Бая. Я буду диктовать ваш конспект — если что-то непонятно, скажите «стоп» и задайте вопрос.', { rate: hooks.getSettings().rate });
   });
 
   $('obMic').addEventListener('click', async () => {

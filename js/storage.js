@@ -24,7 +24,7 @@ export const DEFAULT_SETTINGS = {
   coverageCheck: true,
   showText: true,
   voiceEngine: 'system',  // 'system' — голос Android, 'neural' — нейросетевой голос на телефоне
-  neuralVoice: 'irina',
+  neuralVoice: 'silero-baya',
   voiceStyle: 'none',     // 'none' | 'jarvis' — стиль ИИ-ассистента
   address: '',            // обращение: '' | 'сэр' | 'мэм'
   cloudProvider: 'yandex', // облачный голос: 'yandex' | 'gemini' | 'elevenlabs'

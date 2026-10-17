@@ -2,7 +2,7 @@
 // Запросы к API нейросетей никогда не кэшируются.
 
 // При выпуске новой версии поднимайте VERSION и ?v= в index.html (importmap и app.js) — одно и то же число.
-const VERSION = 'kd-v23';
+const VERSION = 'kd-v24';
 const SHELL = [
   './',
   'index.html',
@@ -18,6 +18,7 @@ const SHELL = [
   'js/media.js',
   'js/neural.js',
   'js/neural-worker.js',
+  'js/silero-core.js',
   'js/onboarding.js',
   'js/openai.js',
   'js/speech.js',
@@ -53,7 +54,11 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(caches.open('kd-cdn').then(async (c) => {
       const hit = await c.match(req);
       if (hit) return hit;
-      const res = await fetch(req);
+      // importScripts в голосовом модуле запрашивает скрипт без CORS — такой ответ «непрозрачный»,
+      // его нельзя проверить и он не сохранялся. CDN отдаёт CORS, поэтому просим явно.
+      const res = req.mode === 'no-cors'
+        ? await fetch(req.url, { mode: 'cors', credentials: 'omit' }).catch(() => fetch(req))
+        : await fetch(req);
       if (res.ok) c.put(req, res.clone());
       return res;
     }));
@@ -61,6 +66,8 @@ self.addEventListener('fetch', (e) => {
   }
 
   if (url.origin !== self.location.origin) return;
+  // файлы голоса (≈90 МБ) кэширует сам голосовой модуль (kd-voices) — второй копии не нужно
+  if (url.pathname.includes('/voices/')) return;
 
   // Свои файлы: сначала сеть (чтобы обновления приходили сразу), при офлайне — кэш.
   // cache: 'no-cache' — всегда сверяемся с сервером: файлы разных версий не перемешаются.

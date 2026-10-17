@@ -1,6 +1,7 @@
-// Фоновый поток нейросетевого голоса (Piper): фонемизация espeak-ng + модель ONNX.
+// Фоновый поток нейросетевого голоса: Silero (silero-core.js + 5 моделей ONNX)
+// или Piper (фонемизация espeak-ng + модель ONNX).
 // Работает отдельно от интерфейса, поэтому кнопка «СТОП» не ждёт синтеза.
-/* global ort, createPiperPhonemize */
+/* global ort, createPiperPhonemize, SileroCore */
 
 const ORT_URLS = [
   'https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.18.0/',
@@ -12,11 +13,14 @@ const PHONEMIZE_URLS = [
 ];
 const CACHE = 'kd-voices';
 
-let session = null;
+let session = null;   // Piper
 let config = null;
 let phonemizer = null;
 let phonemeOut = null;
-let loadedVoice = null;
+let silero = null;    // { sessions, frontend }
+let loadedKey = null; // какая модель сейчас в памяти
+
+const keyOf = (voice) => voice.key || voice.id;
 
 function importFirst(urls, file) {
   let err;
@@ -57,14 +61,27 @@ async function fetchCached(urls, onProgress) {
   throw lastErr || new Error('Не удалось скачать голос');
 }
 
+function loadOrt() {
+  if (self.ort) return;
+  const base = importFirst(ORT_URLS, 'ort.min.js');
+  ort.env.wasm.wasmPaths = base;
+  ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 1) : 1;
+}
+
+// в памяти держим только одну модель: старую выгружаем, иначе на телефоне кончается память
+async function unload() {
+  const all = [session, ...Object.values(silero?.sessions || {})].filter(Boolean);
+  session = null;
+  silero = null;
+  loadedKey = null;
+  for (const s of all) { try { await s.release(); } catch { /* ignore */ } }
+}
+
 async function init(voice) {
-  if (loadedVoice === voice.id && session) return;
+  if (loadedKey === keyOf(voice) && (session || silero)) return;
   post({ type: 'progress', stage: 'libs', loaded: 0, total: 0 });
-  if (!self.ort) {
-    const base = importFirst(ORT_URLS, 'ort.min.js');
-    ort.env.wasm.wasmPaths = base;
-    ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 1) : 1;
-  }
+  loadOrt();
+  if (voice.kind === 'silero') return initSilero(voice);
   if (!phonemizer) {
     const base = importFirst(PHONEMIZE_URLS, 'piper_phonemize.js');
     phonemizer = await createPiperPhonemize({
@@ -76,16 +93,71 @@ async function init(voice) {
   const cfg = JSON.parse(new TextDecoder().decode(await fetchCached(voice.config)));
   let model = await fetchCached(voice.model, (loaded, total) => post({ type: 'progress', stage: 'model', loaded, total }));
   post({ type: 'progress', stage: 'session', loaded: 0, total: 0 });
-  // в памяти держим только один голос: старую модель выгружаем, иначе на телефоне кончается память
-  if (session) {
-    try { await session.release(); } catch { /* ignore */ }
-    session = null;
-    loadedVoice = null;
-  }
+  await unload();
   session = await ort.InferenceSession.create(model);
   model = null;
   config = cfg;
-  loadedVoice = voice.id;
+  loadedKey = keyOf(voice);
+}
+
+const SILERO_MODELS = ['prosody', 'encoder', 'dec_pre', 'dec_post', 'vocoder'];
+
+async function initSilero(voice) {
+  if (!self.SileroCore) importScripts('silero-core.js' + self.location.search);
+  const file = (name) => voice.files.find((f) => f.name === name).urls;
+  // сначала скачиваем всё (общий прогресс), потом по одной загружаем модели в память
+  const total = voice.files.reduce((a, f) => a + f.size, 0);
+  let done = 0;
+  for (const f of voice.files) {
+    const buf = await fetchCached(f.urls, (loaded) => post({ type: 'progress', stage: 'model', loaded: done + Math.min(loaded, f.size), total }));
+    if (buf.byteLength !== f.size) {
+      // вместо файла пришло что-то другое (обрыв, страница входа в Wi-Fi) — не храним, в следующий раз скачаем заново
+      await caches.open(CACHE).then((c) => Promise.all(f.urls.map((u) => c.delete(u)))).catch(() => {});
+      throw new Error('файл голоса скачался не полностью');
+    }
+    done += f.size;
+  }
+  await dropOldFiles(voice.files);
+  post({ type: 'progress', stage: 'session', loaded: 0, total: 0 });
+  await unload();
+  const json = async (name) => JSON.parse(new TextDecoder().decode(await fetchCached(file(name))));
+  const tts = await json('tts.json');
+  const accentor = new SileroCore.Accentor(
+    new TextDecoder().decode(await fetchCached(file('accentor-ngrams.txt'))),
+    new Int8Array(await fetchCached(file('accentor-emb.bin'))),
+    await json('accentor.json'),
+  );
+  const sessions = {};
+  try {
+    for (const k of SILERO_MODELS) sessions[k] = await ort.InferenceSession.create(await fetchCached(file(k + '.onnx')));
+  } catch (e) {
+    for (const s of Object.values(sessions)) { try { await s.release(); } catch { /* ignore */ } }
+    throw e;
+  }
+  silero = { sessions, frontend: new SileroCore.Frontend(tts, accentor) };
+  loadedKey = keyOf(voice);
+}
+
+/** Удаляет из кэша файлы прошлых версий модели (другой ?r=). */
+async function dropOldFiles(files) {
+  try {
+    const keep = new Set(files.flatMap((f) => f.urls));
+    const dir = new URL('.', files[0].urls[0]).href;
+    const cache = await caches.open(CACHE);
+    for (const req of await cache.keys()) if (req.url.startsWith(dir) && !keep.has(req.url)) await cache.delete(req);
+  } catch { /* ignore */ }
+}
+
+async function synthSilero(voice, text, rate) {
+  const { sessions, frontend } = silero;
+  const pcm = await SileroCore.synthesize(
+    frontend,
+    (k, feeds) => sessions[k].run(feeds),
+    (type, data, dims) => new ort.Tensor(type, data, dims),
+    text,
+    { speaker: voice.speaker, rate: Math.max(0.5, Math.min(2, rate || 1)) },
+  );
+  return pcm.length ? pcm : new Float32Array(4800); // в тексте нет слов — короткая тишина
 }
 
 function phonemize(text) {
@@ -119,7 +191,7 @@ let chain = Promise.resolve();
 self.onmessage = (e) => {
   const m = e.data;
   if (m.type === 'init' || !wantedVoice) wantedVoice = m.voice.id;
-  if (m.type === 'synth' && m.voice.id !== wantedVoice && m.voice.id !== loadedVoice) {
+  if (m.type === 'synth' && m.voice.id !== wantedVoice && keyOf(m.voice) !== loadedKey) {
     post({ type: 'error', id: m.id, message: 'stale', stale: true });
     return;
   }
@@ -131,8 +203,9 @@ self.onmessage = (e) => {
       } else if (m.type === 'synth') {
         if (m.voice.id !== wantedVoice) { post({ type: 'error', id: m.id, message: 'stale', stale: true }); return; }
         await init(m.voice);
-        const pcm = await synth(m.text, m.rate);
-        post({ type: 'audio', id: m.id, pcm, sampleRate: config.audio.sample_rate }, [pcm.buffer]);
+        const isSilero = m.voice.kind === 'silero';
+        const pcm = isSilero ? await synthSilero(m.voice, m.text, m.rate) : await synth(m.text, m.rate);
+        post({ type: 'audio', id: m.id, pcm, sampleRate: isSilero ? silero.frontend.tts.sample_rate : config.audio.sample_rate }, [pcm.buffer]);
       }
     } catch (err) {
       post({ type: 'error', id: m.id, message: String(err?.message || err) });
