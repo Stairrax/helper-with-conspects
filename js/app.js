@@ -10,7 +10,7 @@ import {
 } from './analyze.js';
 import { listModels, conn, PROVIDERS, providerName } from './ai.js';
 import {
-  loadVoices, getVoices, speak, stopSpeaking, setEngine, setStyle, setCloud, srSupported, ttsSupported, hasBtHeadset, onBtChange,
+  loadVoices, getVoices, speak, stopSpeaking, setEngine, setStyle, setIntonation, setCloud, srSupported, ttsSupported, hasBtHeadset, onBtChange,
 } from './speech.js';
 import { CLOUD_PROVIDERS, audioFor, isCached, clearCache, cacheSizeMB, listElevenVoices, speedPlan, onCloudNotice } from './cloud.js';
 import { prepare as prepareNeural, missingMB, NEURAL_VOICES, VOICE_STYLES, audioContext, isSilero } from './neural.js';
@@ -641,7 +641,7 @@ function renderDictation() {
   $('chunkNum').textContent = n ? `${Math.min(idx + 1, n)} / ${n}` : '';
   const kinds = { explain: 'Пояснение', example: 'Пример', content: '' };
   $('chunkKind').textContent = chunk ? kinds[chunk.k] || '' : '';
-  let text = chunk ? chunk.t : '';
+  let text = dict.chunkText(chunk);
   // самопроверка: на карточке — текущий вопрос
   if (QUIZ.includes(st) && dict.quiz) {
     const q = dict.quiz.qs[dict.quiz.i];
@@ -730,7 +730,7 @@ $('seek').addEventListener('input', (e) => {
   const c = t?.chunks?.[i];
   e.target.style.setProperty('--fill', `${((i + 1) / (t?.chunks?.length || 1)) * 100}%`);
   $('chunkNum').textContent = `${i + 1} / ${t?.chunks?.length || 0}`;
-  if (c) { $('chunkText').textContent = c.t; $('chunkBox').classList.add('preview'); }
+  if (c) { $('chunkText').textContent = dict.chunkText(c); $('chunkBox').classList.add('preview'); }
 });
 $('seek').addEventListener('change', (e) => {
   seeking = false;
@@ -867,6 +867,7 @@ function renderSettings() {
   $('scalePause').checked = settings.scalePause;
   $('adaptivePause').checked = settings.adaptivePause;
   $('selfCheck').checked = settings.selfCheck;
+  $('abbreviate').checked = !!settings.abbreviate;
   $('headsetButtons').checked = settings.headsetButtons;
   $('headsetButtons').disabled = !mediaSupported;
   $('breakEvery').value = settings.breakEvery;
@@ -878,6 +879,8 @@ function renderSettings() {
   $('cloudBox').classList.toggle('hidden', settings.voiceEngine !== 'cloud');
   renderCloud();
   $('neuralVoice').value = settings.neuralVoice;
+  $('intonation').checked = settings.intonation !== false;
+  $('intonationRow').classList.toggle('hidden', !isSilero(settings.neuralVoice));
   $('voiceStyle').value = settings.voiceStyle;
   $('address').value = settings.address;
   $('styleHint').textContent = settings.voiceStyle !== 'jarvis' ? ''
@@ -949,6 +952,7 @@ bind('pause', 'pause', Number, 'input');
 bind('scalePause', 'scalePause');
 bind('adaptivePause', 'adaptivePause');
 bind('selfCheck', 'selfCheck');
+bind('abbreviate', 'abbreviate');
 bind('breakEvery', 'breakEvery', Number, 'input');
 $('headsetButtons').addEventListener('change', (e) => {
   settings.headsetButtons = e.target.checked;
@@ -1111,7 +1115,7 @@ $('prerenderBtn').addEventListener('click', async () => {
   const start = Math.max(0, seq.findIndex((t) => t.id === progress?.topicId));
   for (const t of [...seq.slice(start), ...seq.slice(0, start)]) {
     if (t.status !== 'ready') continue;
-    texts.push(`Тема: ${t.title}.`, ...t.chunks.map((c) => c.t));
+    texts.push(`Тема: ${t.title}.`, ...t.chunks.map((c) => dict.chunkText(c)));
   }
   const job = (prerendering = { stop: false });
   const btn = $('prerenderBtn');
@@ -1171,6 +1175,7 @@ let cloudRetry = null;
 
 function applyEngine() {
   setStyle(settings.voiceStyle);
+  setIntonation(settings.intonation !== false);
   if (settings.voiceEngine === 'cloud') {
     setCloud(cloudCfg());
     clearTimeout(cloudRetry);
@@ -1235,9 +1240,15 @@ document.querySelectorAll('input[name=voiceEngine]').forEach((r) => r.addEventLi
     }
   }
 }));
+$('intonation').addEventListener('change', (e) => {
+  settings.intonation = e.target.checked;
+  saveSettings(settings);
+  setIntonation(settings.intonation);
+});
 $('neuralVoice').addEventListener('change', (e) => {
   settings.neuralVoice = e.target.value;
   saveSettings(settings);
+  renderSettings();
   downloadNeural();
 });
 $('testNeural').addEventListener('click', async () => {
@@ -1246,7 +1257,7 @@ $('testNeural').addEventListener('click', async () => {
   if ($('neuralStatus').textContent.startsWith('Скач')) return toast('Голос ещё скачивается');
   speak(settings.voiceStyle === 'jarvis'
     ? `Добрый день${settings.address ? ', ' + settings.address : ''}. Все системы в норме. Начинаем диктовку: производная — это скорость изменения функции.`
-    : 'Привет! Так звучит нейросетевой голос. Определение: производная — это скорость изменения функции.', { rate: settings.rate });
+    : 'Привет! Так звучит нейросетевой голос. Активные доходы — это зарплата и подработка. Их планируют, считая «на руки», то есть после удержания налога.', { rate: settings.rate });
 });
 
 // звук Web Audio и кнопки наушников включаются только после касания экрана

@@ -52,6 +52,8 @@ let neuralVoice = 'irina';
 let voiceStyle = 'none';      // 'none' | 'jarvis'
 
 export function setStyle(style) { voiceStyle = neural.VOICE_STYLES[style] ? style : 'none'; }
+let intonation = true;        // живая интонация нейроголоса Silero
+export function setIntonation(on) { intonation = !!on; }
 const stylePitch = () => neural.VOICE_STYLES[voiceStyle].pitch;
 // Тон понижаем замедлением воспроизведения, а скорость речи компенсируем при синтезе.
 const neuralRate = (rate) => rate / stylePitch();
@@ -75,7 +77,7 @@ function engineFailed(err, text, opts, resolve) {
 
 /** Готовит следующие куски заранее (только для нейроголоса — системному не нужно). */
 export function prefetch(texts, { rate = 1 } = {}) {
-  if (engine === 'neural') for (const t of texts) if (t) neural.synth(t, { voice: neuralVoice, rate: neuralRate(rate) }).catch(() => {});
+  if (engine === 'neural') for (const t of texts) if (t) neural.synth(t, { voice: neuralVoice, rate: neuralRate(rate), expressive: intonation }).catch(() => {});
   if (engine === 'cloud' && cloudCfg) {
     const cfg = { ...cloudCfg, speed: cloud.speedPlan(cloudCfg.provider, rate).speed };
     for (const t of texts) if (t) cloud.audioFor(cfg, t).catch(() => {});
@@ -194,7 +196,7 @@ function speakNeural(text, opts) {
     };
     current = { fin, text };
     const pitch = stylePitch();
-    neural.synth(text, { voice: neuralVoice, rate: neuralRate(rate) }).then((buf) => {
+    neural.synth(text, { voice: neuralVoice, rate: neuralRate(rate), expressive: intonation }).then((buf) => {
       if (done || myEpoch !== epoch) return fin('cancel');
       const ac = neural.audioContext();
       src = ac.createBufferSource();

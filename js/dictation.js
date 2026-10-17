@@ -7,6 +7,7 @@ import {
 } from './speech.js';
 import { stream, conn } from './ai.js';
 import { activeSeq, pauseFor } from './analyze.js';
+import { abbreviate } from './abbr.js';
 
 const DICTATING = ['speaking', 'gap', 'waiting'];
 const QA_STATES = ['thinking', 'answering'];
@@ -322,7 +323,7 @@ export class Dictation {
       if (this.pendingGap) {
         this.pendingGap = false;
         const prev = topic.chunks[Math.max(0, this.pos.chunk - 1)];
-        if (!(await this.doGap(my, topic, prev?.t))) return;
+        if (!(await this.doGap(my, topic, this.chunkText(prev)))) return;
       }
       if (this.pos.chunk >= topic.chunks.length) {
         // тема уже закончена (например, после вопроса к последней теме) — не повторяем самопроверку
@@ -359,14 +360,14 @@ export class Dictation {
       const chunk = topic.chunks[idx];
       this.set('speaking');
       this.save();
-      prefetch(topic.chunks.slice(idx + 1, idx + 4).map((c) => c.t), { rate: this.settings.rate });
+      prefetch(topic.chunks.slice(idx + 1, idx + 4).map((c) => this.chunkText(c)), { rate: this.settings.rate });
       this.cur = { topicId: topic.id, chunk: idx };
-      let r = await this.say(chunk.t);
+      let r = await this.say(this.chunkText(chunk));
       if (my !== this.token) return;
       if (r === 'error') {
         await sleep(300);
         if (my !== this.token) return;
-        r = await this.say(chunk.t);
+        r = await this.say(this.chunkText(chunk));
         if (my !== this.token) return;
         if (r === 'error') {
           this.resumePos = { topicId: topic.id, chunk: idx };
@@ -381,7 +382,7 @@ export class Dictation {
       // кусок прошёл без «повтори» — пауза понемногу возвращается к обычной
       this.pos.pauseBoost = Math.max(1, (this.pos.pauseBoost || 1) * 0.97);
       this.save();
-      if (!(await this.doGap(my, topic, chunk.t))) return;
+      if (!(await this.doGap(my, topic, this.chunkText(chunk)))) return;
     }
   }
 
@@ -642,7 +643,7 @@ export class Dictation {
     const target = spellTarget(text || '');
     if (target) words = target.split(/\s+/).slice(0, 2);
     else {
-      const cur = st === 'speaking' ? this.topicById(this.pos.topicId)?.chunks[this.pos.chunk]?.t : this.lastSpokenText();
+      const cur = st === 'speaking' ? this.chunkText(this.topicById(this.pos.topicId)?.chunks[this.pos.chunk]) : this.lastSpokenText();
       words = pickTerms(cur || '');
     }
     if (DICTATING.includes(st)) this.resumePos = { topicId: this.pos.topicId, chunk: this.pos.chunk };
@@ -1008,7 +1009,13 @@ ${prevQa ? `\nПРЕДЫДУЩИЕ ВОПРОСЫ В ЭТОЙ СЕССИИ:\n${p
 
   lastSpokenText() {
     const l = this.lastSpoken;
-    return l ? this.topicById(l.topicId)?.chunks[l.chunk]?.t : '';
+    return l ? this.chunkText(this.topicById(l.topicId)?.chunks[l.chunk]) : '';
+  }
+
+  /** Текст куска для показа и озвучки: с сокращениями («физ. лиц», «НДФЛ»), если они включены. */
+  chunkText(c) {
+    if (!c) return '';
+    return this.settings.abbreviate ? abbreviate(c.t) : c.t;
   }
 
   /** Потоковый запрос к нейросети с озвучкой по предложениям. entry.a накапливает текст. */

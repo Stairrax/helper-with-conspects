@@ -174,14 +174,14 @@ async function dropOldFiles(files) {
   } catch { /* ignore */ }
 }
 
-async function synthSilero(voice, text, rate) {
+async function synthSilero(voice, text, rate, expressive) {
   const { sessions, frontend } = silero;
   const pcm = await SileroCore.synthesize(
     frontend,
     (k, feeds) => sessions[k].run(feeds),
     (type, data, dims) => new ort.Tensor(type, data, dims),
     text,
-    { speaker: voice.speaker, rate: Math.max(0.5, Math.min(2, rate || 1)) },
+    { speaker: voice.speaker, rate: Math.max(0.5, Math.min(2, rate || 1)), expressive: !!expressive },
   );
   return pcm.length ? pcm : new Float32Array(4800); // в тексте нет слов — короткая тишина
 }
@@ -230,7 +230,7 @@ self.onmessage = (e) => {
         if (m.voice.id !== wantedVoice) { post({ type: 'error', id: m.id, message: 'stale', stale: true }); return; }
         await init(m.voice);
         const isSilero = m.voice.kind === 'silero';
-        const pcm = isSilero ? await synthSilero(m.voice, m.text, m.rate) : await synth(m.text, m.rate);
+        const pcm = isSilero ? await synthSilero(m.voice, m.text, m.rate, m.expressive) : await synth(m.text, m.rate);
         post({ type: 'audio', id: m.id, pcm, sampleRate: isSilero ? silero.frontend.tts.sample_rate : config.audio.sample_rate }, [pcm.buffer]);
       }
     } catch (err) {

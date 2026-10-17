@@ -25,6 +25,8 @@ export const DEFAULT_SETTINGS = {
   showText: true,
   voiceEngine: 'system',  // 'system' — голос Android, 'neural' — нейросетевой голос на телефоне
   neuralVoice: 'silero-baya',
+  intonation: true,       // живая интонация голосов Silero: логические ударения, «нá руки»
+  abbreviate: false,      // диктовать сокращениями: «физ. лиц», «НДФЛ»
   voiceStyle: 'none',     // 'none' | 'jarvis' — стиль ИИ-ассистента
   address: '',            // обращение: '' | 'сэр' | 'мэм'
   cloudProvider: 'yandex', // облачный голос: 'yandex' | 'gemini' | 'elevenlabs'

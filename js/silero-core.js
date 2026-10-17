@@ -228,7 +228,7 @@
     Ъ: '', Ы: 'ы', Ь: '', Э: 'э', Ю: 'ю', Я: 'я' };
   const EN_LETTER = { A: 'эй', B: 'би', C: 'си', D: 'ди', E: 'и', F: 'эф', G: 'джи', H: 'эйч', I: 'ай', J: 'джей', K: 'кей', L: 'эл',
     M: 'эм', N: 'эн', O: 'оу', P: 'пи', Q: 'кью', R: 'ар', S: 'эс', T: 'ти', U: 'ю', V: 'ви', W: 'дабл ю', X: 'экс', Y: 'уай', Z: 'зед' };
-  const ABBR_SAY = { ЕГЭ: 'е гэ э', ОГЭ: 'о гэ э', ООН: 'о о эн', ЕС: 'е эс', ООО: 'о о о', ИП: 'и пэ', ЗАГС: 'загс', ТАСС: 'тасс',
+  const ABBR_SAY = { МРОТ: 'мрот', ЕГЭ: 'е гэ э', ОГЭ: 'о гэ э', ООН: 'о о эн', ЕС: 'е эс', ООО: 'о о о', ИП: 'и пэ', ЗАГС: 'загс', ТАСС: 'тасс',
     OK: 'окей', JSON: 'джейсон', NASA: 'наса', NATO: 'нато', UNESCO: 'юнеско', LAN: 'лан', RAM: 'рам', ROM: 'ром' };
   const ONSET_RE = /^(?:с?т[рв]?|с[пкмнлвх]р?|[пбткгдфх][рл]|[зс]в|вз|вс|вр|вл|мн|шк|шт|шв|сл|зл|зн|зд|кн|гн|дв|тв|чт|гл|кл|пл|бл|фл|[бвгджзйклмнпрстфхцчшщ])$/;
   const GEOMETRY = /(отрез|прям|треугольн|четырёхугольн|многоугольн|угл|угол|точк|сторон|луч|вектор|плоскост|квадрат|ромб|трапец|параллелограмм|окружност|хорд|дуг|диагонал|медиан|биссектрис|высот|грань|ребр|пирамид|призм)[а-яё]*\s*$/i;
@@ -279,6 +279,8 @@
     t = t.replace(/[«»“”„"]/g, ' ').replace(/[‐‑]/g, '-').replace(/ | /g, ' ');
     // сокращения
     for (const [re, word] of ABBREVIATIONS) t = t.replace(re, (m, ...a) => word + endDot(a[a.length - 1], a[a.length - 2] + m.length));
+    // «физ. лиц», «гос. бюджет» — точка сокращения перед строчной буквой не конец предложения
+    t = t.replace(/(?<![А-Яа-яЁё])([А-Яа-яЁё]{2,5})\.\s+(?=[а-яё])/g, '$1 ');
     // «10 000» -> «10000»; «$5» -> «5 $»
     t = t.replace(/(?<![\d.,])(\d{1,3})((?: \d{3})+)(?![\d]|[.,]\d)/g, (m, a, b) => a + b.replace(/ /g, ''));
     t = t.replace(/([$€₽])\s?(\d+(?:[.,]\d+)?)/g, '$2 $1');
@@ -751,6 +753,66 @@
     }
   }
 
+  // ---------- Живая интонация ----------
+  // Логическое ударение Silero: слово, обёрнутое в FOCUS_MARK, голос выделяет длительностью и тоном,
+  // в EMPH_MARK — сильнее (всё предложение звучит с нажимом). В оригинале это *слово* и **слово**.
+
+  const FOCUS_MARK = '', EMPH_MARK = '';
+  const MARK_RE = /([])([^\s]+)\1/g;
+  const MARKS_ANY = /[]/g;
+  const FOCUS_SKIP = new Set('.,!?;:…–');
+  const FOCUS_LEVEL = 3; // intensity по умолчанию в apply_tts
+  const TYPE_EMPH = 6;   // тип предложения с эмфазой = обычный + 6
+  const cleanWord = (w) => w.toLowerCase().replace(/[^а-яёa-z]/g, '');
+
+  /** Что выделить голосом: термин перед «— это», слова в кавычках, «не X, а Y», «важно». */
+  function markIntonation(text) {
+    const F = (w) => FOCUS_MARK + w + FOCUS_MARK;
+    const words = (t) => t.replace(/[А-Яа-яЁёA-Za-z0-9]+(?:-[А-Яа-яЁёA-Za-z0-9]+)*/g, F);
+    let t = String(text);
+    // «на руки» — короткая цитата целиком
+    t = t.replace(/«([^«»]{1,40})»/g, (m, inner) => (inner.trim().split(/\s+/).length <= 4 ? `«${words(inner)}»` : m));
+    // «Активные доходы — это …» — определяемый термин
+    t = t.replace(/(^|[.!?…]\s+)([А-ЯЁ][а-яё]*(?:-[а-яё]+)?(?:\s+[а-яё]+(?:-[а-яё]+)?){0,2})(\s+[—–]\s+это\s)/g, (m, pre, term, rest) => pre + words(term) + rest);
+    // «не физических, а юридических» — противопоставление
+    t = t.replace(/(^|[^а-яёА-ЯЁ])([Нн]е)\s+([а-яё]+(?:-[а-яё]+)?)([^.!?,]{0,40}),\s+а\s+([а-яё]+(?:-[а-яё]+)?)/g,
+      (m, pre, ne, x, mid, y) => `${pre}${ne} ${F(x)}${mid}, а ${F(y)}`);
+    // «Это важно», «Запомните» — с нажимом
+    t = t.replace(/(?<![а-яёА-ЯЁ])(важно|главное|обязательно|запомните)(?![а-яёА-ЯЁ])/gi, (w) => EMPH_MARK + w + EMPH_MARK);
+    return t;
+  }
+
+  // Разговорные ударения на предлоге: «нá руки», «зá город», «пó полю», «нé был» — слово после предлога без ударения
+  const PROCLITIC = {
+    на: 'руки руку ноги ногу голову спину бок нос пол гору берег воду дом зиму лето день ночь год два три сто душу смех слово сторону плечи небо уши',
+    за: 'руку руки ногу ноги голову спину город год день ночь зиму лето нос ухо уши волосы борт два три сто',
+    по: 'полю лесу морю полу двое трое сто два три носу',
+    под: 'гору ноги ногу руку руки нос вечер',
+    из: 'дому лесу виду носу',
+    без: 'вести толку',
+    до: 'смерти дому ночи',
+    от: 'роду',
+    не: 'был было были',
+  };
+  const PROCLITIC_SET = Object.fromEntries(Object.entries(PROCLITIC).map(([k, v]) => [k, new Set(v.split(' '))]));
+  /**
+   * Предлог и слово сливаются в одно, как в живой речи: «н+а р+уки» -> «н+аруки» — модель тянет ударное «а»,
+   * а «руки» звучит безударно. keep — какие символы исходной строки остались.
+   */
+  function shiftProclitics(accented) {
+    const keep = new Array(accented.length).fill(true);
+    const words = [...accented.matchAll(/[^ ]+/g)];
+    for (let i = 0; i + 1 < words.length; i++) {
+      const p = words[i][0], next = words[i + 1];
+      if (!/^[а-яё]*\+[а-яё]*$/.test(p) || next.index !== words[i].index + p.length + 1) continue;
+      const set = PROCLITIC_SET[p.replace('+', '')];
+      if (!set || !set.has(next[0].replace(/[^а-яё]/g, ''))) continue;
+      keep[next.index - 1] = false; // пробел
+      [...next[0]].forEach((c, k) => { if (c === '+') keep[next.index + k] = false; });
+    }
+    return { text: [...accented].filter((_, i) => keep[i]).join(''), keep };
+  }
+
   // ---------- Вход модели ----------
 
   /** Готовит фразу так же, как prepare_text_input в Silero. */
@@ -776,46 +838,109 @@
       this.allowed = new Set([...tts.symbols.slice(3), '^']);
     }
 
-    /** Текст фразы -> { ids, types, accented } или null, если букв нет. */
-    async encode(rawText) {
-      const original = normalize(rawText);
+    /**
+     * Текст фразы -> { ids, types, dtypes, focus, spans, … } или null, если букв нет.
+     * expressive — живая интонация: выделяет главное (markIntonation) и ставит разговорные ударения на предлогах.
+     * Слова между FOCUS_MARK (логическое ударение) или EMPH_MARK (эмфаза) выделяются голосом.
+     */
+    async encode(rawText, { expressive = false } = {}) {
+      const src = expressive ? markIntonation(rawText) : String(rawText);
+      // выделенные слова: номер слова в подготовленном тексте и само слово
+      const marks = [];
+      let plain = '', last = 0;
+      for (const m of src.matchAll(MARK_RE)) {
+        plain += src.slice(last, m.index);
+        const before = plain.replace(MARKS_ANY, '');
+        const at = prepare(normalize(before), this.allowed).split(' ').filter(Boolean).length;
+        normalize(m[2]).split(/\s+/).forEach((part, j) => {
+          const word = cleanWord(part);
+          if (word) marks.push({ at: at + j, word, emph: m[1] === EMPH_MARK });
+        });
+        plain += m[2];
+        last = m.index + m[0].length;
+      }
+      plain = (plain + src.slice(last)).replace(MARKS_ANY, '');
+      const original = normalize(plain);
       const sentence = prepare(original, this.allowed);
       if (!sentence.replace(/[^а-яё]/g, '')) return null;
       // как SileroStress: сначала омографы, затем остальные слова
-      const accented = this.acc.accentuate(this.homo ? await this.homo.solve(sentence) : sentence);
+      let accented = this.acc.accentuate(this.homo ? await this.homo.solve(sentence) : sentence);
+      // логическое ударение: уровень на символах выделенных слов (без знаков препинания)
+      let charFocus = new Array(accented.length).fill(0);
+      let emphAt = [];
+      if (marks.length) {
+        const words = [...accented.matchAll(/\S+/g)];
+        const used = new Set();
+        for (const mk of marks) {
+          let hit = -1;
+          for (const d of [0, 1, -1, 2, -2]) {
+            const w = words[mk.at + d];
+            if (w && !used.has(mk.at + d) && cleanWord(w[0]) === mk.word) { hit = mk.at + d; break; }
+          }
+          if (hit < 0) continue;
+          used.add(hit);
+          const w = words[hit];
+          [...w[0]].forEach((c, i) => { if (!FOCUS_SKIP.has(c)) charFocus[w.index + i] = FOCUS_LEVEL; });
+          if (mk.emph) emphAt.push(w.index);
+        }
+      }
+      if (expressive) {
+        const sh = shiftProclitics(accented);
+        const map = [];
+        let j = 0;
+        sh.keep.forEach((k, i) => { map[i] = j; if (k) j++; });
+        accented = sh.text;
+        charFocus = charFocus.filter((_, i) => sh.keep[i]);
+        emphAt = emphAt.map((i) => map[i]);
+      }
       const toks = [this.tts.sos, ...accented, this.tts.eos];
       const ids = toks.map((c) => this.tts.symbol_to_id[c]).filter((v) => v !== undefined);
-      // тип каждого предложения — для интонации вопроса и восклицания
-      let types = classifyText(original).split('|');
+      // предложения на токенах: [начало, конец) без пробелов в конце
       const sentIds = charSentIds(toks.slice(1, -1).join(''));
       const nSent = sentIds.length ? sentIds[sentIds.length - 1] + 1 : 0;
-      if (types.length !== nSent) {
-        const spans = [];
-        for (let k = 0; k < nSent; k++) {
-          const idx = sentIds.map((s, i) => (s === k ? i + 1 : -1)).filter((i) => i >= 0);
-          let a = idx[0], b = idx[idx.length - 1] + 1;
-          while (b > a && toks[b - 1] === ' ') b--;
-          spans.push(toks.slice(a, b).join(''));
-        }
-        types = spans.map((t) => classifySentence(t.replace(/\+/g, '')));
+      const spans = [];
+      for (let k = 0; k < nSent; k++) {
+        const idx = sentIds.map((s, i) => (s === k ? i + 1 : -1)).filter((i) => i >= 0);
+        let a = idx[0], b = idx[idx.length - 1] + 1;
+        while (b > a && toks[b - 1] === ' ') b--;
+        spans.push([a, b]);
       }
+      // тип каждого предложения — для интонации вопроса и восклицания
+      let types = classifyText(original).split('|');
+      if (types.length !== nSent) types = spans.map(([a, b]) => classifySentence(toks.slice(a, b).join('').replace(/\+/g, '')));
       const tids = types.map((t) => TYPE2ID[t] || 0);
-      const values = sentIds.map((s) => tids[Math.min(s, tids.length - 1)]);
-      const typeIds = new Array(toks.length).fill(0);
-      values.forEach((v, i) => { if (i + 1 < toks.length - 1) typeIds[i + 1] = v; });
-      if (values.length) { typeIds[0] = values[0]; typeIds[toks.length - 1] = values[values.length - 1]; }
-      return { ids, types: typeIds, accented };
+      // как place_tokens: начало фразы — как первый символ, конец — 0
+      const focus = [charFocus[0] || 0, ...charFocus, 0];
+      const emphSpans = new Set(emphAt.map((c) => sentIds[c]).filter((k) => k !== undefined));
+      const place = (shift) => {
+        const values = sentIds.map((s) => tids[Math.min(s, tids.length - 1)] + (shift && emphSpans.has(s) ? TYPE_EMPH : 0));
+        const out = new Array(toks.length).fill(0);
+        values.forEach((v, i) => { if (i + 1 < toks.length - 1) out[i + 1] = v; });
+        if (values.length) { out[0] = values[0]; out[toks.length - 1] = values[values.length - 1]; }
+        return out;
+      };
+      return {
+        ids, types: place(false), dtypes: place(true), focus, spans, spanTypes: spans.map((_, k) => tids[Math.min(k, tids.length - 1)]),
+        emphSpans, hasFocus: focus.some((v) => v > 0), hasEmph: emphSpans.size > 0, accented,
+      };
     }
   }
 
-  /** Длительности символов из выхода модели (как в оригинале: обрезка начала и концовки фразы). */
-  function durations(logDur, rate = 1) {
-    const n = logDur.length;
+  const expm1 = (logDur) => Float64Array.from(logDur, (v) => Math.exp(v) - 1);
+
+  /**
+   * Длительности символов (в кадрах) из выхода модели — как cap_sos и fx_durs в оригинале:
+   * обрезка начала и концовки фразы; во фразе с эмфазой начало длиннее.
+   */
+  function durations(lin, rate = 1, emph = false) {
+    const n = lin.length;
+    const sosCap = emph ? 20 : 5;
     const d = new Float64Array(n);
-    for (let i = 0; i < n; i++) d[i] = roundHalfEven(Math.max(0, Math.exp(logDur[i]) - 1));
-    d[0] = Math.min(d[0], 5);
+    for (let i = 0; i < n; i++) d[i] = roundHalfEven(Math.max(0, lin[i]));
+    d[0] = Math.min(d[0], sosCap);
     if (rate !== 1) for (let i = 0; i < n; i++) d[i] = roundHalfEven(d[i] / rate);
-    d[0] = Math.min(d[0], 5);
+    d[0] = Math.min(d[0], sosCap);
+    if (emph) for (let i = 1; i < Math.min(5, n - 1); i++) d[i] = Math.max(d[i], 5);
     if (n >= 1) d[n - 1] = Math.min(d[n - 1], 7);
     if (n >= 2) d[n - 2] = 13;
     if (n >= 3) d[n - 3] = Math.min(d[n - 3], 13);
@@ -1023,22 +1148,67 @@
     return out;
   }
 
-  async function synthesizeOne(frontend, run, tensor, text, { speaker = 'baya', rate = 1, pitch: pitchCoef = 1 } = {}) {
-    const enc = await frontend.encode(text);
+  async function synthesizeOne(frontend, run, tensor, text, { speaker = 'baya', rate = 1, pitch: pitchCoef = 1, expressive = false } = {}) {
+    const enc = await frontend.encode(text, { expressive });
     if (!enc) return new Float32Array(0);
     const tts = frontend.tts;
-    const T = enc.ids.length;
-    const i64 = (arr, dims) => tensor('int64', BigInt64Array.from(arr.map((v) => BigInt(v))), dims);
-    const seq = i64(enc.ids, [1, T]);
+    const { ids } = enc;
+    const T = ids.length;
+    const i64 = (arr, dims) => tensor('int64', BigInt64Array.from(arr, (v) => BigInt(v)), dims);
+    const seq = i64(ids, [1, T]);
     const spkId = tts.speakers[speaker] ?? 1;
     const spk = i64([spkId], [1]);
-    const p = await run('prosody', { seq, spk, types: i64(enc.types, [1, T]) });
-    const durs = durations(p.log_dur.data, rate);
-    const pitch = Float32Array.from(p.pitch.data);
-    const shift = (pitchCoef - 1) * (tts.mean_std_coef?.[String(spkId)] || 0);
-    for (let i = 0; i < pitch.length; i++) {
-      if (Math.abs(pitch[i]) < 0.001) pitch[i] = 0;
-      else if (pitchCoef !== 1) pitch[i] = pitch[i] * pitchCoef + shift;
+    // модель длительностей и тона: dtypes — типы для длительностей (эмфаза +6), ptypes — для тона
+    const prosody = (s, dt, pt, fo) => {
+      const n = s.length;
+      return run('prosody', { seq: i64(s, [1, n]), spk, dtypes: i64(dt, [1, n]), ptypes: i64(pt.map((v) => v % TYPE_EMPH), [1, n]), focus: i64(fo, [1, n]) });
+    };
+    const zeros = new Array(T).fill(0);
+    let lin, pitch, givenPitch = false;
+    if (!enc.hasFocus) {
+      const p = await prosody(ids, enc.types, enc.types, zeros);
+      lin = expm1(p.log_dur.data); pitch = Float32Array.from(p.pitch.data);
+    } else if (enc.spans.length <= 1) {
+      const p = await prosody(ids, enc.dtypes, enc.types, enc.focus);
+      lin = expm1(p.log_dur.data); pitch = Float32Array.from(p.pitch.data);
+      givenPitch = enc.hasEmph; // при эмфазе тон считается отдельно и идёт в модель как есть
+    } else {
+      // несколько предложений: тон выделенного предложения — по нему одному,
+      // длительности — вместе с соседними предложениями, остальное — без выделения
+      const base = await prosody(ids, enc.types, enc.types, zeros);
+      lin = expm1(base.log_dur.data); pitch = Float32Array.from(base.pitch.data);
+      givenPitch = true;
+      const fm = enc.focus, sp = enc.spans;
+      for (let k = 0; k < sp.length; k++) {
+        const [a, b] = sp[k];
+        if (!fm.slice(a, b).some((v) => v > 0)) continue;
+        const tidPitch = enc.spanTypes[k];
+        const tid = tidPitch + (enc.emphSpans.has(k) ? TYPE_EMPH : 0);
+        const sSeq = [ids[0], ...ids.slice(a, b), ids[T - 1]];
+        const sType = new Array(sSeq.length).fill(tidPitch);
+        const sp1 = await prosody(sSeq, sType, sType, [fm[a], ...fm.slice(a, b), 0]);
+        pitch.set(sp1.pitch.data.subarray(1, 1 + (b - a)), a);
+        const lo = k > 0 ? sp[k - 1][0] : a;
+        const hi = k + 1 < sp.length ? sp[k + 1][1] : b;
+        const endK = k + 1 < sp.length ? sp[k + 1][0] : b;
+        const focK = zeros.slice();
+        for (let i = a; i < b; i++) focK[i] = fm[i];
+        const typeK = enc.types.slice();
+        for (let i = a; i < endK; i++) typeK[i] = tid;
+        const wType = [typeK[lo], ...typeK.slice(lo, hi), typeK[hi - 1]];
+        const wp = await prosody([ids[0], ...ids.slice(lo, hi), ids[T - 1]], wType, wType, [focK[lo], ...focK.slice(lo, hi), 0]);
+        const wd = expm1(wp.log_dur.data);
+        const a0 = enc.emphSpans.has(k) ? a + 1 : a;
+        for (let i = a0; i < b; i++) lin[i] = wd[a0 - lo + 1 + (i - a0)];
+      }
+    }
+    const durs = durations(lin, rate, enc.dtypes[0] >= TYPE_EMPH);
+    if (!givenPitch) {
+      const shift = (pitchCoef - 1) * (tts.mean_std_coef?.[String(spkId)] || 0);
+      for (let i = 0; i < pitch.length; i++) {
+        if (Math.abs(pitch[i]) < 0.001) pitch[i] = 0;
+        else if (pitchCoef !== 1) pitch[i] = pitch[i] * pitchCoef + shift;
+      }
     }
     const e = await run('encoder', { seq, spk, pitch: tensor('float32', pitch, [1, 1, T]) });
     const C = e.enc.dims[2];
@@ -1053,5 +1223,5 @@
     return istft(v.re.data, v.im.data, bins, frames, tts.window, tts.n_fft, tts.hop);
   }
 
-  root.SileroCore = { normalize, numberWords, ordinalWords, classifyText, classifySentence, charSentIds, Accentor, HomoSolver, homoCleanText, Frontend, durations, istft, splitLong, synthesize, prepare };
+  root.SileroCore = { FOCUS_MARK, EMPH_MARK, markIntonation, shiftProclitics, normalize, numberWords, ordinalWords, classifyText, classifySentence, charSentIds, Accentor, HomoSolver, homoCleanText, Frontend, durations, istft, splitLong, synthesize, prepare };
 })(typeof self !== 'undefined' ? self : globalThis);

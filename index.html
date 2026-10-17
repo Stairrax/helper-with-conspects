@@ -281,6 +281,7 @@
             </div>
           </label>
           <div id="neuralStatus" class="status small"></div>
+          <label class="switch" id="intonationRow"><span>Живая интонация<small>голос выделяет главное, как лектор: термин перед «— это», слова в «кавычках», «не …, а …», «важно»; разговорные ударения — «нá руки», «зá город», «нé был». Выключите и включите, нажимая 🔊, чтобы сравнить</small></span><input id="intonation" type="checkbox"><i></i></label>
           <p class="hint">Работает прямо на телефоне, без интернета и лимитов. Живые голоса (Бая, Ксения, Ксюша, Айдар, Евгений) один раз скачиваются вместе — около 120 МБ, остальные — около 65 МБ каждый; лучше по Wi-Fi. Если голос не загрузится, приложение будет говорить голосом Android.</p>
           <p class="hint">Живые голоса — модель <a href="https://github.com/snakers4/silero-models" target="_blank" rel="noopener">Silero</a> (© Silero Team, лицензия <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.ru" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>: только некоммерческое использование). Остальные — <a href="https://github.com/rhasspy/piper" target="_blank" rel="noopener">Piper</a>.</p>
         </div>
@@ -344,6 +345,7 @@
         <label class="switch"><span>Пауза дольше в сложных местах</span><input id="scalePause" type="checkbox"><i></i></label>
         <label class="switch"><span>Подстраивать паузу<small>длиннее, если часто прошу повторить</small></span><input id="adaptivePause" type="checkbox"><i></i></label>
         <label class="switch"><span>Самопроверка после темы<small>2–3 вопроса, ответ голосом</small></span><input id="selfCheck" type="checkbox"><i></i></label>
+        <label class="switch"><span>Диктовать сокращениями<small>как преподаватель: «физ. лиц», «юр. лица», «НДФЛ», «РФ», «ЦБ», «ИП», «госбюджет», «т. е.» — записывать быстрее; на экране тоже сокращения</small></span><input id="abbreviate" type="checkbox"><i></i></label>
         <label class="field mt">Напоминать о перерыве <b id="breakVal"></b>
           <input id="breakEvery" type="range" min="0" max="90" step="5">
         </label>
@@ -480,20 +482,21 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/ai.js": "./js/ai.js?v=25",
-      "./js/analyze.js": "./js/analyze.js?v=25",
-      "./js/anthropic.js": "./js/anthropic.js?v=25",
-      "./js/app.js": "./js/app.js?v=25",
-      "./js/cloud.js": "./js/cloud.js?v=25",
-      "./js/dictation.js": "./js/dictation.js?v=25",
-      "./js/extract.js": "./js/extract.js?v=25",
-      "./js/gemini.js": "./js/gemini.js?v=25",
-      "./js/media.js": "./js/media.js?v=25",
-      "./js/neural.js": "./js/neural.js?v=25",
-      "./js/onboarding.js": "./js/onboarding.js?v=25",
-      "./js/openai.js": "./js/openai.js?v=25",
-      "./js/speech.js": "./js/speech.js?v=25",
-      "./js/storage.js": "./js/storage.js?v=25"
+      "./js/abbr.js": "./js/abbr.js?v=26",
+      "./js/ai.js": "./js/ai.js?v=26",
+      "./js/analyze.js": "./js/analyze.js?v=26",
+      "./js/anthropic.js": "./js/anthropic.js?v=26",
+      "./js/app.js": "./js/app.js?v=26",
+      "./js/cloud.js": "./js/cloud.js?v=26",
+      "./js/dictation.js": "./js/dictation.js?v=26",
+      "./js/extract.js": "./js/extract.js?v=26",
+      "./js/gemini.js": "./js/gemini.js?v=26",
+      "./js/media.js": "./js/media.js?v=26",
+      "./js/neural.js": "./js/neural.js?v=26",
+      "./js/onboarding.js": "./js/onboarding.js?v=26",
+      "./js/openai.js": "./js/openai.js?v=26",
+      "./js/speech.js": "./js/speech.js?v=26",
+      "./js/storage.js": "./js/storage.js?v=26"
     }
   }
   </script>
@@ -527,6 +530,6 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=25"></script>
+  <script type="module" src="js/app.js?v=26"></script>
 </body>
 </html>

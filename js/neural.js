@@ -21,15 +21,15 @@ export const NEURAL_VOICES = {
 
 export const isSilero = (id) => id.startsWith('silero-');
 
-// Файлы Silero и их размер (для прогресса загрузки). При замене файлов поднимайте SILERO_REV —
-// иначе у тех, кто уже скачал голос, останутся старые.
-const SILERO_REV = 1;
+// Файлы Silero и их размер (для прогресса загрузки). При замене файла укажите его новую версию
+// в SILERO_REV — иначе у тех, кто уже скачал голос, останется старый (скачается только этот файл).
+const SILERO_REV = { 'prosody.onnx': 2 }; // 2 — с логическим ударением (живая интонация)
 const SILERO_FILES = {
   'tts.json': 47335,
   'accentor.json': 1304184,
   'accentor-ngrams.txt': 1087501,
   'accentor-emb.bin': 2024368,
-  'prosody.onnx': 3281005,
+  'prosody.onnx': 3280854,
   'encoder.onnx': 14205067,
   'dec_pre.onnx': 5460679,
   'dec_post.onnx': 6099427,
@@ -51,7 +51,7 @@ function voiceSpec(id) {
       key: 'silero-ru', // одна модель на все голоса Silero
       speaker: id.slice(7),
       files: Object.entries(SILERO_FILES).map(([name, size]) => ({
-        name, size, optional: SILERO_OPTIONAL.test(name), urls: [`${SILERO_BASE}${name}?r=${SILERO_REV}`],
+        name, size, optional: SILERO_OPTIONAL.test(name), urls: [`${SILERO_BASE}${name}?r=${SILERO_REV[name] || 1}`],
       })),
     };
   }
@@ -123,11 +123,12 @@ export async function prepare(voiceId, onProgress) {
   }
 }
 
-/** Синтезирует текст в AudioBuffer (с кэшем и опережением). */
-export function synth(text, { voice = 'irina', rate = 1 } = {}) {
-  const key = `${voice}|${rate}|${text}`;
+/** Синтезирует текст в AudioBuffer (с кэшем и опережением). expressive — живая интонация (только Silero). */
+export function synth(text, { voice = 'irina', rate = 1, expressive = false } = {}) {
+  const ex = expressive && isSilero(voice);
+  const key = `${voice}|${rate}|${ex ? 'x' : ''}|${text}`;
   if (!cache.has(key)) {
-    const p = call({ type: 'synth', voice: voiceSpec(voice), text, rate }).then((m) => {
+    const p = call({ type: 'synth', voice: voiceSpec(voice), text, rate, expressive: ex }).then((m) => {
       const ac = audioContext();
       const buf = ac.createBuffer(1, Math.max(1, m.pcm.length), m.sampleRate); // пустой буфер создать нельзя
       buf.copyToChannel(m.pcm, 0);
