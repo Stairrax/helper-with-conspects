@@ -271,6 +271,7 @@
   // ---------- Подготовка текста ----------
 
   const SUPERSCRIPT = { '⁰': 0, '¹': 1, '²': 2, '³': 3, '⁴': 4, '⁵': 5, '⁶': 6, '⁷': 7, '⁸': 8, '⁹': 9 };
+  const SUBSCRIPT = { '₀': '0', '₁': '1', '₂': '2', '₃': '3', '₄': '4', '₅': '5', '₆': '6', '₇': '7', '₈': '8', '₉': '9', 'ₙ': 'n', 'ᵢ': 'i', 'ⱼ': 'j', 'ₖ': 'k', 'ₓ': 'x', 'ₜ': 't', 'ₘ': 'm', 'ₐ': 'a', 'ₑ': 'e', 'ₒ': 'o' };
   const power = (n) => (n === 2 ? ' в квадрате' : n === 3 ? ' в кубе' : ` в ${ordinalWords(n, 'fo') || numberWords(n)} степени`);
 
   /** Числа, даты, единицы, сокращения, формулы и латиница — словами: модель знает только русские буквы. */
@@ -340,9 +341,10 @@
       else if (suf === 'е') form = 'n'; // «5-е издание»
       return ordinalWords(n, form) || numberWords(d);
     });
-    // «−5» -> «минус пять», «3x - 1» -> «три икс минус один»
+    // «−5» -> «минус пять», «3x - 1» -> «три икс минус один», «x-1» -> «икс минус один»
     t = t.replace(/(^|[\s(=:;,])[-−](?=\d)/g, '$1минус ');
     t = t.replace(/([\da-z])\s+-\s+(?=[\da-z(])/g, '$1 минус ');
+    t = t.replace(/(?<![A-Za-z])([A-Za-z])-(?=\d)/g, '$1 минус ');
     // «пункт 2.1» -> «пункт два точка один» (не дробь)
     t = t.replace(/(?<![а-яё])(пункт[аеу]?|п\.|раздел[аеу]?|глав[аеуы]|параграф[аеу]?|§|рис(?:\.|унок|унке|унка)|таблиц[аеуы]|табл\.|формул[аеуы]|стать[яеию])\s*(\d+(?:\.\d+)+)/gi,
       (m, w, num) => `${w} ${num.split('.').map((d) => numberWords(d)).join(' точка ')}`);
@@ -352,6 +354,11 @@
       return amount(num, spec) + (unit.endsWith('.') ? endDot(str, off + m.length) : '');
     });
     t = t.replace(/(миллион[а-я]*|миллиард[а-я]*|тысяч[а-я]*)\s+(руб\.?|р\.|₽|долл\.?|\$|€)(?![а-яё])/g, (m, a, c, off, str) => `${a} ${CURRENCY[c.replace('.', '')]}${c.endsWith('.') ? endDot(str, off + m.length) : ''}`);
+    // индексы: «w₁» -> «w один», «x_2» -> «x два», «aₙ» -> «a n»; степень после индекса — «σ₁²» -> «сигма один в квадрате»
+    t = t.replace(/([A-Za-zα-ωΑ-Ω\d)])(?:_\{?([0-9a-z]+)\}?|([₀₁₂₃₄₅₆₇₈₉ₙᵢⱼₖₓₜₘₐₑₒ]+))/g, (m, a, d1, d2) => {
+      const idx = d1 || [...d2].map((c) => SUBSCRIPT[c]).join('');
+      return `${a} ${/^\d+$/.test(idx) ? numberWords(idx) : idx} `;
+    });
     // степени и дроби: «x²», «x^3», «3/4»
     t = t.replace(/([^\s\d])\s?([⁰¹²³⁴⁵⁶⁷⁸⁹]+)/g, (m, a, sup) => a + power(Number([...sup].map((c) => SUPERSCRIPT[c]).join(''))));
     t = t.replace(/\^\s*\(?(\d+)\)?/g, (m, d) => power(Number(d)));
@@ -824,7 +831,7 @@
   const F_STRONG = wordSet('плюс минус умножить умноженное умноженный умножено разделить делённое деленное делённый деленный поделить ' +
     'дробь квадрат квадрата квадрате куб куба кубе степени степень корень корня корнем интеграл интеграла индексом индекс индекса бесконечность стремится');
   const F_WEAK = wordSet('равно равна равен равны равняется примерно приблизительно больше меньше пропорционально');
-  const F_VAR = wordSet('икс игрек зет зэт бэ вэ гэ дэ эф эм эн пэ эр эс тэ ка эль аш цэ кси ' +
+  const F_VAR = wordSet('икс игрек зет зэт бэ вэ дубль гэ дэ эф эм эн пэ эр эс тэ ка эль аш цэ кси ' +
     'альфа бета гамма дельта эпсилон дзета тэта каппа лямбда мю ню пи ро сигма тау фи хи пси омега');
   const F_FUNC = wordSet('синус синуса косинус косинуса тангенс тангенса котангенс котангенса логарифм логарифма экспонента экспоненты ' +
     'предел предела модуль модуля sin cos tg ctg tan cot ln lg log lim exp sqrt arcsin arccos arctg max min');
@@ -834,12 +841,16 @@
 
   /** Вид слова в формуле: v — переменная, f — функция, n — число, s/w — сильный/слабый знак, c — связка, p — запятая, x — не формула. */
   function formulaKind(w) {
-    if (/^\d/.test(w)) return SUPERS.test(w) ? 'v' : 'n';
-    if (/^[A-Za-z]/.test(w) && !/[А-Яа-яЁё]/.test(w)) {
-      const l = w.replace(SUPERS, '').toLowerCase();
+    const cyr = /[А-Яа-яЁё]/.test(w);
+    if (/[A-Za-zα-ωΑ-Ω\d]/.test(w) && !cyr) {
+      if (/^\d+([.,]\d+)?$/.test(w)) return 'n';
+      // «w₁²σ₁²», «2w₁w₂ρ», «x_1», «x-1» — буквы формулы с индексами, степенями и числами
+      if (/[α-ωΑ-Ω\d_^₀-₉ₙᵢⱼₖₓₜₘₐₑₒ]/.test(w) || SUPERS.test(w)) return 'v';
+      const l = w.toLowerCase();
       return F_FUNC.has(l) ? 'f' : l.length <= 3 ? 'v' : 'x';
     }
-    if (/[А-Яа-яЁё]/.test(w)) {
+    if (cyr && /[A-Za-z]/.test(w)) return 'x'; // «IT-сфера»
+    if (cyr) {
       const l = w.toLowerCase();
       return F_STRONG.has(l) ? 's' : F_WEAK.has(l) ? 'w' : F_VAR.has(l) ? 'v' : F_FUNC.has(l) ? 'f' : F_CONN.has(l) ? 'c' : F_NUM.test(l) ? 'n' : 'x';
     }
@@ -853,8 +864,9 @@
   /** Оборачивает формулы текста в SLOW_OPEN … SLOW_CLOSE. */
   function markFormulas(text) {
     const toks = [];
-    for (const m of String(text).matchAll(/[A-Za-zА-Яа-яЁё]+(?:-[A-Za-zА-Яа-яЁё]+)*[⁰¹²³⁴⁵⁶⁷⁸⁹]*|\d+(?:[.,]\d+)?[⁰¹²³⁴⁵⁶⁷⁸⁹]*|[^\s-]/g)) {
-      toks.push({ s: m.index, e: m.index + m[0].length, k: formulaKind(m[0]), pow: SUPERS.test(m[0]) });
+    const W = 'A-Za-zА-Яа-яЁёα-ωΑ-Ω0-9_^₀₁₂₃₄₅₆₇₈₉ₙᵢⱼₖₓₜₘₐₑₒ⁰¹²³⁴⁵⁶⁷⁸⁹';
+    for (const m of String(text).matchAll(new RegExp(`[${W}]+(?:[.,]\\d+)?(?:-[${W}]+)*|[^\\s\\uE001-\\uE004]`, 'g'))) {
+      toks.push({ s: m.index, e: m.index + m[0].length, k: formulaKind(m[0]), pow: SUPERS.test(m[0]) || m[0].includes('^') });
     }
     let out = '', last = 0;
     for (let i = 0; i < toks.length;) {
