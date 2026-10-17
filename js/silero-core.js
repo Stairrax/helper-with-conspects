@@ -813,6 +813,70 @@
     return { text: [...accented].filter((_, i) => keep[i]).join(''), keep };
   }
 
+  // ---------- Формулы — чуть медленнее ----------
+  // В кусках диктовки формулы уже словами («E равно эм цэ квадрат», «дробь: a, делённое на b»), в вопросах и
+  // своих текстах бывают и символами. Находим такие места и растягиваем их звуки на FORMULA_SLOW.
+
+  const SLOW_OPEN = '', SLOW_CLOSE = '';
+  const ALL_MARKS = /[-]/g;
+  const FORMULA_SLOW = 1.15;
+  const wordSet = (str) => new Set(str.split(' '));
+  const F_STRONG = wordSet('плюс минус умножить умноженное умноженный умножено разделить делённое деленное делённый деленный поделить ' +
+    'дробь квадрат квадрата квадрате куб куба кубе степени степень корень корня корнем интеграл интеграла индексом индекс индекса бесконечность стремится');
+  const F_WEAK = wordSet('равно равна равен равны равняется примерно приблизительно больше меньше пропорционально');
+  const F_VAR = wordSet('икс игрек зет зэт бэ вэ гэ дэ эф эм эн пэ эр эс тэ ка эль аш цэ кси ' +
+    'альфа бета гамма дельта эпсилон дзета тэта каппа лямбда мю ню пи ро сигма тау фи хи пси омега');
+  const F_FUNC = wordSet('синус синуса косинус косинуса тангенс тангенса котангенс котангенса логарифм логарифма экспонента экспоненты ' +
+    'предел предела модуль модуля sin cos tg ctg tan cot ln lg log lim exp sqrt arcsin arccos arctg max min');
+  const F_CONN = wordSet('от на в из под с по к скобка скобки скобках скобку открывается закрывается');
+  const F_NUM = /^(\d+([.,]\d+)?|ноль|нуля|один|одна|одно|одного|одной|два|две|двух|двум|три|трёх|трех|трём|четыре|четырёх|пять|пяти|шесть|шести|семь|семи|восемь|восьми|девять|девяти|десять|десяти|одиннадцать|двенадцать|двадцать|тридцать|сорок|пятьдесят|сто|двести|триста|тысяча|тысячи|тысяч|половина|половины|треть|четверть|целых|целая|десятых|сотых|тысячных|нулю|нулём|единица|единицы|единице|единицу|единицей|двум|трём|трем)$/;
+  const SUPERS = /[⁰¹²³⁴⁵⁶⁷⁸⁹]/;
+
+  /** Вид слова в формуле: v — переменная, f — функция, n — число, s/w — сильный/слабый знак, c — связка, p — запятая, x — не формула. */
+  function formulaKind(w) {
+    if (/^\d/.test(w)) return SUPERS.test(w) ? 'v' : 'n';
+    if (/^[A-Za-z]/.test(w) && !/[А-Яа-яЁё]/.test(w)) {
+      const l = w.replace(SUPERS, '').toLowerCase();
+      return F_FUNC.has(l) ? 'f' : l.length <= 3 ? 'v' : 'x';
+    }
+    if (/[А-Яа-яЁё]/.test(w)) {
+      const l = w.toLowerCase();
+      return F_STRONG.has(l) ? 's' : F_WEAK.has(l) ? 'w' : F_VAR.has(l) ? 'v' : F_FUNC.has(l) ? 'f' : F_CONN.has(l) ? 'c' : F_NUM.test(l) ? 'n' : 'x';
+    }
+    if ('=≈≠≤≥<>'.includes(w)) return 'w';
+    if ('+−-×·*/^√∫∑'.includes(w)) return 's';
+    if ('()→'.includes(w)) return 'c';
+    if (',:'.includes(w)) return 'p';
+    return 'x';
+  }
+
+  /** Оборачивает формулы текста в SLOW_OPEN … SLOW_CLOSE. */
+  function markFormulas(text) {
+    const toks = [];
+    for (const m of String(text).matchAll(/[A-Za-zА-Яа-яЁё]+(?:-[A-Za-zА-Яа-яЁё]+)*[⁰¹²³⁴⁵⁶⁷⁸⁹]*|\d+(?:[.,]\d+)?[⁰¹²³⁴⁵⁶⁷⁸⁹]*|[^\s-]/g)) {
+      toks.push({ s: m.index, e: m.index + m[0].length, k: formulaKind(m[0]), pow: SUPERS.test(m[0]) });
+    }
+    let out = '', last = 0;
+    for (let i = 0; i < toks.length;) {
+      if (toks[i].k === 'x') { i++; continue; }
+      let j = i;
+      while (j < toks.length && toks[j].k !== 'x') j++;
+      let a = i, b = j - 1;
+      while (a <= b && 'cp'.includes(toks[a].k)) a++;
+      while (b >= a && 'cp'.includes(toks[b].k)) b--;
+      const run = toks.slice(a, b + 1);
+      const has = (k) => run.filter((t) => t.k === k).length;
+      const strong = has('s') + run.filter((t) => t.pow).length;
+      // переменная со знаком («икс плюс игрек», «E равно…») или арифметика из двух чисел («пять плюс три»)
+      if (run.length >= 2 && ((has('v') + has('f') > 0 && strong + has('w') > 0) || (strong > 0 && has('n') >= 2))) {
+        out += text.slice(last, toks[a].s) + SLOW_OPEN + text.slice(toks[a].s, toks[b].e) + SLOW_CLOSE;
+        last = toks[b].e;
+      }
+      i = j;
+    }
+    return out + String(text).slice(last);
+  }
+
   // ---------- Вход модели ----------
 
   /** Готовит фразу так же, как prepare_text_input в Silero. */
@@ -844,7 +908,22 @@
      * Слова между FOCUS_MARK (логическое ударение) или EMPH_MARK (эмфаза) выделяются голосом.
      */
     async encode(rawText, { expressive = false } = {}) {
-      const src = expressive ? markIntonation(rawText) : String(rawText);
+      let src = markFormulas(rawText);
+      if (expressive) src = markIntonation(src);
+      // формулы: номера слов [с, по) в подготовленном тексте
+      const countWords = (t) => prepare(normalize(t.replace(ALL_MARKS, '')), this.allowed).split(' ').filter(Boolean).length;
+      const slowWords = [];
+      {
+        let head = '', last = 0;
+        for (const m of src.matchAll(/\uE003([^\uE004]*)\uE004/g)) {
+          head += src.slice(last, m.index);
+          const from = countWords(head);
+          head += m[1];
+          slowWords.push([from, countWords(head)]);
+          last = m.index + m[0].length;
+        }
+        src = head + src.slice(last);
+      }
       // выделенные слова: номер слова в подготовленном тексте и само слово
       const marks = [];
       let plain = '', last = 0;
@@ -865,11 +944,18 @@
       if (!sentence.replace(/[^а-яё]/g, '')) return null;
       // как SileroStress: сначала омографы, затем остальные слова
       let accented = this.acc.accentuate(this.homo ? await this.homo.solve(sentence) : sentence);
+      const words = [...accented.matchAll(/\S+/g)];
+      // формулы: растягиваем все символы от первого до последнего слова
+      let charSlow = new Array(accented.length).fill(0);
+      for (const [from, to] of slowWords) {
+        const w0 = words[from], w1 = words[to - 1];
+        if (!w0 || !w1 || to <= from) continue;
+        for (let i = w0.index; i < w1.index + w1[0].length; i++) charSlow[i] = 1;
+      }
       // логическое ударение: уровень на символах выделенных слов (без знаков препинания)
       let charFocus = new Array(accented.length).fill(0);
       let emphAt = [];
       if (marks.length) {
-        const words = [...accented.matchAll(/\S+/g)];
         const used = new Set();
         for (const mk of marks) {
           let hit = -1;
@@ -891,6 +977,7 @@
         sh.keep.forEach((k, i) => { map[i] = j; if (k) j++; });
         accented = sh.text;
         charFocus = charFocus.filter((_, i) => sh.keep[i]);
+        charSlow = charSlow.filter((_, i) => sh.keep[i]);
         emphAt = emphAt.map((i) => map[i]);
       }
       const toks = [this.tts.sos, ...accented, this.tts.eos];
@@ -921,7 +1008,7 @@
       };
       return {
         ids, types: place(false), dtypes: place(true), focus, spans, spanTypes: spans.map((_, k) => tids[Math.min(k, tids.length - 1)]),
-        emphSpans, hasFocus: focus.some((v) => v > 0), hasEmph: emphSpans.size > 0, accented,
+        emphSpans, hasFocus: focus.some((v) => v > 0), hasEmph: emphSpans.size > 0, accented, slow: [0, ...charSlow, 0],
       };
     }
   }
@@ -1202,6 +1289,8 @@
         for (let i = a0; i < b; i++) lin[i] = wd[a0 - lo + 1 + (i - a0)];
       }
     }
+    // формулы — чуть медленнее остального текста
+    enc.slow.forEach((v, i) => { if (v) lin[i] *= FORMULA_SLOW; });
     const durs = durations(lin, rate, enc.dtypes[0] >= TYPE_EMPH);
     if (!givenPitch) {
       const shift = (pitchCoef - 1) * (tts.mean_std_coef?.[String(spkId)] || 0);
@@ -1223,5 +1312,5 @@
     return istft(v.re.data, v.im.data, bins, frames, tts.window, tts.n_fft, tts.hop);
   }
 
-  root.SileroCore = { FOCUS_MARK, EMPH_MARK, markIntonation, shiftProclitics, normalize, numberWords, ordinalWords, classifyText, classifySentence, charSentIds, Accentor, HomoSolver, homoCleanText, Frontend, durations, istft, splitLong, synthesize, prepare };
+  root.SileroCore = { FOCUS_MARK, EMPH_MARK, markIntonation, markFormulas, shiftProclitics, normalize, numberWords, ordinalWords, classifyText, classifySentence, charSentIds, Accentor, HomoSolver, homoCleanText, Frontend, durations, istft, splitLong, synthesize, prepare };
 })(typeof self !== 'undefined' ? self : globalThis);
