@@ -16,12 +16,14 @@ import { prepare as prepareNeural, missingMB, NEURAL_VOICES, VOICE_STYLES, audio
 import { enableMedia, disableMedia, updateMedia, mediaSupported } from './media.js';
 import { Dictation, STATE_TEXT } from './dictation.js';
 import { initOnboarding, onboardingDone } from './onboarding.js';
+import { setRipple } from './ripple.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 let settings = loadSettings();
+applyLook();
 let subjects = null;        // { list: [{id, title}], current }
 let sources = [];
 let project = null;
@@ -905,6 +907,17 @@ function renderSettings() {
   $('coverageCheck').checked = settings.coverageCheck;
   document.querySelectorAll('input[name=mode]').forEach((r) => { r.checked = r.value === settings.mode; });
   $('voice').value = settings.voiceURI;
+  document.querySelectorAll('input[name=theme]').forEach((r) => { r.checked = r.value === settings.theme; });
+  $('ripple').checked = settings.ripple !== false;
+}
+
+// Оформление: тема (тот же выбор делает скрипт в <head> до первой отрисовки) и «капля» при нажатии
+function applyLook() {
+  const neon = settings.theme === 'neon';
+  if (neon) document.documentElement.dataset.theme = 'neon';
+  else delete document.documentElement.dataset.theme;
+  document.querySelector('meta[name=theme-color]').content = neon ? '#000000' : '#0b0c10';
+  setRipple(settings.ripple !== false);
 }
 
 // Когда слушает микрофон. На Android включённый микрофон переводит звук в «режим звонка».
@@ -1112,6 +1125,16 @@ document.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener(
   settings.mode = r.value;
   saveSettings(settings);
 }));
+document.querySelectorAll('input[name=theme]').forEach((r) => r.addEventListener('change', () => {
+  settings.theme = r.value;
+  saveSettings(settings);
+  applyLook();
+}));
+$('ripple').addEventListener('change', (e) => {
+  settings.ripple = e.target.checked;
+  saveSettings(settings);
+  applyLook();
+});
 $('showKey').addEventListener('click', () => {
   const k = $('apiKey');
   k.type = k.type === 'password' ? 'text' : 'password';

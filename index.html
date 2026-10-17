@@ -11,6 +11,16 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/neon.css">
+  <script>
+    // тема — до первой отрисовки, чтобы экран не мигал
+    try {
+      if (JSON.parse(localStorage.getItem('kd.settings') || '{}').theme === 'neon') {
+        document.documentElement.dataset.theme = 'neon';
+        document.querySelector('meta[name=theme-color]').content = '#000000';
+      }
+    } catch { /* ignore */ }
+  </script>
 </head>
 <body data-tab="load">
   <!-- Иконки (Material Symbols) -->
@@ -340,6 +350,15 @@
       </div>
 
       <div class="card">
+        <div class="card-title">Оформление</div>
+        <div class="seg">
+          <label><input type="radio" name="theme" value="classic"><span>Классика</span></label>
+          <label><input type="radio" name="theme" value="neon"><span>Неон</span></label>
+        </div>
+        <label class="switch"><span>Капля при нажатии<small>от пальца по кнопке расходится волна, от главных кнопок — круги, как по воде</small></span><input id="ripple" type="checkbox"><i></i></label>
+      </div>
+
+      <div class="card">
         <div class="card-title">Данные</div>
         <p class="hint" id="appInfo"></p>
         <p class="hint">Резервная копия — один файл со всеми настройками, ключами и конспектами. Сохраните её, например, в Google Диск или Telegram «Избранное»: если данные пропадут, всё вернётся одним касанием. В файле ваши ключи API — никому его не отправляйте. <span id="backupInfo"></span></p>
@@ -455,20 +474,21 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/abbr.js": "./js/abbr.js?v=33",
-      "./js/ai.js": "./js/ai.js?v=33",
-      "./js/analyze.js": "./js/analyze.js?v=33",
-      "./js/anthropic.js": "./js/anthropic.js?v=33",
-      "./js/app.js": "./js/app.js?v=33",
-      "./js/dictation.js": "./js/dictation.js?v=33",
-      "./js/extract.js": "./js/extract.js?v=33",
-      "./js/gemini.js": "./js/gemini.js?v=33",
-      "./js/media.js": "./js/media.js?v=33",
-      "./js/neural.js": "./js/neural.js?v=33",
-      "./js/onboarding.js": "./js/onboarding.js?v=33",
-      "./js/openai.js": "./js/openai.js?v=33",
-      "./js/speech.js": "./js/speech.js?v=33",
-      "./js/storage.js": "./js/storage.js?v=33"
+      "./js/abbr.js": "./js/abbr.js?v=34",
+      "./js/ai.js": "./js/ai.js?v=34",
+      "./js/analyze.js": "./js/analyze.js?v=34",
+      "./js/anthropic.js": "./js/anthropic.js?v=34",
+      "./js/app.js": "./js/app.js?v=34",
+      "./js/dictation.js": "./js/dictation.js?v=34",
+      "./js/extract.js": "./js/extract.js?v=34",
+      "./js/gemini.js": "./js/gemini.js?v=34",
+      "./js/media.js": "./js/media.js?v=34",
+      "./js/neural.js": "./js/neural.js?v=34",
+      "./js/onboarding.js": "./js/onboarding.js?v=34",
+      "./js/openai.js": "./js/openai.js?v=34",
+      "./js/ripple.js": "./js/ripple.js?v=34",
+      "./js/speech.js": "./js/speech.js?v=34",
+      "./js/storage.js": "./js/storage.js?v=34"
     }
   }
   </script>
@@ -502,6 +522,6 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=33"></script>
+  <script type="module" src="js/app.js?v=34"></script>
 </body>
 </html>

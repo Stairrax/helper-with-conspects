@@ -2,11 +2,12 @@
 // Запросы к API нейросетей никогда не кэшируются.
 
 // При выпуске новой версии поднимайте VERSION и ?v= в index.html (importmap и app.js) — одно и то же число.
-const VERSION = 'kd-v33';
+const VERSION = 'kd-v34';
 const SHELL = [
   './',
   'index.html',
   'css/styles.css',
+  'css/neon.css',
   'js/app.js',
   'js/abbr.js',
   'js/ai.js',
@@ -21,6 +22,7 @@ const SHELL = [
   'js/silero-core.js',
   'js/onboarding.js',
   'js/openai.js',
+  'js/ripple.js',
   'js/speech.js',
   'js/storage.js',
   'manifest.webmanifest',
@@ -39,7 +41,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== VERSION && k !== 'kd-cdn' && k !== 'kd-voices').map((k) => caches.delete(k)))) // скачанный голос не удаляем
+      .then((keys) => Promise.all(keys.filter((k) => k !== VERSION && k !== 'kd-cdn' && k !== 'kd-voices' && k !== 'kd-fonts').map((k) => caches.delete(k)))) // скачанный голос не удаляем
       .then(() => self.clients.claim()),
   );
 });
@@ -65,6 +67,17 @@ self.addEventListener('fetch', (e) => {
   }
 
   if (url.origin !== self.location.origin) return;
+  // шрифты темы «Неон» не меняются — храним отдельно, чтобы не скачивать заново с каждой версией
+  if (url.pathname.includes('/fonts/')) {
+    e.respondWith(caches.open('kd-fonts').then(async (c) => {
+      const hit = await c.match(req);
+      if (hit) return hit;
+      const res = await fetch(req);
+      if (res.ok) c.put(req, res.clone());
+      return res;
+    }));
+    return;
+  }
   // файлы голоса (≈90 МБ) кэширует сам голосовой модуль (kd-voices) — второй копии не нужно
   if (url.pathname.includes('/voices/')) return;
 

@@ -16,6 +16,8 @@
   --danger: #ff6b6b;
   --stop: #e5383b;
   --listen: #b5179e;
+  --ripple-ring: #8ab4ff;   /* круги «капли» у главных кнопок */
+  --ripple-ring2: #c9dcff;
   --nav-h: 72px;
   --stop-h: 84px;
   --safe-b: env(safe-area-inset-bottom);
@@ -265,6 +267,8 @@ details.mini[open] summary::after { transform: rotate(-90deg); }
 }
 .stop:active { filter: brightness(1.15); transform: scale(.985); }
 .stop.listening { background: var(--listen); }
+.stop { --ripple-ring: #ff9a9c; --ripple-ring2: #ffd3d4; }
+.stop.listening { --ripple-ring: #ef8fdc; --ripple-ring2: #f9cdf0; }
 
 /* ---------- Нижняя навигация ---------- */
 .navbar {
@@ -385,3 +389,14 @@ body.has-stop .toast { bottom: calc(var(--nav-h) + var(--stop-h) + var(--safe-b)
 }
 .boot-fail button { display: block; margin: 12px 0 6px; padding: 10px 18px; border: 0; border-radius: 20px; background: var(--accent); color: var(--on-accent, #000); font: inherit; font-weight: 500; }
 .boot-fail small { display: block; color: var(--muted); font-size: 12px; }
+
+/* ---------- «Капля» при нажатии (js/ripple.js) ---------- */
+.ripple { position: fixed; z-index: 45; overflow: hidden; pointer-events: none; }
+.ripple-ink { position: absolute; border-radius: 50%; opacity: 0; animation: ripple-ink .55s cubic-bezier(.2, .6, .3, 1); }
+@keyframes ripple-ink { from { transform: scale(.1); opacity: .3; } 50% { opacity: .2; } to { transform: scale(1); opacity: 0; } }
+.ripple-ring, .ripple-dot { position: fixed; z-index: 45; pointer-events: none; border-radius: 50%; opacity: 0; }
+.ripple-ring { border: 2px solid; animation: ripple-ring .7s cubic-bezier(.15, .7, .3, 1); }
+.ripple-ring.second { animation-delay: .13s; }
+@keyframes ripple-ring { from { transform: scale(.12); opacity: .85; } to { transform: scale(1); opacity: 0; } }
+.ripple-dot { width: 14px; height: 14px; background: #fff; animation: ripple-dot .25s ease-out; }
+@keyframes ripple-dot { from { opacity: .9; } to { transform: scale(0); opacity: 0; } }

@@ -35,6 +35,8 @@ export const DEFAULT_SETTINGS = {
   selfCheck: true,        // самопроверка после каждой темы
   breakEvery: 40,         // напоминать о перерыве каждые N минут (0 — не напоминать)
   headsetButtons: false,  // управление кнопками наушников
+  theme: 'classic',       // 'classic' | 'neon' — оформление
+  ripple: true,           // «капля» при нажатии на кнопки
 };
 
 export function loadSettings() {
