@@ -45,7 +45,8 @@ js/extract.js         txt/md/pdf/docx/фото
 js/storage.js         localStorage (настройки, позиция) и IndexedDB (проект)
 sw.js, manifest.webmanifest, icons/
 docs/                 подробная документация, картинка для превью ссылки
-LICENSE               MIT — для кода (у voices/ и fonts/ свои лицензии)
+LICENSE               GNU GPL v3 — для кода (у voices/ и fonts/ свои лицензии)
+LICENSE.ru.md         кратко о лицензии по-русски
 CHANGELOG.md          что изменилось в каждой версии
 ```
 
