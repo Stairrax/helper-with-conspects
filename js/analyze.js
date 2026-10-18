@@ -362,7 +362,24 @@ export async function analyze({ sources, budgetMin, priority, settings, log }) {
 
 // ---------- Генерация кусков ----------
 
-async function genSection(topic, text, prevChunks, settings, onStatus) {
+// Формулы отдельным блоком: если в теме их 3 и больше, голос объясняет словами, из чего складывается величина,
+// а сами формулы студент разбирает по блоку «Формулы» (их удобнее учить глазами, решая задачи)
+export const FX_MIN = 3;
+const FX_ITEM = '"formulas": все формулы из этого текста — выражения с переменными и знаками (=, +, ·, /, степени, индексы), ' +
+  'а не отдельные числа, проценты и нормативы. Для каждой: "n" — что вычисляет (2–5 слов); "f" — формула в обычной записи одной строкой: ' +
+  'буквы латиницей и греческими, индексы и степени символами Юникода (x₁, r², σ²), умножение «·», дробь через «/» со скобками, ' +
+  'корень «√», сумма «Σ» — без LaTeX и markdown; "d" — что означает каждое обозначение, через точку с запятой. Нет формул — пустой список.';
+const FX_APART = 'ФОРМУЛЫ ОТДЕЛЬНО: формулы этого текста студент разберёт сам по блоку формул, поэтому в кусках НЕ произноси формулы ' +
+  'и буквенные обозначения — это исключение из общего правила. Вместо формулы скажи словами, из чего складывается величина или от чего ' +
+  'зависит и как получается (например: «Итоговая сумма вклада зависит от начального вклада, ставки за период и числа периодов: каждый ' +
+  'период проценты начисляются на уже накопленную сумму»). Числа, проценты, нормативы и единицы измерения остаются в кусках как обычно. ' +
+  'В "points" формулы отдельными пунктами не выписывай.';
+
+/** fx: 'inline' — формулы словами, 'separate' — формулы в блок, число N — решить самой: в блок, если формул N и больше. */
+async function genSection(topic, text, prevChunks, settings, onStatus, fx = 'inline') {
+  const fxRule = fx === 'separate' ? `\n${FX_APART}`
+    : typeof fx === 'number' ? `\nЕсли в этом тексте формул ${fx} или больше — действуй по правилу «ФОРМУЛЫ ОТДЕЛЬНО» и верни "apart": true; если меньше — произноси формулы словами, как обычно, и верни "apart": false.\n${FX_APART}`
+      : '';
   const prompt =
 `Тема: «${topic.title}» (сложность ${topic.difficulty} из 5).
 ${prevChunks.length ? `Последние продиктованные куски (для связности, не повторяй их):\n${prevChunks.map((c) => '— ' + c).join('\n')}\n` : ''}
@@ -378,12 +395,53 @@ ${text}
 4. У каждого пункта "c" — номера кусков (с нуля), в которых он передан.
 5. "recap": 1–3 предложения — самое главное из этого текста для быстрого повторения перед экзаменом, для устной речи.
 6. "quiz": 1–2 вопроса для самопроверки по самому важному в этом тексте, с краткими правильными ответами "a" (одно-два предложения). Вопросы — такие, на которые можно ответить устно.
-Ответ JSON: {"points":[{"p":"…","c":[0]}],"chunks":[{"t":"…","k":"content"}],"recap":"…","quiz":[{"q":"…","a":"…"}]}`;
+7. ${FX_ITEM}${fxRule}
+Ответ JSON: {"points":[{"p":"…","c":[0]}],"chunks":[{"t":"…","k":"content"}],"recap":"…","quiz":[{"q":"…","a":"…"}],"formulas":[{"n":"…","f":"…","d":"…"}]${typeof fx === 'number' ? ',"apart":false' : ''}}`;
   const res = await generateJSON({ ...conn(settings), system: SYS_DICTATION, parts: [{ text: prompt }], onStatus, temperature: 0.3 });
   const chunks = (res.chunks || []).map((c) => ({ t: String(c.t || c.text || '').trim(), k: ['explain', 'example'].includes(c.k) ? c.k : 'content' })).filter((c) => c.t);
   const points = (res.points || []).map((p) => ({ p: String(p.p || p.point || '').trim(), c: (p.c || []).map(Number).filter((n) => n >= 0 && n < chunks.length) })).filter((p) => p.p);
   if (!chunks.length) throw new GeminiError('Нейросеть не вернула куски для темы', { code: 'EMPTY' });
-  return { chunks, points, recap: String(res.recap || '').trim(), quiz: cleanQuiz(res.quiz) };
+  const formulas = cleanFormulas(res.formulas);
+  const apart = fx === 'separate' || (typeof fx === 'number' && res.apart === true);
+  return { chunks, points, recap: String(res.recap || '').trim(), quiz: cleanQuiz(res.quiz), formulas, apart };
+}
+
+// ---------- Формулы ----------
+
+const SUP = { 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹', '+': '⁺', '-': '⁻', '(': '⁽', ')': '⁾', n: 'ⁿ', i: 'ⁱ' };
+const SUB = { 0: '₀', 1: '₁', 2: '₂', 3: '₃', 4: '₄', 5: '₅', 6: '₆', 7: '₇', 8: '₈', 9: '₉', '+': '₊', '-': '₋', '(': '₍', ')': '₎', a: 'ₐ', e: 'ₑ', h: 'ₕ', i: 'ᵢ', j: 'ⱼ', k: 'ₖ', l: 'ₗ', m: 'ₘ', n: 'ₙ', o: 'ₒ', p: 'ₚ', r: 'ᵣ', s: 'ₛ', t: 'ₜ', u: 'ᵤ', v: 'ᵥ', x: 'ₓ' };
+const GREEK = { alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', epsilon: 'ε', varepsilon: 'ε', lambda: 'λ', mu: 'μ', pi: 'π', rho: 'ρ', sigma: 'σ', tau: 'τ', phi: 'φ', varphi: 'φ', omega: 'ω', Delta: 'Δ', Sigma: 'Σ', Omega: 'Ω', Pi: 'Π' };
+const script = (map, s) => ([...s].every((c) => map[c]) ? [...s].map((c) => map[c]).join('') : null);
+
+/** Запасной путь, если нейросеть всё же прислала LaTeX: $…$, \frac, ^{…}, _{…}, \cdot. */
+export function plainFormula(f) {
+  let s = String(f || '').replace(/\$+|\\[()[\]]/g, '').trim();
+  s = s.replace(/\\(cdot|times)/g, '·').replace(/\\sqrt/g, '√').replace(/\\sum/g, 'Σ').replace(/\\(left|right)/g, '')
+    .replace(/\\([A-Za-z]+)/g, (m, w) => GREEK[w] || m);
+  for (let i = 0; i < 4 && /\\frac/.test(s); i++) s = s.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, '($1)/($2)');
+  s = s.replace(/\^\{([^{}]*)\}|\^(\w)/g, (m, a, b) => script(SUP, a ?? b) ?? `^(${a ?? b})`)
+    .replace(/_\{([^{}]*)\}|_(\w)/g, (m, a, b) => script(SUB, a ?? b) ?? `_${a ?? b}`);
+  return s.replace(/[{}]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function cleanFormulas(list) {
+  return (Array.isArray(list) ? list : [])
+    .map((x) => ({ n: String(x.n || x.name || '').trim(), f: plainFormula(x.f || x.formula), d: String(x.d || x.legend || '').trim() }))
+    .filter((x) => x.f);
+}
+
+/** Темы, подготовленные до появления блока формул: выписываем формулы из исходного текста (один запрос). */
+export async function extractFormulas(topic, settings, onStatus) {
+  const prompt =
+`Тема: «${topic.title}».
+ИСХОДНЫЙ ТЕКСТ:
+<<<
+${topic.text.slice(0, 20000)}
+>>>
+${FX_ITEM}
+Ответ JSON: {"formulas":[{"n":"…","f":"…","d":"…"}]}`;
+  const res = await generateJSON({ ...conn(settings), system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.1 });
+  return cleanFormulas(res.formulas);
 }
 
 function cleanQuiz(q) {
@@ -408,7 +466,7 @@ ${topic.text.slice(0, 12000)}
   topic.quiz = cleanQuiz(res.quiz).slice(0, 3);
 }
 
-async function verifySection(text, chunks, points, settings, onStatus) {
+async function verifySection(text, chunks, points, settings, onStatus, apart = false) {
   const prompt =
 `Проверь полноту диктовки. Ниже исходный текст, пронумерованные куски диктовки и пронумерованный список пунктов.
 ИСХОДНЫЙ ТЕКСТ:
@@ -421,7 +479,7 @@ ${chunks.map((c, i) => `[${i}] ${c.t}`).join('\n')}
 ${points.map((p, i) => `(${i}) ${p.p}`).join('\n')}
 
 1. "checks": для каждого пункта i укажи "c" — номера кусков, где он передан ПОЛНОСТЬЮ и верно (пустой список, если не передан или искажён).
-2. "missing": информация из исходного текста, которой нет ни в одном пункте списка (каждый элемент — короткий пункт). Пустой список, если всё учтено.
+2. "missing": информация из исходного текста, которой нет ни в одном пункте списка (каждый элемент — короткий пункт). Пустой список, если всё учтено.${apart ? '\nФормулы вынесены в отдельный блок, в кусках они пересказаны словами — это не пропуск; в "missing" формулы не включай.' : ''}
 Ответ JSON: {"checks":[{"i":0,"c":[0,1]}],"missing":["…"]}`;
   const res = await generateJSON({ ...conn(settings), system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.1 });
   const checks = new Map((res.checks || []).map((x) => [Number(x.i), (x.c || []).map(Number).filter((n) => n >= 0 && n < chunks.length)]));
@@ -430,7 +488,7 @@ ${points.map((p, i) => `(${i}) ${p.p}`).join('\n')}
   return missing;
 }
 
-async function supplement(topic, text, chunks, uncovered, settings, onStatus) {
+async function supplement(topic, text, chunks, uncovered, settings, onStatus, apart = false) {
   const prompt =
 `Тема: «${topic.title}». В диктовке пропущены или переданы не полностью следующие пункты исходного текста:
 ${uncovered.map((p, i) => `(${i}) ${p}`).join('\n')}
@@ -442,7 +500,7 @@ ${text}
 ТЕКУЩИЕ КУСКИ:
 ${chunks.map((c, i) => `[${i}] ${c.t}`).join('\n')}
 
-Сгенерируй дополнительные куски (1–3 предложения, для устной речи, формулы словами), полностью передающие эти пункты.
+Сгенерируй дополнительные куски (1–3 предложения, для устной речи, ${apart ? 'формулы не произноси — скажи словами, из чего складывается величина' : 'формулы словами'}), полностью передающие эти пункты.
 Для каждого куска укажи "after" — номер существующего куска, после которого его вставить по смыслу (-1 — в самое начало), и "p" — номера пунктов, которые он покрывает.
 Ответ JSON: {"chunks":[{"t":"…","k":"content","after":3,"p":[0]}]}`;
   const res = await generateJSON({ ...conn(settings), system: SYS_DICTATION, parts: [{ text: prompt }], onStatus, temperature: 0.3 });
@@ -474,13 +532,18 @@ export async function generateTopicChunks(topic, settings, onStatus) {
   const allPoints = [];
   const recaps = [];
   const quizzes = [];
+  const formulas = [];
+  const fxOn = settings.formulasApart !== false;
+  let apart = false;
   for (let si = 0; si < sections.length; si++) {
     const text = sections[si];
     const tag = sections.length > 1 ? ` (часть ${si + 1}/${sections.length})` : '';
     onStatus(`«${topic.title}»${tag}: готовлю куски`);
     let res;
     try {
-      res = await genSection(topic, text, allChunks.slice(-2).map((c) => c.t), settings, onStatus);
+      // формул в теме уже набралось на блок — дальше сразу отдельно; иначе нейросеть решает по своей части
+      const fx = !fxOn ? 'inline' : apart ? 'separate' : Math.max(1, FX_MIN - formulas.length);
+      res = await genSection(topic, text, allChunks.slice(-2).map((c) => c.t), settings, onStatus, fx);
     } catch (e) {
       if (e.code !== 'MAX_TOKENS') throw e;
       // секция слишком большая для одного ответа — делим пополам
@@ -492,10 +555,13 @@ export async function generateTopicChunks(topic, settings, onStatus) {
     let { chunks, points } = res;
     recaps.push(res.recap);
     quizzes.push(res.quiz);
+    formulas.push(...res.formulas);
+    const secApart = res.apart;
+    if (fxOn && (secApart || formulas.length >= FX_MIN)) apart = true;
     if (settings.coverageCheck) {
       onStatus(`«${topic.title}»${tag}: проверяю полноту`);
       let missing = [];
-      try { missing = await verifySection(text, chunks, points, settings, onStatus); } catch (e) {
+      try { missing = await verifySection(text, chunks, points, settings, onStatus, secApart); } catch (e) {
         if (e.code === 'NO_KEY') throw e;
       }
       missing.forEach((m) => points.push({ p: m, c: [] }));
@@ -503,7 +569,7 @@ export async function generateTopicChunks(topic, settings, onStatus) {
       if (uncoveredIdx.length) {
         onStatus(`«${topic.title}»${tag}: догенерирую ${uncoveredIdx.length} пропущенных пункт(ов)`);
         try {
-          const extra = await supplement(topic, text, chunks, uncoveredIdx.map((i) => points[i].p), settings, onStatus);
+          const extra = await supplement(topic, text, chunks, uncoveredIdx.map((i) => points[i].p), settings, onStatus, secApart);
           chunks = insertChunks(chunks, points, extra);
           for (const e of extra) for (const pi of e.p) {
             const p = points[uncoveredIdx[pi]];
@@ -525,5 +591,6 @@ export async function generateTopicChunks(topic, settings, onStatus) {
   const first = quizzes.map((q) => q[0]).filter(Boolean);
   const rest = quizzes.flatMap((q) => q.slice(1));
   topic.quiz = [...first, ...rest].slice(0, 3);
+  topic.formulas = formulas;
   topic.coverage = { total: allPoints.length, covered: allPoints.filter((p) => p.c.length).length, checked: !!settings.coverageCheck };
 }

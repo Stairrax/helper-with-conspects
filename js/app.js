@@ -6,7 +6,7 @@ import {
 } from './storage.js';
 import { fileToSource } from './extract.js';
 import {
-  analyze, generateTopicChunks, generateExtras, orderTopics, activeSeq, estimateTopicSec, allocateBudget, fitPause,
+  analyze, generateTopicChunks, generateExtras, extractFormulas, FX_MIN, orderTopics, activeSeq, estimateTopicSec, allocateBudget, fitPause,
 } from './analyze.js';
 import { listModels, conn, PROVIDERS, providerName } from './ai.js';
 import {
@@ -106,7 +106,9 @@ const gen = {
     return ordered.find((t) => t.status === 'pending' ||
       (t.status === 'error' && (t.errors || 0) < 4 && Date.now() - (t.errorAt || 0) > 30000)) ||
       // темы, подготовленные до появления самопроверки: досоздаём выжимку и вопросы (по одной, начиная с текущей)
-      (settings.selfCheck ? ordered.slice(0, 2).find((t) => t.status === 'ready' && !t.quiz && !t.extrasFailed) : null) || null;
+      (settings.selfCheck ? ordered.slice(0, 2).find((t) => t.status === 'ready' && !t.quiz && !t.extrasFailed) : null) ||
+      // темы, подготовленные до появления блока формул: выписываем формулы
+      (settings.formulasApart !== false ? ordered.find((t) => t.status === 'ready' && t.formulas === undefined && !t.fxFailed) : null) || null;
   },
   async loop() {
     if (this.running || !project) return;
@@ -118,9 +120,25 @@ const gen = {
         const t = this.pick(p);
         if (!t) break;
         if (t.status === 'ready') {
-          // только выжимка и вопросы
-          try { await generateExtras(t, settings, (m) => { this.status = m; render(); }); } catch { t.extrasFailed = true; }
+          const onStatus = (m) => { this.status = m; render(); };
+          if (settings.selfCheck && !t.quiz && !t.extrasFailed) {
+            // только выжимка и вопросы
+            try { await generateExtras(t, settings, onStatus); } catch { t.extrasFailed = true; }
+          } else {
+            onStatus(`«${t.title}»: ищу формулы`);
+            try {
+              const f = await extractFormulas(t, settings, onStatus);
+              // формул на блок, а тему ещё не диктовали — подготовим заново: формулы в блок, голос расскажет словами.
+              // Пройденную и текущую тему не трогаем — у неё только появится блок формул
+              if (f.length >= FX_MIN && !progress?.done?.[t.id] && progress?.topicId !== t.id) t.status = 'pending';
+              else t.formulas = f;
+            } catch (e) {
+              if (e.code === 'NO_KEY') break;
+              t.fxFailed = true;
+            }
+          }
           if (p === project) saveProject();
+          render();
           continue;
         }
         t.status = 'generating';
@@ -344,6 +362,8 @@ $('analyzeBtn').addEventListener('click', async () => {
 // ---------- План ----------
 
 let openTopic = null;
+let fxFrom = null; // тема на экране диктовки — с неё открывается блок формул
+let fxAt = null;   // тема, формулы которой открыты
 let openPoints = new Set();
 const dots = (d) => '●'.repeat(d) + '○'.repeat(5 - d);
 
@@ -394,6 +414,7 @@ function renderPlan() {
       if (stat.due && stat.due <= Date.now()) badges += '<span class="badge due">повторить</span>';
       else if (!stat.weak && stat.total) badges += `<span class="badge good">${fmtScore(stat.right)}/${stat.total}</span>`;
     }
+    if (hasFx(t)) badges += `<span class="badge fx">∑ ${t.formulas.length}</span>`;
     let st = '', stCls = '';
     if (t.status === 'ready') {
       const c = t.coverage || { total: 0, covered: 0 };
@@ -429,6 +450,7 @@ function renderPlan() {
           <button class="btn" data-act="skip">${skipped ? 'Вернуть' : 'Пропустить'}</button>
           ${skipped ? '' : startButtons(t, done)}
           ${t.status === 'ready' && !skipped ? '<button class="btn" data-act="review">Повторить</button>' : ''}
+          ${hasFx(t) ? '<button class="btn" data-act="fx">∑ Формулы</button>' : ''}
           ${t.points?.length ? `<button class="btn" data-act="points">${openPoints.has(id) ? 'Скрыть пункты' : 'Пункты'}</button>` : ''}
           ${t.status === 'error' ? '<button class="btn" data-act="retry">Повторить</button>' : ''}
         </div>
@@ -478,6 +500,7 @@ $('planList').addEventListener('click', (e) => {
     case 'points':
       if (openPoints.has(id)) openPoints.delete(id); else openPoints.add(id);
       break;
+    case 'fx': openFormulas(id); return;
     case 'review':
       switchTab('dictate');
       dict.startReview([id]);
@@ -553,6 +576,11 @@ function buildExport() {
       for (const c of t.chunks) lines.push(c.k === 'explain' || c.k === 'example' ? `> ${c.t}` : c.t, '');
     } else lines.push(t.text, '');
     if (t.recap) lines.push(`**Главное:** ${t.recap}`, '');
+    if (t.formulas?.length) {
+      lines.push('**Формулы:**', '');
+      for (const f of t.formulas) lines.push(`- ${f.n ? f.n + ': ' : ''}${f.f}${f.d ? `  \n  ${f.d}` : ''}`);
+      lines.push('');
+    }
     const st = stats[t.id];
     if (st?.total) lines.push(`Самопроверка: ${fmtScore(st.right)} из ${st.total}${st.weak ? ' — стоит повторить' : ''}`, '');
     if (t.quiz?.length) {
@@ -635,6 +663,11 @@ function renderDictation() {
   const ti = t ? seq.findIndex((x) => x.id === t.id) : -1;
   $('topicNum').textContent = t ? `Тема ${ti + 1} из ${seq.length}` : '';
   $('topicTitle').textContent = t ? t.title : (project ? 'Всё продиктовано' : 'Сначала составьте план');
+  // кнопка блока формул — если он есть хоть у одной темы; у текущей темы формул нет — откроется ближайшая
+  const fxAny = seq.some(hasFx);
+  $('fxBtn').classList.toggle('hidden', !fxAny);
+  $('fxBtn').classList.toggle('here', !!t && hasFx(t));
+  fxFrom = t?.id || null;
   const { chunk, idx } = project ? displayedChunk() : { chunk: null, idx: -1 };
   const n = t?.chunks?.length || 0;
   const doneChunks = t && t.status === 'ready' ? Math.min(n, (st === 'topicEnd' ? n : progress.chunk)) : 0;
@@ -793,6 +826,57 @@ $('moreBtn').addEventListener('click', () => openSheet(true));
 $('sheet').addEventListener('click', (e) => {
   if (e.target.closest('[data-close]') || e.target.closest('.sheet-item')) openSheet(false);
 });
+// ---------- Формулы ----------
+
+function hasFx(t) { return (t?.formulas?.length || 0) >= FX_MIN; }
+
+function fxTopics() { return project ? activeSeq(project).filter(hasFx) : []; }
+
+/** Открывает блок формул темы id; у темы нет блока — ближайшей следующей (или предыдущей) темы с блоком. */
+function openFormulas(id) {
+  const seq = project ? activeSeq(project) : [];
+  const list = fxTopics();
+  if (!list.length) return;
+  const i = Math.max(0, seq.findIndex((x) => x.id === id));
+  const t = list.find((x) => x.id === id) ||
+    seq.slice(i).find(hasFx) || [...seq.slice(0, i)].reverse().find(hasFx) || list[0];
+  fxAt = t.id;
+  renderFormulas();
+  $('fxSheet').classList.remove('hidden');
+  $('fxList').scrollTop = 0;
+}
+
+function renderFormulas() {
+  const list = fxTopics();
+  const i = list.findIndex((x) => x.id === fxAt);
+  const t = list[i];
+  if (!t) { $('fxSheet').classList.add('hidden'); return; }
+  const seq = activeSeq(project);
+  const n = seq.findIndex((x) => x.id === t.id) + 1;
+  $('fxNum').textContent = `Тема ${n} из ${seq.length}${t.id === fxFrom ? ' · сейчас' : ''} · ${t.formulas.length} ${plural(t.formulas.length, ['формула', 'формулы', 'формул'])}`;
+  $('fxTopic').textContent = t.title;
+  $('fxPrev').disabled = i <= 0;
+  $('fxNext').disabled = i >= list.length - 1;
+  $('fxList').innerHTML = t.formulas.map((f) => `<div class="fx-item">
+    ${f.n ? `<div class="fx-name">${esc(f.n)}</div>` : ''}
+    <div class="fx-f">${esc(f.f)}</div>
+    ${f.d ? `<div class="fx-d">${esc(f.d)}</div>` : ''}
+  </div>`).join('');
+}
+
+$('fxBtn').addEventListener('click', () => openFormulas(fxFrom));
+$('fxSheet').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) $('fxSheet').classList.add('hidden'); });
+for (const [btn, step] of [['fxPrev', -1], ['fxNext', 1]]) {
+  $(btn).addEventListener('click', () => {
+    const list = fxTopics();
+    const t = list[list.findIndex((x) => x.id === fxAt) + step];
+    if (!t) return;
+    fxAt = t.id;
+    renderFormulas();
+    $('fxList').scrollTop = 0;
+  });
+}
+
 $('repeatTopicBtn').addEventListener('click', () => dict.repeatTopic());
 $('skipTopicBtn').addEventListener('click', () => dict.skipTopic());
 $('slowerBtn').addEventListener('click', () => dict.changeRate(-0.1));
@@ -909,6 +993,7 @@ function renderSettings() {
   $('voice').value = settings.voiceURI;
   document.querySelectorAll('input[name=theme]').forEach((r) => { r.checked = r.value === settings.theme; });
   $('ripple').checked = settings.ripple !== false;
+  $('formulasApart').checked = settings.formulasApart !== false;
 }
 
 // Оформление: тема (тот же выбор делает скрипт в <head> до первой отрисовки) и «капля» при нажатии
@@ -971,6 +1056,9 @@ bind('scalePause', 'scalePause');
 bind('adaptivePause', 'adaptivePause');
 bind('selfCheck', 'selfCheck');
 bind('abbreviate', 'abbreviate');
+bind('formulasApart', 'formulasApart');
+// включили — у тем, подготовленных раньше, ищем формулы
+$('formulasApart').addEventListener('change', () => { if (project && !gen.running && gen.pick(project)) gen.loop(); });
 bind('breakEvery', 'breakEvery', Number, 'input');
 $('headsetButtons').addEventListener('change', (e) => {
   settings.headsetButtons = e.target.checked;

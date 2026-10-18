@@ -390,6 +390,25 @@ body.has-stop .toast { bottom: calc(var(--nav-h) + var(--stop-h) + var(--safe-b)
 .boot-fail button { display: block; margin: 12px 0 6px; padding: 10px 18px; border: 0; border-radius: 20px; background: var(--accent); color: var(--on-accent, #000); font: inherit; font-weight: 500; }
 .boot-fail small { display: block; color: var(--muted); font-size: 12px; }
 
+/* ---------- Формулы ---------- */
+.topic-meta { align-items: center; gap: 8px; }
+.fx-btn { margin-left: auto; border: 0; border-radius: 14px; padding: 4px 12px; font-size: 13px; font-weight: 500; background: var(--surface3); color: var(--muted); }
+.fx-btn.here { background: var(--accent-soft); color: var(--accent); }
+.badge.fx { background: var(--accent-soft); color: var(--accent); }
+.fx-body { display: flex; flex-direction: column; max-height: 86vh; padding-left: 12px; padding-right: 12px; }
+.fx-head { display: flex; align-items: center; gap: 8px; padding: 0 0 10px; }
+.fx-head .icon-btn { background: var(--surface3); }
+.fx-head .icon-btn:disabled { opacity: .25; }
+.fx-title { flex: 1; min-width: 0; text-align: center; display: flex; flex-direction: column; gap: 2px; }
+.fx-title small { color: var(--muted); font-size: 12px; }
+.fx-title b { font-weight: 500; font-size: 16px; overflow-wrap: anywhere; }
+.fx-list { overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 10px; padding: 2px 2px 8px; }
+.fx-item { background: var(--surface); border-radius: 16px; padding: 12px 14px; }
+.fx-name { color: var(--muted); font-size: 13px; margin-bottom: 4px; }
+.fx-f { font: 22px/1.4 'Noto Serif', 'Cambria Math', Georgia, serif; overflow-wrap: anywhere; user-select: text; }
+.fx-d { color: var(--muted); font-size: 14px; margin-top: 6px; }
+.fx-close { margin-top: 8px; min-height: 48px; flex: none; }
+
 /* ---------- «Капля» при нажатии (js/ripple.js) ---------- */
 .ripple { position: fixed; z-index: 45; overflow: hidden; pointer-events: none; }
 .ripple-ink { position: absolute; border-radius: 50%; opacity: 0; animation: ripple-ink .55s cubic-bezier(.2, .6, .3, 1); }

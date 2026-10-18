@@ -27,6 +27,7 @@ export const DEFAULT_SETTINGS = {
   neuralVoice: 'silero-baya',
   intonation: true,       // живая интонация голосов Silero: логические ударения, «нá руки»
   abbreviate: false,      // диктовать сокращениями: «физ. лиц», «НДФЛ»
+  formulasApart: true,    // 3+ формулы в теме — в отдельный блок, голос объясняет словами
   listenOnly: false,      // «Только слушаю»: текст подряд, без пауз на запись (в транспорте)
   voiceStyle: 'none',     // 'none' | 'jarvis' — стиль ИИ-ассистента
   address: '',            // обращение: '' | 'сэр' | 'мэм'
