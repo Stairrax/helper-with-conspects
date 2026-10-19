@@ -364,14 +364,14 @@ export class Dictation {
       const chunk = topic.chunks[idx];
       this.set('speaking');
       this.save();
-      prefetch(topic.chunks.slice(idx + 1, idx + 4).map((c) => this.chunkText(c)), { rate: this.settings.rate });
+      prefetch(topic.chunks.slice(idx + 1, idx + 4).map((c) => this.spokenText(c)), { rate: this.settings.rate });
       this.cur = { topicId: topic.id, chunk: idx };
-      let r = await this.say(this.chunkText(chunk));
+      let r = await this.say(this.spokenText(chunk));
       if (my !== this.token) return;
       if (r === 'error') {
         await sleep(300);
         if (my !== this.token) return;
-        r = await this.say(this.chunkText(chunk));
+        r = await this.say(this.spokenText(chunk));
         if (my !== this.token) return;
         if (r === 'error') {
           this.resumePos = { topicId: topic.id, chunk: idx };
@@ -628,7 +628,7 @@ export class Dictation {
       const t = this.topicById(rv.ids[rv.i]);
       if (t) {
         this.set('reviewing');
-        const text = t.recap || t.chunks?.filter((c) => c.k === 'content').slice(0, 3).map((c) => c.t).join(' ') || '';
+        const text = t.recap || t.chunks?.filter((c) => c.k === 'content').slice(0, 3).map((c) => c.s || c.t).join(' ') || '';
         const r = await this.say(`${t.title}. ${text}`, false, 1.1);
         if (my !== this.token) return;
         if (r !== 'error') this.schedule(t.id, true);
@@ -1035,10 +1035,17 @@ ${prevQa ? `\nПРЕДЫДУЩИЕ ВОПРОСЫ В ЭТОЙ СЕССИИ:\n${p
     return l ? this.chunkText(this.topicById(l.topicId)?.chunks[l.chunk]) : '';
   }
 
-  /** Текст куска для показа и озвучки: с сокращениями («физ. лиц», «НДФЛ»), если они включены. */
+  /** Текст куска на экране: с сокращениями («физ. лиц», «НДФЛ»), если они включены. */
   chunkText(c) {
     if (!c) return '';
     return this.settings.abbreviate && !this.listenOnly ? abbreviate(c.t) : c.t;
+  }
+
+  /** Текст куска для голоса: числа словами в нужном падеже («19 500» — «девятнадцать тысяч пятьсот»), если нейросеть их дала. */
+  spokenText(c) {
+    if (!c) return '';
+    const s = c.s || c.t;
+    return this.settings.abbreviate && !this.listenOnly ? abbreviate(s) : s;
   }
 
   /** Потоковый запрос к нейросети с озвучкой по предложениям. entry.a накапливает текст. */

@@ -74,7 +74,7 @@ const SYS_DICTATION = 'Ты готовишь учебный конспект к 
   'без markdown, без символов и сокращений; 4) формулы, обозначения, индексы, степени, дроби, греческие буквы, единицы измерения, ' +
   'стрелки и знаки произносить словами (например «E равно эм цэ квадрат», «альфа с индексом один», «дробь: a, делённое на b»; ' +
   'латинская w — «вэ», v — «ви»); ' +
-  'числа и даты писать словами так, как их читают вслух; 5) каждый кусок — от одного до трёх предложений, удобных для записи; ' +
+  'числа, суммы, проценты, даты и годы в тексте куска "t" писать цифрами, как в конспекте (19 500 рублей, 13 %, 1 января 2026 года) — так их удобно записывать; если в куске есть цифры, добавить "s" — тот же кусок для озвучки, где все числа написаны словами полностью и в нужном падеже («до 19 500 рублей» — «до девятнадцати тысяч пятисот рублей», «13 %» — «тринадцать процентов»), тысячи и миллионы не пропускать, остальной текст — как в "t"; 5) каждый кусок — от одного до трёх предложений, удобных для записи; ' +
   '6) ответ — строго JSON.';
 
 // ---------- Распознавание фото ----------
@@ -390,15 +390,15 @@ ${text}
 
 Задание:
 1. "points": выпиши ВСЕ пункты исходного текста — каждое определение, факт, формулу, число, дату, элемент перечисления, пример, вывод — отдельным коротким пунктом, в порядке исходника.
-2. "chunks": последовательность кусков для диктовки. Каждый кусок "t" — 1–3 предложения. Передай всё содержание полностью, по порядку, переформулировав для устной речи; формулы и обозначения — словами. Тип "k": "content".
+2. "chunks": последовательность кусков для диктовки. Каждый кусок "t" — 1–3 предложения. Передай всё содержание полностью, по порядку, переформулировав для устной речи; формулы и обозначения — словами, числа — цифрами. Тип "k": "content". Если в куске есть цифры — "s": тот же кусок для озвучки, числа полностью словами в нужном падеже.
 3. В сложных местах${topic.difficulty >= 3 ? ' (в этой теме их, вероятно, много)' : ''} добавь отдельные куски с типом "k":"explain" (начинаются словами «Пояснение:») — короткое пояснение простыми словами, и/или "k":"example" (начинаются словами «Например:») — короткий пример. Это дополнение, а не замена содержания.
 4. У каждого пункта "c" — номера кусков (с нуля), в которых он передан.
 5. "recap": 1–3 предложения — самое главное из этого текста для быстрого повторения перед экзаменом, для устной речи.
 6. "quiz": 1–2 вопроса для самопроверки по самому важному в этом тексте, с краткими правильными ответами "a" (одно-два предложения). Вопросы — такие, на которые можно ответить устно.
 7. ${FX_ITEM}${fxRule}
-Ответ JSON: {"points":[{"p":"…","c":[0]}],"chunks":[{"t":"…","k":"content"}],"recap":"…","quiz":[{"q":"…","a":"…"}],"formulas":[{"n":"…","f":"…","d":"…"}]${typeof fx === 'number' ? ',"apart":false' : ''}}`;
+Ответ JSON: {"points":[{"p":"…","c":[0]}],"chunks":[{"t":"…","k":"content","s":"…"}],"recap":"…","quiz":[{"q":"…","a":"…"}],"formulas":[{"n":"…","f":"…","d":"…"}]${typeof fx === 'number' ? ',"apart":false' : ''}}`;
   const res = await generateJSON({ ...conn(settings), system: SYS_DICTATION, parts: [{ text: prompt }], onStatus, temperature: 0.3 });
-  const chunks = (res.chunks || []).map((c) => ({ t: String(c.t || c.text || '').trim(), k: ['explain', 'example'].includes(c.k) ? c.k : 'content' })).filter((c) => c.t);
+  const chunks = (res.chunks || []).map((c) => withSpoken({ t: String(c.t || c.text || '').trim(), k: ['explain', 'example'].includes(c.k) ? c.k : 'content' }, c.s)).filter((c) => c.t);
   const points = (res.points || []).map((p) => ({ p: String(p.p || p.point || '').trim(), c: (p.c || []).map(Number).filter((n) => n >= 0 && n < chunks.length) })).filter((p) => p.p);
   if (!chunks.length) throw new GeminiError('Нейросеть не вернула куски для темы', { code: 'EMPTY' });
   const formulas = cleanFormulas(res.formulas);
@@ -442,6 +442,14 @@ ${FX_ITEM}
 Ответ JSON: {"formulas":[{"n":"…","f":"…","d":"…"}]}`;
   const res = await generateJSON({ ...conn(settings), system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.1 });
   return cleanFormulas(res.formulas);
+}
+
+// Числа на экране — цифрами («19 500 рублей»), а голосу — словами в нужном падеже («девятнадцати тысяч пятисот»):
+// "s" — текст куска для озвучки, если в нём есть цифры
+function withSpoken(c, s) {
+  s = String(s || '').trim();
+  if (s && s !== c.t && /\d/.test(c.t)) c.s = s;
+  return c;
 }
 
 function cleanQuiz(q) {
@@ -502,14 +510,15 @@ ${chunks.map((c, i) => `[${i}] ${c.t}`).join('\n')}
 
 Сгенерируй дополнительные куски (1–3 предложения, для устной речи, ${apart ? 'формулы не произноси — скажи словами, из чего складывается величина' : 'формулы словами'}), полностью передающие эти пункты.
 Для каждого куска укажи "after" — номер существующего куска, после которого его вставить по смыслу (-1 — в самое начало), и "p" — номера пунктов, которые он покрывает.
-Ответ JSON: {"chunks":[{"t":"…","k":"content","after":3,"p":[0]}]}`;
+Если в куске есть цифры — "s": тот же кусок для озвучки, числа полностью словами в нужном падеже.
+Ответ JSON: {"chunks":[{"t":"…","k":"content","s":"…","after":3,"p":[0]}]}`;
   const res = await generateJSON({ ...conn(settings), system: SYS_DICTATION, parts: [{ text: prompt }], onStatus, temperature: 0.3 });
-  return (res.chunks || []).map((c) => ({
+  return (res.chunks || []).map((c) => withSpoken({
     t: String(c.t || '').trim(),
     k: ['explain', 'example'].includes(c.k) ? c.k : 'content',
     after: Math.max(-1, Math.min(chunks.length - 1, Math.round(+c.after))),
     p: (c.p || []).map(Number),
-  })).filter((c) => c.t && !isNaN(c.after));
+  }, c.s)).filter((c) => c.t && !isNaN(c.after));
 }
 
 /** Вставляет новые куски и пересчитывает ссылки пунктов. */
@@ -518,7 +527,7 @@ function insertChunks(chunks, points, extra) {
   const out = [];
   const byAfter = new Map();
   for (const e of extra) { if (!byAfter.has(e.after)) byAfter.set(e.after, []); byAfter.get(e.after).push(e); }
-  const pushExtra = (k) => (byAfter.get(k) || []).forEach((e) => { e.newIndex = out.length; out.push({ t: e.t, k: e.k }); });
+  const pushExtra = (k) => (byAfter.get(k) || []).forEach((e) => { e.newIndex = out.length; out.push(withSpoken({ t: e.t, k: e.k }, e.s)); });
   pushExtra(-1);
   chunks.forEach((c, i) => { map[i] = out.length; out.push(c); pushExtra(i); });
   points.forEach((p) => { p.c = p.c.map((i) => map[i]); });

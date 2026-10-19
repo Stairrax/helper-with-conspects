@@ -453,6 +453,7 @@ function renderPlan() {
           ${hasFx(t) ? '<button class="btn" data-act="fx">∑ Формулы</button>' : ''}
           ${t.points?.length ? `<button class="btn" data-act="points">${openPoints.has(id) ? 'Скрыть пункты' : 'Пункты'}</button>` : ''}
           ${t.status === 'error' ? '<button class="btn" data-act="retry">Повторить</button>' : ''}
+          ${t.status === 'ready' && progress?.topicId !== id ? '<button class="btn" data-act="regen">Подготовить заново</button>' : ''}
         </div>
         ${points}
       </div>`;
@@ -501,6 +502,17 @@ $('planList').addEventListener('click', (e) => {
       if (openPoints.has(id)) openPoints.delete(id); else openPoints.add(id);
       break;
     case 'fx': openFormulas(id); return;
+    case 'regen': {
+      // заново по текущим правилам (числа цифрами, формулы отдельно); тему, на которой стоит диктовка, не трогаем
+      const t = project.topics.find((x) => x.id === id);
+      if (!t || t.status !== 'ready' || progress?.topicId === id) break;
+      t.status = 'pending';
+      t.errors = 0;
+      saveProject();
+      toast(`«${t.title}» готовится заново`);
+      gen.loop();
+      break;
+    }
     case 'review':
       switchTab('dictate');
       dict.startReview([id]);
