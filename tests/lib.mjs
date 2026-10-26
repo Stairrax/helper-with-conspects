@@ -161,7 +161,7 @@ export const DEFAULT_SETTINGS = {
  * settings — поверх DEFAULT_SETTINGS (null — чистый первый запуск с мастером).
  */
 export async function makeOpen(browser, base) {
-  return async function open({ settings = {}, desktop = false, permissions = [], userAgent, titles = ['Доходы и расходы', 'Сложный процент'], locale = 'ru-RU', freeProxy = '' } = {}) {
+  return async function open({ settings = {}, desktop = false, permissions = [], userAgent, titles = ['Доходы и расходы', 'Сложный процент'], locale = 'ru-RU', freeProxy = 'off' } = {}) {
     const ctx = await browser.newContext(desktop
       ? { viewport: { width: 1280, height: 800 }, permissions, locale }
       : { viewport: { width: 412, height: 915 }, isMobile: true, hasTouch: true, permissions, locale, ...(userAgent ? { userAgent } : {}) });
@@ -171,6 +171,7 @@ export async function makeOpen(browser, base) {
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push('console: ' + m.text()); });
     await page.addInitScript(fakeSpeech);
     // бесплатный режим: адрес сервера, как будто он записан в js/config.js
+    // по умолчанию 'off': бесплатный режим выключен, даже если адрес сервера вписан в js/config.js
     if (freeProxy) await page.addInitScript((u) => localStorage.setItem('kd.freeProxy', u), freeProxy);
     const ai = { prompts: [], titles, segment: 0, plan: 0, generate: 0, answer: 0, command: 0, tidy: 0, extract: 0 };
     await mockAI(page, ai);
