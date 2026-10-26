@@ -78,6 +78,8 @@ function score(m) {
     if (re.test(id)) { s += b; break; }
   }
   if (/r1|reason|think|coder|math|guard|embed|tts|audio/.test(id)) s -= 50;
+  // «думающие» модели сначала долго рассуждают — для диктовки это лишнее ожидание и расход токенов
+  if ((m.supported_parameters || []).some((p) => p === 'reasoning' || p === 'include_reasoning')) s -= 60;
   const size = parseFloat((id.match(/(\d+(?:\.\d+)?)b\b/) || [])[1]);
   if (size && size < 12) s -= 80; else if (size && size < 30) s -= 20;
   if (/mini|nano|tiny/.test(id)) s -= 40;
@@ -146,6 +148,7 @@ export default {
     const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + env.OPENROUTER_KEY };
     if (isOpenRouter(env)) {
       if (list.length > 1) out.models = list.slice(0, 3); // запасные модели, если основная занята
+      out.reasoning = { effort: 'low', exclude: true }; // если модель «думающая» — думать поменьше и рассуждения не присылать
       headers['HTTP-Referer'] = opt(env, 'APP_URL', 'https://stairrax.github.io/helper-with-conspects/');
       headers['X-Title'] = 'Konspekt Diktor';
     }

@@ -44,6 +44,7 @@ export default async ({ open, prepare, FINANCE, ok }) => {
       { id: 'meta-llama/llama-3.2-3b-instruct:free', context_length: 131072 },
       { id: 'google/gemini-2.0-flash-exp:free', context_length: 1048576, architecture: { input_modalities: ['text', 'image'] } },
       { id: 'deepseek/deepseek-chat-v3:free', context_length: 163840 },
+      { id: 'google/gemini-3-flash-think:free', context_length: 1048576, architecture: { input_modalities: ['text', 'image'] }, supported_parameters: ['reasoning'] },
     ] };
     let upstream = () => new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }));
     globalThis.fetch = async (url, init) => {
@@ -57,12 +58,14 @@ export default async ({ open, prepare, FINANCE, ok }) => {
     r = await req(FREE, 'kd-free');
     ok(r.status === 200 && sent.body.model === 'google/gemini-2.0-flash-exp:free' && sent.body.models.every((m) => m.endsWith(':free')),
       'MODELS=free: только бесплатные модели, лучшая (с фото) первой: ' + sent.body.model);
+    ok(sent.body.model !== 'google/gemini-3-flash-think:free', '«думающая» модель не первая, даже если умеет читать фото');
+    ok(sent.body.reasoning?.exclude === true, 'OpenRouter просят не присылать рассуждения');
     upstream = () => new Response(JSON.stringify({ error: { code: 429, message: 'Rate limit exceeded: free-models-per-day' } }), { status: 429 });
     r = await req(FREE, 'kd-free2');
     ok(r.status === 429 && (await r.json()).error.code === 'daily_limit', 'кончились бесплатные запросы ключа — «на сегодня закончились», без повторов');
     upstream = () => new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }));
     r = await req({ OPENROUTER_KEY: 'k', MODELS: 'gpt-x', UPSTREAM: 'https://api.other.test/v1' }, 'kd-other2');
-    ok(r.status === 200 && sent.url === 'https://api.other.test/v1/chat/completions' && !sent.body.models && !sent.headers['X-Title'],
+    ok(r.status === 200 && sent.url === 'https://api.other.test/v1/chat/completions' && !sent.body.models && !sent.body.reasoning && !sent.headers['X-Title'],
       'другой провайдер (UPSTREAM): без полей, которые понимает только OpenRouter');
   } finally {
     globalThis.fetch = realFetch;

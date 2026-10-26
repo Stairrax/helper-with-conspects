@@ -75,10 +75,10 @@ jobs:
           echo "Этот адрес нужно вписать в js/config.js (FREE_PROXY_URL)." >> "$GITHUB_STEP_SUMMARY"
           # пробный запрос к нейросети через сервер (тратит один бесплатный запрос)
           reply=$(curl -s -m 90 -w '\n%{http_code}' -X POST "$URL/v1/chat/completions" -H 'Origin: https://stairrax.github.io' -H 'Authorization: Bearer kd-deploy-check' -H 'Content-Type: application/json' \
-            -d '{"messages":[{"role":"user","content":"Ответь одним словом: работает"}],"max_tokens":20}')
+            -d '{"messages":[{"role":"user","content":"Ответь одним словом: работает"}],"max_tokens":200}')
           code=$(printf '%s' "$reply" | tail -n1); body=$(printf '%s' "$reply" | sed '$d')
           echo "Пробный запрос: HTTP $code"; printf '%s\n' "$body" | head -c 600; echo
-          if [ "$code" = "200" ] && printf '%s' "$body" | grep -q '"choices"'; then
+          if [ "$code" = "200" ] && printf '%s' "$body" | grep -q '"content":"[^"]'; then
             echo "Пробный запрос к нейросети: ответ получен (HTTP 200)." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "::warning::Сервер выложен, но пробный запрос к нейросети не прошёл (HTTP $code) — см. лог."
