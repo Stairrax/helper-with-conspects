@@ -1401,6 +1401,79 @@ $('backupBtn').addEventListener('click', async () => {
   }
 });
 
+// ---------- Готовый конспект: поделиться и открыть ----------
+// Файл с планом, кусками, формулами и вопросами — одногруппнику не нужен свой ключ и запросы к нейросети.
+// Личного в нём нет: ни прогресса, ни вопросов, ни настроек и ключей.
+
+const SHARE_FORMAT = 'konspekt-diktor';
+const TOPIC_KEYS = ['id', 'title', 'text', 'chars', 'source', 'origIndex', 'difficulty', 'prereq', 'summary', 'chunks', 'points', 'recap', 'quiz', 'formulas', 'coverage'];
+
+function buildShare() {
+  const title = curSubject()?.title || 'Конспект';
+  const topics = project.topics.map((t) => {
+    const x = Object.fromEntries(TOPIC_KEYS.filter((k) => t[k] !== undefined).map((k) => [k, t[k]]));
+    x.status = t.status === 'ready' ? 'ready' : 'pending'; // неготовые темы подготовит получатель
+    if (x.status !== 'ready') { x.chunks = []; x.points = []; }
+    return x;
+  });
+  return {
+    format: SHARE_FORMAT, version: 1, title, exportedAt: new Date().toISOString(),
+    project: {
+      budgetMin: project.budgetMin, priority: project.priority, sources: project.sources, fullText: project.fullText,
+      topics, plan: { order: project.plan.order.filter((id) => project.topics.some((t) => t.id === id)), skipped: {} },
+    },
+  };
+}
+
+async function shareKonspekt() {
+  if (!project) return toast('Сначала составьте план');
+  const ready = project.topics.filter((t) => t.status === 'ready').length;
+  const data = buildShare();
+  const name = `${data.title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'конспект'}.konspekt.json`;
+  if (await shareOrDownload(new File([JSON.stringify(data)], name, { type: 'application/json' })) && ready < project.topics.length) {
+    toast(`Готово тем: ${ready} из ${project.topics.length}. Остальные получатель подготовит сам — для них нужен ключ нейросети.`, 6000);
+  }
+}
+
+/** Открывает присланный конспект как новый предмет. */
+async function importKonspekt(data) {
+  const p = data?.project;
+  if (data?.format !== SHARE_FORMAT || !Array.isArray(p?.topics) || !p.topics.length) throw new Error('это не файл готового конспекта');
+  const ids = new Set(p.topics.map((t) => t.id));
+  const topics = p.topics.filter((t) => t && t.id && t.title).map((t) => ({
+    ...Object.fromEntries(TOPIC_KEYS.filter((k) => t[k] !== undefined).map((k) => [k, t[k]])),
+    text: String(t.text || ''), chunks: Array.isArray(t.chunks) ? t.chunks : [], points: Array.isArray(t.points) ? t.points : [],
+    prereq: (t.prereq || []).filter((x) => ids.has(x)),
+    status: t.status === 'ready' && t.chunks?.length ? 'ready' : 'pending',
+  }));
+  const order = (p.plan?.order || []).filter((id) => ids.has(id));
+  topics.forEach((t) => { if (!order.includes(t.id)) order.push(t.id); });
+  const proj = {
+    id: 'p' + uid(), createdAt: Date.now(), budgetMin: +p.budgetMin || 120, priority: ['hard', 'easy', 'original'].includes(p.priority) ? p.priority : 'original',
+    sources: Array.isArray(p.sources) ? p.sources : [], fullText: String(p.fullText || ''), topics, plan: { order, skipped: {} },
+  };
+  let title = String(data.title || 'Конспект').slice(0, 40);
+  if (subjects.list.some((x) => x.title === title)) title = `${title.slice(0, 36)} (2)`;
+  const id = 's' + uid();
+  subjects.list.push({ id, title });
+  saveSubjects(subjects);
+  await idbSet('project:' + id, proj);
+  await idbSet('sources:' + id, [{ id: uid(), name: `${title} — готовый конспект`, kind: 'text', text: proj.fullText || topics.map((t) => t.text).join('\n\n') }]);
+  await openSubject(id);
+  switchTab('plan');
+  const ready = topics.filter((t) => t.status === 'ready').length;
+  toast(`Открыт конспект «${title}»: тем ${topics.length}, готово к диктовке ${ready}.`, 5000);
+}
+
+$('shareBtn').addEventListener('click', shareKonspekt);
+$('subjectImport').addEventListener('click', () => { openSubjectSheet(false); $('importInput').click(); });
+$('importInput').addEventListener('change', async (e) => {
+  const f = e.target.files?.[0];
+  e.target.value = '';
+  if (!f) return;
+  try { await importKonspekt(JSON.parse(await f.text())); } catch (err) { toast('Не получилось открыть: ' + (err.message || err), 6000); }
+});
+
 $('restoreBtn').addEventListener('click', () => $('restoreInput').click());
 $('obRestore').addEventListener('click', () => $('restoreInput').click());
 $('restoreInput').addEventListener('change', async (e) => {
@@ -1409,6 +1482,8 @@ $('restoreInput').addEventListener('change', async (e) => {
   if (!f) return;
   try {
     const data = JSON.parse(await f.text());
+    // по ошибке выбрали присланный конспект, а не резервную копию — просто открываем его
+    if (data?.format === SHARE_FORMAT) return await importKonspekt(data);
     const when = data?.at ? new Date(data.at).toLocaleString('ru-RU') : 'неизвестно когда';
     if (!confirm(`Заменить все данные приложения копией от ${when}? Текущие настройки и конспекты будут заменены.`)) return;
     resetDictation();
@@ -1570,6 +1645,7 @@ function renderWarnings() {
 
 const wizard = initOnboarding({
   getSettings: () => settings,
+  importFile: () => $('importInput').click(),
   save: () => { saveSettings(settings); renderSettings(); },
   liveVoice: (statusEl) => {
     settings.voiceEngine = 'neural';

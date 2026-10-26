@@ -144,6 +144,7 @@
             <button id="reviewAllBtn" class="btn outline">Все пройденные</button>
           </div>
           <button id="exportBtn" class="btn text">Сохранить конспект и вопросы в файл</button>
+          <button id="shareBtn" class="btn text">Поделиться готовым конспектом</button>
         </div>
         <ol id="planList" class="plan"></ol>
         <p class="muted small center">Нажмите на тему, чтобы переставить, пропустить или начать с неё.</p>
@@ -463,6 +464,8 @@
       <div id="subjectList"></div>
       <div class="sheet-sep"></div>
       <button id="subjectNew" class="sheet-item accent">+ Новый предмет</button>
+      <button id="subjectImport" class="sheet-item accent">Открыть готовый конспект из файла</button>
+      <input id="importInput" type="file" accept=".json,application/json" hidden>
       <div class="sheet-row">
         <button id="subjectRename" class="sheet-item">Переименовать</button>
         <button id="subjectDelete" class="sheet-item danger">Удалить</button>
@@ -482,6 +485,7 @@
       </ul>
       <button id="obInstall" class="btn tonal wide hidden">Установить как приложение</button>
       <button id="obStart" class="btn filled wide">Настроить</button>
+      <button id="obImport" class="btn text wide">Мне прислали готовый конспект</button>
       <button id="obRestore" class="btn text wide">Восстановить из резервной копии</button>
     </section>
 
@@ -526,22 +530,22 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/abbr.js": "./js/abbr.js?v=43",
-      "./js/ai.js": "./js/ai.js?v=43",
-      "./js/analyze.js": "./js/analyze.js?v=43",
-      "./js/anthropic.js": "./js/anthropic.js?v=43",
-      "./js/app.js": "./js/app.js?v=43",
-      "./js/commands.js": "./js/commands.js?v=43",
-      "./js/dictation.js": "./js/dictation.js?v=43",
-      "./js/extract.js": "./js/extract.js?v=43",
-      "./js/gemini.js": "./js/gemini.js?v=43",
-      "./js/media.js": "./js/media.js?v=43",
-      "./js/neural.js": "./js/neural.js?v=43",
-      "./js/onboarding.js": "./js/onboarding.js?v=43",
-      "./js/openai.js": "./js/openai.js?v=43",
-      "./js/ripple.js": "./js/ripple.js?v=43",
-      "./js/speech.js": "./js/speech.js?v=43",
-      "./js/storage.js": "./js/storage.js?v=43"
+      "./js/abbr.js": "./js/abbr.js?v=44",
+      "./js/ai.js": "./js/ai.js?v=44",
+      "./js/analyze.js": "./js/analyze.js?v=44",
+      "./js/anthropic.js": "./js/anthropic.js?v=44",
+      "./js/app.js": "./js/app.js?v=44",
+      "./js/commands.js": "./js/commands.js?v=44",
+      "./js/dictation.js": "./js/dictation.js?v=44",
+      "./js/extract.js": "./js/extract.js?v=44",
+      "./js/gemini.js": "./js/gemini.js?v=44",
+      "./js/media.js": "./js/media.js?v=44",
+      "./js/neural.js": "./js/neural.js?v=44",
+      "./js/onboarding.js": "./js/onboarding.js?v=44",
+      "./js/openai.js": "./js/openai.js?v=44",
+      "./js/ripple.js": "./js/ripple.js?v=44",
+      "./js/speech.js": "./js/speech.js?v=44",
+      "./js/storage.js": "./js/storage.js?v=44"
     }
   }
   </script>
@@ -575,6 +579,6 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=43"></script>
+  <script type="module" src="js/app.js?v=44"></script>
 </body>
 </html>

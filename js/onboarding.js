@@ -62,7 +62,7 @@ async function freeModels() {
 // ---------- Мастер ----------
 
 /**
- * hooks: getSettings(), save(), liveVoice(statusEl) -> Promise<boolean>, onFinish(goSettings)
+ * hooks: getSettings(), save(), liveVoice(statusEl) -> Promise<boolean>, onFinish(goSettings), importFile()
  */
 export function initOnboarding(hooks) {
   const root = $('onboard');
@@ -77,6 +77,8 @@ export function initOnboarding(hooks) {
   };
 
   $('obStart').addEventListener('click', () => show(1));
+  // присланный готовый конспект диктуется без ключа — мастер можно пройти потом (Настройки → Настроить заново)
+  $('obImport').addEventListener('click', () => { close(false); hooks.importFile?.(); });
   $('obOther').addEventListener('click', () => close(true));
   $('obOpenKeys').addEventListener('click', () => window.open('https://openrouter.ai/keys', '_blank', 'noopener'));
   $('obPaste').addEventListener('click', async () => {
