@@ -86,7 +86,8 @@ export function initOnboarding(hooks) {
   $('obStart').addEventListener('click', () => {
     if (!hooks.free) { $('obStep2').textContent = 'Шаг 2 из 2'; show(1); return; }
     const s = hooks.getSettings();
-    if (!s.apiKey) { s.provider = 'free'; hooks.save(); }
+    // у бесплатного режима мало запросов в день — проверка полноты кусков удвоила бы их число
+    if (!s.apiKey) { s.provider = 'free'; s.coverageCheck = false; hooks.save(); }
     $('obStep2').textContent = 'Последний шаг';
     show(2);
   });

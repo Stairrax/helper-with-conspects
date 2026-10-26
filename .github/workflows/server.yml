@@ -68,7 +68,9 @@ jobs:
             sleep 10
           done
           [ "$body" = "ok" ] || { echo "::error::$URL не отвечает «ok»"; exit 1; }
-          curl -s -m 10 -H 'Origin: https://stairrax.github.io' "$URL/v1/models"; echo
+          models=$(curl -s -m 20 -H 'Origin: https://stairrax.github.io' "$URL/v1/models")
+          echo "$models"
           echo "### Сервер работает: $URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "Модели: \`$models\`" >> "$GITHUB_STEP_SUMMARY"
           echo "Этот адрес нужно вписать в js/config.js (FREE_PROXY_URL)." >> "$GITHUB_STEP_SUMMARY"
           echo "::notice::Сервер работает: $URL"

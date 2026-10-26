@@ -36,6 +36,34 @@ export default async ({ open, prepare, FINANCE, ok }) => {
     ok(r.status === 503 && (await r.json()).error.code === 'unavailable', 'кончились деньги на ключе — понятная ошибка, ключ не раскрывается');
     r = await worker.fetch(new Request('https://w.test/chat/completions', { method: 'POST', headers: { Origin: APP }, body: JSON.stringify(msg) }), {});
     ok(r.status === 503, 'без ключа на сервере — «не настроен»');
+
+    // MODELS = "free": сервер сам подбирает бесплатные модели OpenRouter
+    const FREE = { OPENROUTER_KEY: 'sk-or-SECRET', MODELS: 'free' };
+    const catalog = { data: [
+      { id: 'google/gemini-2.5-flash', pricing: { prompt: '0.0000003' } },
+      { id: 'meta-llama/llama-3.2-3b-instruct:free', context_length: 131072 },
+      { id: 'google/gemini-2.0-flash-exp:free', context_length: 1048576, architecture: { input_modalities: ['text', 'image'] } },
+      { id: 'deepseek/deepseek-chat-v3:free', context_length: 163840 },
+    ] };
+    let upstream = () => new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }));
+    globalThis.fetch = async (url, init) => {
+      if (String(url).endsWith('/models')) return new Response(JSON.stringify(catalog));
+      sent = { url, headers: init.headers, body: JSON.parse(init.body) };
+      return upstream();
+    };
+    const req = (env, device) => worker.fetch(new Request('https://w.test/v1/chat/completions', {
+      method: 'POST', headers: { Origin: APP, Authorization: 'Bearer ' + device, 'Content-Type': 'application/json' }, body: JSON.stringify(msg),
+    }), env);
+    r = await req(FREE, 'kd-free');
+    ok(r.status === 200 && sent.body.model === 'google/gemini-2.0-flash-exp:free' && sent.body.models.every((m) => m.endsWith(':free')),
+      'MODELS=free: только бесплатные модели, лучшая (с фото) первой: ' + sent.body.model);
+    upstream = () => new Response(JSON.stringify({ error: { code: 429, message: 'Rate limit exceeded: free-models-per-day' } }), { status: 429 });
+    r = await req(FREE, 'kd-free2');
+    ok(r.status === 429 && (await r.json()).error.code === 'daily_limit', 'кончились бесплатные запросы ключа — «на сегодня закончились», без повторов');
+    upstream = () => new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }));
+    r = await req({ OPENROUTER_KEY: 'k', MODELS: 'gpt-x', UPSTREAM: 'https://api.other.test/v1' }, 'kd-other2');
+    ok(r.status === 200 && sent.url === 'https://api.other.test/v1/chat/completions' && !sent.body.models && !sent.headers['X-Title'],
+      'другой провайдер (UPSTREAM): без полей, которые понимает только OpenRouter');
   } finally {
     globalThis.fetch = realFetch;
   }
