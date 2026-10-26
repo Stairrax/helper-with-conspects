@@ -30,7 +30,7 @@ export function startServer(port = 0) {
 }
 
 /** Имитация speechSynthesis и SpeechRecognition: window.__spoken — что сказано, window.__say(текст) — «сказал человек». */
-function fakeSpeech() {
+export function fakeSpeech() {
   window.__spoken = [];
   window.__dur = 0;   // 0 — фраза длится по длине текста; иначе — столько мс (кроме «Тема: …»)
   window.__hold = ''; // фраза с этим текстом звучит «бесконечно» — чтобы тест застал её на экране
@@ -72,7 +72,7 @@ const sentences = (s) => s.split(/(?<=[.!?])\s+/).filter(Boolean);
 const between = (text) => text.split('<<<')[1].split('>>>')[0].trim();
 
 /** Заглушка нейросети (OpenRouter, Gemini, Anthropic). ai — счётчики и запросы, чтобы тест мог их проверить. */
-async function mockAI(page, ai) {
+export async function mockAI(page, ai) {
   await page.route(/generativelanguage\.googleapis|openrouter\.ai\/api|api\.anthropic\.com/, async (route) => {
     const url = route.request().url();
     const body = JSON.parse(route.request().postData() || '{}');
