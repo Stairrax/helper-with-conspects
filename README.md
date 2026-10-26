@@ -19,7 +19,7 @@
 <table>
   <tr>
     <td align="center"><img src="screenshots/demo.gif" width="300" alt="Android: диктовка обрывается по «стоп», приложение отвечает на вопрос и продолжает"></td>
-    <td align="center"><img src="screenshots/demo-iphone.gif" width="300" alt="iPhone, оформление iOS: «покажи формулы», затем «стоп», вопрос и ответ"></td>
+    <td align="center"><img src="screenshots/demo-iphone-ios.gif" width="300" alt="iPhone, оформление iOS: «покажи формулы», затем «стоп», вопрос и ответ"></td>
   </tr>
   <tr>
     <td align="center"><sub>Android, «Неон»: «стоп», вопрос, ответ и продолжение</sub></td>
