@@ -1,0 +1,51 @@
+# Снимки экрана и GIF для README (tests/screenshots.mjs) — запускается вручную во вкладке Actions.
+# Снимки всегда можно скачать из артефакта; с галочкой «commit» они сразу попадают в репозиторий
+# (в ветку запуска и в main).
+name: Снимки для README
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: 'Записать снимки в репозиторий'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-roboto
+      - run: node tests/screenshots.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: screenshots/
+      - if: inputs.commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add screenshots
+          git diff --cached --quiet && exit 0
+          git commit -m "README pictures show the new Android look"
+          git push origin HEAD:${{ github.ref_name }}
+          if [ "${{ github.ref_name }}" != "main" ]; then
+            SRC=$(git rev-parse HEAD)
+            git fetch origin main
+            git checkout -B main origin/main
+            git checkout "$SRC" -- screenshots
+            git commit -m "README pictures show the new Android look" && git push origin main || true
+          fi
