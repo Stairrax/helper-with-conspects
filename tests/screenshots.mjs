@@ -11,7 +11,7 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
 const OUT = path.join(ROOT, 'screenshots');
 const UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36';
 const PHONE = { width: 412, height: 915 };
-const CAPTION = 130; // полоса с подписями «Диктор» / «Вы» над экраном в GIF
+const CAPTION = 150; // полоса с подписями «Диктор» / «Вы» над экраном в GIF
 const SUBJECT = 'Финансовая грамотность, лекция 2';
 const TITLES = ['Доходы и расходы', 'Сложный процент'];
 const LECTURE = `Активные доходы — это зарплата, премии и подработки. Их планируют, считая «на руки», то есть после удержания налога на доходы физических лиц. Пассивные доходы — это проценты по вкладам, купоны облигаций и дивиденды. Вместе они и составляют доходную часть бюджета.
@@ -116,8 +116,8 @@ await voice.page.click('input[name=voiceEngine][value=neural] + span');
 await voice.page.waitForFunction(() => /^[✓✗]/.test(document.getElementById('neuralStatus').textContent), null, { timeout: 180000 }).catch(() => {});
 console.log('  голос:', await voice.page.textContent('#neuralStatus'));
 await voice.page.evaluate(() => {
-  const card = document.querySelector('input[name=voiceEngine]').closest('.card');
-  scrollTo(0, card.getBoundingClientRect().top + scrollY - 84);
+  const title = document.querySelector('input[name=voiceEngine]').closest('.seg').previousElementSibling; // «Голос»
+  scrollTo(0, title.getBoundingClientRect().top + scrollY - 96);
 });
 await shot(voice.page, 'voice.png');
 await voice.ctx.close();
@@ -133,9 +133,9 @@ await welcome.ctx.close();
 const FRAME = path.join(ROOT, 'tests', '.demo-frame.html');
 await fs.writeFile(FRAME, `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=${PHONE.width}">
 <style>
-  html, body { margin: 0; background: #111318; color: #e2e2e9; font: 15px/1.4 Roboto, system-ui, sans-serif; }
+  html, body { margin: 0; background: #111318; color: #e2e2e9; font: 19px/1.35 Roboto, system-ui, sans-serif; }
   #cap { height: ${CAPTION}px; box-sizing: border-box; padding: 12px 18px; overflow: hidden; border-bottom: 1px solid #33353a; }
-  #cap b { display: block; font-size: 12px; font-weight: 500; color: #aac7ff; }
+  #cap b { display: block; font-size: 15px; font-weight: 500; color: #aac7ff; }
   #me b { color: #96d5a6; margin-top: 6px; }
   iframe { display: block; border: 0; width: ${PHONE.width}px; height: ${PHONE.height}px; }
 </style>
