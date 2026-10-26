@@ -48,6 +48,7 @@
 [data-theme="android"] .card { background: var(--container); border-radius: 28px; padding: 18px 18px 16px; margin-bottom: 14px; }
 @media (prefers-color-scheme: dark) { [data-theme="android"] .card { background: var(--surface); } }
 [data-theme="android"] .card-title { font-size: 14px; font-weight: 500; color: var(--accent); letter-spacing: .01em; }
+[data-theme="android"] :is(.seg, .switch) + .card-title { margin-top: 20px; }
 [data-theme="android"] .install, [data-theme="android"] .banner, [data-theme="android"] .qa, [data-theme="android"] .plan li { background: var(--container); }
 @media (prefers-color-scheme: dark) {
   [data-theme="android"] :is(.install, .banner, .qa, .plan li) { background: var(--surface); }
@@ -79,7 +80,7 @@
 [data-theme="android"] .icon-btn.big { width: 64px; height: 64px; border-radius: 22px; }
 [data-theme="android"] .chip-btn {
   flex-direction: column; gap: 4px; min-height: 72px; border: 0; border-radius: 20px;
-  background: var(--surface2); color: var(--text); font-size: 14px;
+  background: var(--surface); color: var(--text); font-size: 14px;
 }
 @media (prefers-color-scheme: dark) { [data-theme="android"] .chip-btn { background: var(--surface2); } }
 [data-theme="android"] .chip-btn svg { width: 24px; height: 24px; }
