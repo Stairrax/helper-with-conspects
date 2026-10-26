@@ -7,8 +7,9 @@ function read(key) {
   try { return localStorage.getItem(key); } catch { return null; }
 }
 
-// kd.freeProxy в localStorage — чтобы проверить свой сервер, не меняя код (и для автотестов)
-export const FREE_PROXY = (read('kd.freeProxy') || FREE_PROXY_URL).trim().replace(/\/+$/, '');
+// kd.freeProxy в localStorage — чтобы проверить свой сервер, не меняя код (и для автотестов); 'off' — выключить режим
+const own = read('kd.freeProxy');
+export const FREE_PROXY = own === 'off' ? '' : (own || FREE_PROXY_URL).trim().replace(/\/+$/, '');
 
 /** Случайный номер устройства: по нему сервер считает дневной лимит. Ничего личного в нём нет. */
 export function deviceId() {
