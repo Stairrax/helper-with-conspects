@@ -13,7 +13,7 @@
 - **Живой голос прямо на телефоне** (Silero «Бая» и другие): без интернета и лимитов, с ударениями по смыслу и интонацией лектора; числа на экране цифрами, а в голосе — словами.
 - **Учиться, а не только записывать**: самопроверка после темы, повторение слабых мест с напоминаниями, карточки для Anki, формулы — отдельным блоком для самостоятельного разбора, режим «Только слушаю» для транспорта.
 - **Готовым конспектом можно поделиться**: одногруппник откроет файл и сразу начнёт диктовку, без своего ключа.
-- **Android, iPhone и компьютер** (с клавишами). На iPhone у приложения свой вид в стиле iOS, светлый или тёмный вместе с системой. Есть и другие темы: «Классика», «Неон» и светлая «Тетрадь». Интерфейс бывает на русском и на английском, английские конспекты тоже можно диктовать.
+- **Android, iPhone и компьютер** (с клавишами). На Android у приложения свой вид в духе Material You, на iPhone — в стиле iOS; светлый или тёмный вместе с системой. Есть и другие темы: «Классика», «Неон» и светлая «Тетрадь». Интерфейс бывает на русском и на английском, английские конспекты тоже можно диктовать.
 - **Данные — только на вашем устройстве**: конспекты и ключ никуда не отправляются, кроме выбранной вами нейросети.
 
 <table>
@@ -22,7 +22,7 @@
     <td align="center"><img src="screenshots/demo-iphone-ios.gif" width="300" alt="iPhone, оформление iOS: «покажи формулы», затем «стоп», вопрос и ответ"></td>
   </tr>
   <tr>
-    <td align="center"><sub>Android, «Неон»: «стоп», вопрос, ответ и продолжение</sub></td>
+    <td align="center"><sub>Android, оформление Android: «стоп», вопрос, ответ и продолжение</sub></td>
     <td align="center"><sub>iPhone, оформление iOS: «покажи формулы», затем «стоп» и вопрос</sub></td>
   </tr>
 </table>
@@ -35,7 +35,7 @@
   <img src="screenshots/listen.png" width="190" alt="Только слушаю">
   <img src="screenshots/voice.png" width="190" alt="Живой голос «Бая»">
   <img src="screenshots/plan.png" width="190" alt="План">
-  <img src="screenshots/welcome-voice.png" width="190" alt="Первый запуск: включить живой голос">
+  <img src="screenshots/welcome-voice.png" width="190" alt="Первый запуск: звук и микрофон">
 </p>
 
 **In English:** the app also works fully in English — switch *Settings → Interface language* and *Notes language* to English (on first run both follow your browser language). Notes are dictated with an English voice, and English voice commands work: “stop”, “next”, “repeat”, “go to topic two”, “show formulas”.
