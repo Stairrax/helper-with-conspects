@@ -1,7 +1,7 @@
 // Бесплатный режим: нейросеть через сервер автора (server/worker.js), своего ключа пользователю не нужно.
 // Сюда — адрес сервера после установки (см. server/README.md), например 'https://konspekt-free.имя.workers.dev'.
 // Пусто — режима нет, и приложение, как раньше, просит ключ OpenRouter.
-const FREE_PROXY_URL = '';
+const FREE_PROXY_URL = 'https://konspekt-free.dimonperetyatko228.workers.dev';
 
 function read(key) {
   try { return localStorage.getItem(key); } catch { return null; }
