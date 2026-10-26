@@ -18,18 +18,22 @@
   <link rel="stylesheet" href="css/neon.css">
   <link rel="stylesheet" href="css/light.css">
   <link rel="stylesheet" href="css/ios.css">
+  <link rel="stylesheet" href="css/android.css">
   <script>
     // тема — до первой отрисовки, чтобы экран не мигал (то же делает applyLook в app.js)
     try {
       const s = JSON.parse(localStorage.getItem('kd.settings') || '{}');
       const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-      let t = ios && !s.themePicked ? 'ios' : s.theme; // на iPhone по умолчанию — оформление iOS
+      const android = /Android/i.test(navigator.userAgent);
+      // на iPhone по умолчанию — оформление iOS, на Android — Android
+      let t = s.themePicked ? s.theme : ios ? 'ios' : android ? 'android' : s.theme;
       const light = matchMedia('(prefers-color-scheme: light)').matches;
       if (t === 'auto') t = light ? 'light' : 'classic';
-      if (t === 'neon' || t === 'light' || t === 'ios') {
+      if (t === 'neon' || t === 'light' || t === 'ios' || t === 'android') {
         document.documentElement.dataset.theme = t;
-        document.querySelector('meta[name=theme-color]').content = t === 'ios' ? (light ? '#f2f2f7' : '#000000') : t === 'neon' ? '#000000' : '#f4eee3';
-        document.querySelector('meta[name=color-scheme]').content = t === 'ios' ? 'light dark' : t === 'light' ? 'light' : 'dark';
+        document.querySelector('meta[name=theme-color]').content = t === 'ios' ? (light ? '#f2f2f7' : '#000000')
+          : t === 'android' ? (light ? '#f9f9ff' : '#111318') : t === 'neon' ? '#000000' : '#f4eee3';
+        document.querySelector('meta[name=color-scheme]').content = t === 'ios' || t === 'android' ? 'light dark' : t === 'light' ? 'light' : 'dark';
       }
     } catch { /* ignore */ }
     // английский интерфейс: страница видна, когда текст уже переведён (i18n.js), — без мелькания русского
@@ -450,6 +454,7 @@
       <div class="card">
         <div class="card-title">Оформление</div>
         <div class="seg themes">
+          <label><input type="radio" name="theme" value="android"><span>Android</span></label>
           <label><input type="radio" name="theme" value="ios"><span>iOS</span></label>
           <label><input type="radio" name="theme" value="classic"><span>Классика</span></label>
           <label><input type="radio" name="theme" value="neon"><span>Неон</span></label>
@@ -602,27 +607,27 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/abbr.js": "./js/abbr.js?v=53",
-      "./js/ai.js": "./js/ai.js?v=53",
-      "./js/analyze.js": "./js/analyze.js?v=53",
-      "./js/anthropic.js": "./js/anthropic.js?v=53",
-      "./js/app.js": "./js/app.js?v=53",
-      "./js/commands.js": "./js/commands.js?v=53",
-      "./js/lecture.js": "./js/lecture.js?v=53",
-      "./js/config.js": "./js/config.js?v=53",
-      "./js/i18n.js": "./js/i18n.js?v=53",
-      "./js/i18n-en.js": "./js/i18n-en.js?v=53",
-      "./js/platform.js": "./js/platform.js?v=53",
-      "./js/dictation.js": "./js/dictation.js?v=53",
-      "./js/extract.js": "./js/extract.js?v=53",
-      "./js/gemini.js": "./js/gemini.js?v=53",
-      "./js/media.js": "./js/media.js?v=53",
-      "./js/neural.js": "./js/neural.js?v=53",
-      "./js/onboarding.js": "./js/onboarding.js?v=53",
-      "./js/openai.js": "./js/openai.js?v=53",
-      "./js/ripple.js": "./js/ripple.js?v=53",
-      "./js/speech.js": "./js/speech.js?v=53",
-      "./js/storage.js": "./js/storage.js?v=53"
+      "./js/abbr.js": "./js/abbr.js?v=54",
+      "./js/ai.js": "./js/ai.js?v=54",
+      "./js/analyze.js": "./js/analyze.js?v=54",
+      "./js/anthropic.js": "./js/anthropic.js?v=54",
+      "./js/app.js": "./js/app.js?v=54",
+      "./js/commands.js": "./js/commands.js?v=54",
+      "./js/lecture.js": "./js/lecture.js?v=54",
+      "./js/config.js": "./js/config.js?v=54",
+      "./js/i18n.js": "./js/i18n.js?v=54",
+      "./js/i18n-en.js": "./js/i18n-en.js?v=54",
+      "./js/platform.js": "./js/platform.js?v=54",
+      "./js/dictation.js": "./js/dictation.js?v=54",
+      "./js/extract.js": "./js/extract.js?v=54",
+      "./js/gemini.js": "./js/gemini.js?v=54",
+      "./js/media.js": "./js/media.js?v=54",
+      "./js/neural.js": "./js/neural.js?v=54",
+      "./js/onboarding.js": "./js/onboarding.js?v=54",
+      "./js/openai.js": "./js/openai.js?v=54",
+      "./js/ripple.js": "./js/ripple.js?v=54",
+      "./js/speech.js": "./js/speech.js?v=54",
+      "./js/storage.js": "./js/storage.js?v=54"
     }
   }
   </script>
@@ -656,6 +661,6 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=53"></script>
+  <script type="module" src="js/app.js?v=54"></script>
 </body>
 </html>
