@@ -2,7 +2,7 @@
 
 С этим сервером приложению не нужен ключ от пользователя: запросы к нейросети идут через сервер, а он ходит в OpenRouter с вашим ключом. Ключ хранится в настройках сервера и в браузер не попадает.
 
-Сервер — один файл, [`worker.js`](worker.js), он работает на Cloudflare Workers. Бесплатный тариф Cloudflare даёт 100 000 запросов в день, карта для него не нужна.
+Сервер — один файл, [`worker.js`](worker.js), он работает на Cloudflare Workers и выкладывается туда автоматически из GitHub. Бесплатный тариф Cloudflare даёт 100 000 запросов в день, карта для него не нужна.
 
 ## 1. Ключ OpenRouter для сервера
 
@@ -12,15 +12,30 @@
 
 По умолчанию сервер работает на `google/gemini-2.5-flash`: модель недорогая, понимает фото страниц и хорошо пишет по-русски. Подготовка одного конспекта обходится примерно в 2–5 центов, ответ на вопрос — в доли цента.
 
-## 2. Сервер на Cloudflare
+## 2. Cloudflare и GitHub
 
-1. Зарегистрируйтесь на [dash.cloudflare.com](https://dash.cloudflare.com/sign-up), хватит почты.
-2. Слева **Workers & Pages** → **Create** → **Create Worker**. Назовите его, например, `konspekt-free` и нажмите **Deploy**.
-3. Нажмите **Edit code**, удалите всё, что там есть, вставьте содержимое [`worker.js`](worker.js) и снова нажмите **Deploy**.
-4. Вернитесь к воркеру: **Settings** → **Variables and Secrets** → **Add**. Тип **Secret**, имя `OPENROUTER_KEY`, значение — ключ из первого шага. Сохраните.
-5. Откройте адрес воркера, он вида `https://konspekt-free.ваше-имя.workers.dev`. Если на странице написано `ok`, сервер работает.
+Сервер выкладывается автоматически из GitHub (проверка «Сервер» во вкладке Actions). От вас нужно один раз завести аккаунт и положить в GitHub три значения.
 
-Проверьте этот адрес и с телефона, без VPN. Если он не открывается, Cloudflare можно подключить к своему домену (**Settings** → **Domains & Routes**).
+1. Зарегистрируйтесь на [dash.cloudflare.com](https://dash.cloudflare.com/sign-up), хватит почты. Подтвердите почту по письму.
+2. Слева откройте **Workers & Pages**. Если Cloudflare попросит выбрать имя поддомена (`что-то.workers.dev`), введите любое, например свой ник. Из него получится адрес сервера.
+3. **Номер аккаунта.** На той же странице справа есть **Account ID**. Скопируйте его.
+4. **Токен.** Справа вверху значок профиля → **Profile** → **API Tokens** → **Create Token**. Напротив шаблона **Edit Cloudflare Workers** нажмите **Use template**. В **Account Resources** выберите свой аккаунт, остальное не трогайте. **Continue to summary** → **Create Token**, скопируйте токен (он показывается один раз). Этот токен умеет только выкладывать серверы-воркеры, к оплате и остальным настройкам доступа у него нет.
+5. **Секреты в GitHub.** В репозитории: **Settings** → **Secrets and variables** → **Actions** → **New repository secret**. Добавьте три секрета:
+
+   | Name | Secret |
+   |---|---|
+   | `CLOUDFLARE_API_TOKEN` | токен из пункта 4 |
+   | `CLOUDFLARE_ACCOUNT_ID` | номер аккаунта из пункта 3 |
+   | `OPENROUTER_KEY` | ключ OpenRouter из первой части |
+
+   Значения секретов потом не видно никому, даже вам. Ими пользуется только автоматическая выкладка.
+6. Запустите выкладку: **Actions** → **Сервер** → **Run workflow**. Через минуту в итогах запуска появится адрес сервера, вида `https://konspekt-free.ваше-имя.workers.dev`.
+
+Откройте этот адрес с телефона без VPN. Если на странице `ok`, сервер работает. Если адрес не открывается, Cloudflare можно подключить к своему домену (**Settings** → **Domains & Routes** у воркера).
+
+Если что-то пошло не так, токен удаляется в Cloudflare одной кнопкой (**API Tokens** → **Delete**), и доступ сразу пропадает.
+
+**Вручную, без GitHub.** **Workers & Pages** → **Create** → **Create Worker**, имя `konspekt-free`, **Deploy** → **Edit code**, вставьте содержимое [`worker.js`](worker.js), снова **Deploy**. Потом **Settings** → **Variables and Secrets** → **Add**: тип **Secret**, имя `OPENROUTER_KEY`, значение — ключ OpenRouter.
 
 ## 3. Включить в приложении
 
@@ -46,4 +61,4 @@
 
 Фото страниц — самые тяжёлые запросы. На бесплатном тарифе Cloudflare время работы на один запрос ограничено, так что если распознавание фото через сервер будет сбоить, напишите в [Issues](https://github.com/Stairrax/helper-with-conspects/issues).
 
-Если хочется ставить через командную строку, рядом лежит [`wrangler.toml`](wrangler.toml): `npx wrangler deploy`, потом `npx wrangler secret put OPENROUTER_KEY`.
+Настройки выкладки — в [`wrangler.toml`](wrangler.toml) и [`.github/workflows/server.yml`](../.github/workflows/server.yml).

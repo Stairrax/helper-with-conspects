@@ -1,0 +1,74 @@
+# Выкладка сервера бесплатного режима (server/) на Cloudflare Workers.
+# Запускается сама, когда меняется server/, и вручную: Actions → «Сервер» → Run workflow.
+# Нужны секреты репозитория (Settings → Secrets and variables → Actions):
+#   CLOUDFLARE_API_TOKEN — токен Cloudflare по шаблону «Edit Cloudflare Workers»;
+#   CLOUDFLARE_ACCOUNT_ID — номер аккаунта Cloudflare;
+#   OPENROUTER_KEY — ключ OpenRouter, с которым сервер ходит в нейросеть.
+# Пока секретов нет, выкладка пропускается (проверка остаётся зелёной).
+name: Сервер
+
+on:
+  push:
+    branches: [main]
+    paths: ['server/**', '.github/workflows/server.yml']
+  workflow_dispatch:
+
+concurrency: server-deploy
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      OPENROUTER_KEY: ${{ secrets.OPENROUTER_KEY }}
+      WRANGLER: wrangler@4.148.0
+    steps:
+      - name: Секреты на месте?
+        id: check
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ] || [ -z "$OPENROUTER_KEY" ]; then
+            echo "::notice::Секреты CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, OPENROUTER_KEY ещё не заданы — выкладка пропущена (см. server/README.md)."
+            echo "ready=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=yes" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.ready == 'yes'
+
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.ready == 'yes'
+        with:
+          node-version: 22
+
+      - name: Выложить сервер
+        id: deploy
+        if: steps.check.outputs.ready == 'yes'
+        working-directory: server
+        run: |
+          npx -y "$WRANGLER" deploy 2>&1 | tee deploy.log
+          url=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log | head -1)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Ключ OpenRouter — секретом сервера
+        if: steps.check.outputs.ready == 'yes'
+        working-directory: server
+        run: printf '%s' "$OPENROUTER_KEY" | npx -y "$WRANGLER" secret put OPENROUTER_KEY
+
+      - name: Проверка
+        if: steps.check.outputs.ready == 'yes'
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          if [ -z "$URL" ]; then echo "::error::Не удалось узнать адрес сервера — см. вывод выкладки выше."; exit 1; fi
+          for i in 1 2 3 4 5 6; do
+            body=$(curl -s -m 10 "$URL/" || true)
+            [ "$body" = "ok" ] && break
+            sleep 10
+          done
+          [ "$body" = "ok" ] || { echo "::error::$URL не отвечает «ok»"; exit 1; }
+          curl -s -m 10 -H 'Origin: https://stairrax.github.io' "$URL/v1/models"; echo
+          echo "### Сервер работает: $URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "Этот адрес нужно вписать в js/config.js (FREE_PROXY_URL)." >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice::Сервер работает: $URL"

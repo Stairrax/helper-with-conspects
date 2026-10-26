@@ -4,6 +4,8 @@
 name = "konspekt-free"
 main = "worker.js"
 compatibility_date = "2025-09-01"
+# адрес вида https://konspekt-free.<имя>.workers.dev
+workers_dev = true
 
 [vars]
 # сайт приложения; несколько — через запятую
