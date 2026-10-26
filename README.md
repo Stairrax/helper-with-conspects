@@ -1,5 +1,7 @@
 # Диктор конспектов
 
+[![Тесты](https://github.com/Stairrax/helper-with-conspects/actions/workflows/tests.yml/badge.svg)](https://github.com/Stairrax/helper-with-conspects/actions/workflows/tests.yml)
+
 Мобильное PWA: диктует конспекты голосом короткими кусками, останавливается по слову «стоп», отвечает на вопросы через нейросеть и продолжает с того же места.
 
 **[▶ Попробовать](https://stairrax.github.io/helper-with-conspects/)**: откройте в Chrome на Android, ничего устанавливать не нужно.

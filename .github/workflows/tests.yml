@@ -1,0 +1,20 @@
+# Автотесты на каждый push и pull request: настоящий Chromium, нейросеть и голос — заглушки (tests/lib.mjs).
+name: Тесты
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
