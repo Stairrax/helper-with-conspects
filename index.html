@@ -28,7 +28,17 @@
         document.querySelector('meta[name=color-scheme]').content = t === 'light' ? 'light' : 'dark';
       }
     } catch { /* ignore */ }
+    // английский интерфейс: страница видна, когда текст уже переведён (i18n.js), — без мелькания русского
+    try {
+      const s = JSON.parse(localStorage.getItem('kd.settings') || 'null');
+      if (s ? s.uiLang === 'en' : !/^(ru|uk|be|kk)/i.test(navigator.language || 'ru')) {
+        document.documentElement.classList.add('i18n-wait');
+        document.documentElement.lang = 'en';
+        setTimeout(() => document.documentElement.classList.remove('i18n-wait'), 3000);
+      }
+    } catch { /* ignore */ }
   </script>
+  <style>html.i18n-wait body{visibility:hidden}</style>
 </head>
 <body data-tab="load">
   <!-- Иконки (Material Symbols) -->
@@ -60,7 +70,7 @@
   <header class="appbar">
     <div class="appbar-title">
       <h1 id="screenTitle">Материал</h1>
-      <button id="subjectBtn" class="subject-btn"><span id="subjectName">Предмет</span> ▾</button>
+      <button id="subjectBtn" class="subject-btn"><span id="subjectName" data-no-i18n>Предмет</span> ▾</button>
     </div>
     <span id="micState" class="mic" title="Микрофон"><svg><use href="#i-mic"/></svg></span>
   </header>
@@ -101,7 +111,7 @@
         <div id="lecturePanel" class="lecture hidden">
           <input id="lectureTitle" type="text" placeholder="Название лекции (необязательно)">
           <div class="lecture-head"><span id="lectureDot" class="rec-dot"></span><b id="lectureClock">00:00</b><span id="lectureState" class="muted small"></span></div>
-          <div id="lectureText" class="lecture-text"></div>
+          <div id="lectureText" data-no-i18n class="lecture-text"></div>
           <label class="switch"><span>Навести порядок нейросетью<small>знаки препинания, абзацы, исправление ошибок распознавания — примерно один запрос на каждые 20 минут лекции</small></span><input id="lectureTidy" type="checkbox" checked><i></i></label>
           <p class="hint">Пока идёт запись, экран не гаснет — не блокируйте телефон. Нужен интернет: речь распознаёт Google. Звук не сохраняется, только текст; закроете приложение — запись продолжится с того же места.</p>
           <div class="row end">
@@ -185,7 +195,7 @@
 
       <div class="topic">
         <div class="topic-meta"><span id="topicNum"></span><button id="fxBtn" class="fx-btn hidden">∑ Формулы</button><span id="chunkNum"></span></div>
-        <h2 id="topicTitle">—</h2>
+        <h2 id="topicTitle" data-no-i18n>—</h2>
         <input id="seek" class="seek" type="range" min="1" max="1" step="1" value="1" aria-label="Перемотка по кускам">
       </div>
 
@@ -196,7 +206,7 @@
 
       <div id="chunkBox" class="chunk" role="button" tabindex="0" aria-label="Скрыть или показать текст">
         <span id="chunkKind" class="kind"></span>
-        <p id="chunkText"></p>
+        <p id="chunkText" data-no-i18n></p>
         <span class="chunk-hint"><svg><use href="#i-eye"/></svg></span>
         <div class="gap"><div id="gapBar"></div></div>
       </div>
@@ -206,7 +216,7 @@
         <div>
           <div id="dictState" class="state">Готов к диктовке</div>
           <div id="dictMsg" class="muted small"></div>
-          <div id="heard" class="heard"></div>
+          <div id="heard" data-no-i18n class="heard"></div>
         </div>
       </div>
 
@@ -215,7 +225,7 @@
       <button id="stopReviewBtn" class="btn outline wide hidden">Закончить повторение</button>
 
       <div id="qaPanel" class="qa hidden">
-        <div id="answer" class="answer hidden"></div>
+        <div id="answer" data-no-i18n class="answer hidden"></div>
         <div class="ask-row">
           <textarea id="questionInput" rows="1" placeholder="Спросите голосом или напишите"></textarea>
           <button id="askBtn" class="icon-btn filled" aria-label="Спросить"><svg><use href="#i-send"/></svg></button>
@@ -225,7 +235,7 @@
           <button id="quizSkip" class="btn outline">Пропустить вопрос</button>
         </div>
         <button id="continueBtn" class="btn ok wide">Продолжить диктовку</button>
-        <details id="historyCard" class="mini hidden"><summary id="historyTitle">Предыдущие вопросы</summary><div id="qaHistory"></div></details>
+        <details id="historyCard" class="mini hidden"><summary id="historyTitle">Предыдущие вопросы</summary><div id="qaHistory" data-no-i18n></div></details>
       </div>
 
       <div class="player">
@@ -275,9 +285,14 @@
       </div>
 
       <div class="card">
+        <div class="card-title">Язык интерфейса</div>
+        <div class="seg">
+          <label><input type="radio" name="uiLang" value="ru"><span data-no-i18n lang="ru">Русский</span></label>
+          <label><input type="radio" name="uiLang" value="en"><span>English</span></label>
+        </div>
         <div class="card-title">Язык конспекта</div>
         <div class="seg">
-          <label><input type="radio" name="contentLang" value="ru"><span>Русский</span></label>
+          <label><input type="radio" name="contentLang" value="ru"><span data-no-i18n lang="ru">Русский</span></label>
           <label><input type="radio" name="contentLang" value="en"><span>English</span></label>
         </div>
         <p class="hint mt" id="contentLangHint"></p>
@@ -394,20 +409,35 @@
         </details>
         <details class="mini">
           <summary>Голосовые команды</summary>
-          <ul class="cmds">
-            <li><b>стоп</b> — остановить и задать вопрос; <b>пауза</b> — просто пауза</li>
-            <li><b>продолжай</b> — с прерванного куска</li>
-            <li><b>дальше</b>, <b>повтори</b>, <b>повтори тему</b>, <b>пропусти тему</b></li>
-            <li><b>медленнее</b>, <b>быстрее</b></li>
-            <li><b>как пишется …</b> / <b>по буквам</b> — продиктовать слово по буквам</li>
-            <li><b>записал</b> / <b>готово</b> — в паузе: дальше; пока читается новый кусок — ничего не пропускается</li>
-            <li>сразу вопросом: <b>почему…</b>, <b>что такое…</b>, <b>вопрос…</b></li>
-            <li>после ответа: <b>да</b> / <b>дальше</b></li>
-            <li><b>перейди к третьей теме</b>, <b>к теме налоги</b>, <b>предыдущая тема</b>, <b>последняя тема</b>, <b>какая сейчас тема</b></li>
-            <li><b>покажи формулы</b>, <b>формулы следующей темы</b>, <b>закрой формулы</b></li>
-            <li><b>открой план</b> / <b>настройки</b>, <b>только слушаю</b>, <b>режим записи</b>, <b>паузы подольше</b> / <b>покороче</b></li>
-            <li><b>включи</b> / <b>выключи сокращения</b>, <b>интонацию</b>, <b>самопроверку</b>; <b>светлая</b> / <b>тёмная</b> / <b>неоновая тема</b>; <b>скрой текст</b>; <b>сохрани конспект</b></li>
-            <li><b>что ты умеешь</b> — список команд. Можно и своими словами («сделай паузы покороче») — нейросеть поймёт, что сделать. Команды работают и текстом в поле вопроса</li>
+          <ul class="cmds" data-lang="ru">
+            <li><b data-no-i18n>стоп</b> — остановить и задать вопрос; <b data-no-i18n>пауза</b> — просто пауза</li>
+            <li><b data-no-i18n>продолжай</b> — с прерванного куска</li>
+            <li><b data-no-i18n>дальше</b>, <b data-no-i18n>повтори</b>, <b data-no-i18n>повтори тему</b>, <b data-no-i18n>пропусти тему</b></li>
+            <li><b data-no-i18n>медленнее</b>, <b data-no-i18n>быстрее</b></li>
+            <li><b data-no-i18n>как пишется …</b> / <b data-no-i18n>по буквам</b> — продиктовать слово по буквам</li>
+            <li><b data-no-i18n>записал</b> / <b data-no-i18n>готово</b> — в паузе: дальше; пока читается новый кусок — ничего не пропускается</li>
+            <li>сразу вопросом: <b data-no-i18n>почему…</b>, <b data-no-i18n>что такое…</b>, <b data-no-i18n>вопрос…</b></li>
+            <li>после ответа: <b data-no-i18n>да</b> / <b data-no-i18n>дальше</b></li>
+            <li><b data-no-i18n>перейди к третьей теме</b>, <b data-no-i18n>к теме налоги</b>, <b data-no-i18n>предыдущая тема</b>, <b data-no-i18n>последняя тема</b>, <b data-no-i18n>какая сейчас тема</b></li>
+            <li><b data-no-i18n>покажи формулы</b>, <b data-no-i18n>формулы следующей темы</b>, <b data-no-i18n>закрой формулы</b></li>
+            <li><b data-no-i18n>открой план</b> / <b data-no-i18n>настройки</b>, <b data-no-i18n>только слушаю</b>, <b data-no-i18n>режим записи</b>, <b data-no-i18n>паузы подольше</b> / <b data-no-i18n>покороче</b></li>
+            <li><b data-no-i18n>включи</b> / <b data-no-i18n>выключи сокращения</b>, <b data-no-i18n>интонацию</b>, <b data-no-i18n>самопроверку</b>; <b data-no-i18n>светлая</b> / <b data-no-i18n>тёмная</b> / <b data-no-i18n>неоновая тема</b>; <b data-no-i18n>скрой текст</b>; <b data-no-i18n>сохрани конспект</b></li>
+            <li><b data-no-i18n>что ты умеешь</b> — список команд. Можно и своими словами («сделай паузы покороче») — нейросеть поймёт, что сделать. Команды работают и текстом в поле вопроса</li>
+          </ul>
+          <ul class="cmds hidden" data-lang="en">
+            <li><b data-no-i18n>stop</b> — остановить и задать вопрос; <b data-no-i18n>pause</b> — просто пауза</li>
+            <li><b data-no-i18n>continue</b> — с прерванного куска</li>
+            <li><b data-no-i18n>next</b>, <b data-no-i18n>repeat</b>, <b data-no-i18n>repeat topic</b>, <b data-no-i18n>skip topic</b></li>
+            <li><b data-no-i18n>slower</b>, <b data-no-i18n>faster</b></li>
+            <li><b data-no-i18n>spell …</b> / <b data-no-i18n>how do you spell …</b> — продиктовать слово по буквам</li>
+            <li><b data-no-i18n>done</b> / <b data-no-i18n>got it</b> — в паузе: дальше; пока читается новый кусок — ничего не пропускается</li>
+            <li>сразу вопросом: <b data-no-i18n>why…</b>, <b data-no-i18n>what is…</b>, <b data-no-i18n>question…</b></li>
+            <li>после ответа: <b data-no-i18n>yes</b> / <b data-no-i18n>next</b></li>
+            <li><b data-no-i18n>go to topic three</b>, <b data-no-i18n>go to the topic taxes</b>, <b data-no-i18n>previous topic</b>, <b data-no-i18n>last topic</b>, <b data-no-i18n>what topic is this</b></li>
+            <li><b data-no-i18n>show formulas</b>, <b data-no-i18n>formulas for the next topic</b>, <b data-no-i18n>close formulas</b></li>
+            <li><b data-no-i18n>open the plan</b> / <b data-no-i18n>open settings</b>, <b data-no-i18n>listen only</b>, <b data-no-i18n>writing mode</b>, <b data-no-i18n>longer pauses</b> / <b data-no-i18n>shorter pauses</b></li>
+            <li><b data-no-i18n>light theme</b> / <b data-no-i18n>dark theme</b> / <b data-no-i18n>neon theme</b>; <b data-no-i18n>hide text</b>; <b data-no-i18n>save the notes</b></li>
+            <li><b data-no-i18n>what can you do</b> — список команд. Можно и своими словами («make the pauses shorter») — нейросеть поймёт, что сделать. Команды работают и текстом в поле вопроса</li>
           </ul>
         </details>
       </div>
@@ -481,10 +511,10 @@
       <div class="sheet-handle"></div>
       <div class="fx-head">
         <button id="fxPrev" class="icon-btn" aria-label="Формулы предыдущей темы"><svg><use href="#i-left"/></svg></button>
-        <div class="fx-title"><small id="fxNum"></small><b id="fxTopic"></b></div>
+        <div class="fx-title"><small id="fxNum"></small><b id="fxTopic" data-no-i18n></b></div>
         <button id="fxNext" class="icon-btn" aria-label="Формулы следующей темы"><svg><use href="#i-right"/></svg></button>
       </div>
-      <div id="fxList" class="fx-list"></div>
+      <div id="fxList" data-no-i18n class="fx-list"></div>
       <button class="btn tonal fx-close" data-close>Закрыть</button>
     </div>
   </div>
@@ -495,7 +525,7 @@
     <div class="sheet-body">
       <div class="sheet-handle"></div>
       <div class="sheet-title">Предметы</div>
-      <div id="subjectList"></div>
+      <div id="subjectList" data-no-i18n></div>
       <div class="sheet-sep"></div>
       <button id="subjectNew" class="sheet-item accent">+ Новый предмет</button>
       <button id="subjectImport" class="sheet-item accent">Открыть готовый конспект из файла</button>
@@ -510,6 +540,7 @@
   <!-- Мастер первого запуска -->
   <div id="onboard" class="onboard hidden">
     <section class="ob-step">
+      <button id="obLang" class="btn text ob-lang" data-no-i18n>English</button>
       <img src="icons/icon-192.png" alt="" class="ob-logo">
       <h2>Диктор конспектов</h2>
       <ul class="ob-list">
@@ -564,24 +595,26 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/abbr.js": "./js/abbr.js?v=48",
-      "./js/ai.js": "./js/ai.js?v=48",
-      "./js/analyze.js": "./js/analyze.js?v=48",
-      "./js/anthropic.js": "./js/anthropic.js?v=48",
-      "./js/app.js": "./js/app.js?v=48",
-      "./js/commands.js": "./js/commands.js?v=48",
-      "./js/lecture.js": "./js/lecture.js?v=48",
-      "./js/platform.js": "./js/platform.js?v=48",
-      "./js/dictation.js": "./js/dictation.js?v=48",
-      "./js/extract.js": "./js/extract.js?v=48",
-      "./js/gemini.js": "./js/gemini.js?v=48",
-      "./js/media.js": "./js/media.js?v=48",
-      "./js/neural.js": "./js/neural.js?v=48",
-      "./js/onboarding.js": "./js/onboarding.js?v=48",
-      "./js/openai.js": "./js/openai.js?v=48",
-      "./js/ripple.js": "./js/ripple.js?v=48",
-      "./js/speech.js": "./js/speech.js?v=48",
-      "./js/storage.js": "./js/storage.js?v=48"
+      "./js/abbr.js": "./js/abbr.js?v=49",
+      "./js/ai.js": "./js/ai.js?v=49",
+      "./js/analyze.js": "./js/analyze.js?v=49",
+      "./js/anthropic.js": "./js/anthropic.js?v=49",
+      "./js/app.js": "./js/app.js?v=49",
+      "./js/commands.js": "./js/commands.js?v=49",
+      "./js/lecture.js": "./js/lecture.js?v=49",
+      "./js/i18n.js": "./js/i18n.js?v=49",
+      "./js/i18n-en.js": "./js/i18n-en.js?v=49",
+      "./js/platform.js": "./js/platform.js?v=49",
+      "./js/dictation.js": "./js/dictation.js?v=49",
+      "./js/extract.js": "./js/extract.js?v=49",
+      "./js/gemini.js": "./js/gemini.js?v=49",
+      "./js/media.js": "./js/media.js?v=49",
+      "./js/neural.js": "./js/neural.js?v=49",
+      "./js/onboarding.js": "./js/onboarding.js?v=49",
+      "./js/openai.js": "./js/openai.js?v=49",
+      "./js/ripple.js": "./js/ripple.js?v=49",
+      "./js/speech.js": "./js/speech.js?v=49",
+      "./js/storage.js": "./js/storage.js?v=49"
     }
   }
   </script>
@@ -615,6 +648,6 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=48"></script>
+  <script type="module" src="js/app.js?v=49"></script>
 </body>
 </html>

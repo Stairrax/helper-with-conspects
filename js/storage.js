@@ -39,6 +39,7 @@ export const DEFAULT_SETTINGS = {
   breakEvery: 40,         // напоминать о перерыве каждые N минут (0 — не напоминать)
   headsetButtons: false,  // управление кнопками наушников
   contentLang: 'ru',      // 'ru' | 'en' — язык конспекта: распознавание, голос, команды и тексты нейросети
+  uiLang: 'ru',           // 'ru' | 'en' — язык интерфейса (при первом запуске — язык браузера)
   theme: 'classic',       // 'classic' | 'neon' | 'light' | 'auto' (как в системе) — оформление
   ripple: true,           // «капля» при нажатии на кнопки
 };
@@ -61,7 +62,14 @@ export function loadSettings() {
     for (const k of cloudKeys) delete saved[k]; // ключи облачных сервисов больше не храним
     saveSettings(saved);
   }
-  return { ...DEFAULT_SETTINGS, profiles: {}, ...saved };
+  // первый запуск — язык интерфейса и конспекта по языку браузера
+  const first = {};
+  if (!Object.keys(saved).length && typeof navigator !== 'undefined' && !/^(ru|uk|be|kk)/i.test(navigator.language || 'ru')) {
+    first.uiLang = 'en';
+    first.contentLang = 'en';
+    first.neuralVoice = 'en-lessac';
+  }
+  return { ...DEFAULT_SETTINGS, profiles: {}, ...first, ...saved };
 }
 
 export function saveSettings(s) {

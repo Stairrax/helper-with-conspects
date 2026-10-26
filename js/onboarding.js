@@ -130,14 +130,19 @@ export function initOnboarding(hooks) {
     const st = $('obVoiceStatus');
     if (!ttsSupported) { st.textContent = 'Этот браузер не умеет озвучивать текст — откройте приложение в Chrome.'; return; }
     await loadVoices();
-    const ru = getVoices().some((v) => /^ru/i.test(v.lang));
+    const en = hooks.getSettings().contentLang === 'en';
+    const ru = getVoices().some((v) => (en ? /^en/i : /^ru/i).test(v.lang));
     stopSpeaking();
-    const r = await speak('Привет! Я буду диктовать ваш конспект. Если что-то непонятно — скажите «стоп» и задайте вопрос.', { rate: hooks.getSettings().rate });
+    const r = await speak(en
+      ? 'Hi! I will dictate your notes. If something is unclear, say “stop” and ask a question.'
+      : 'Привет! Я буду диктовать ваш конспект. Если что-то непонятно — скажите «стоп» и задайте вопрос.', { rate: hooks.getSettings().rate });
     st.textContent = r === 'error'
       ? (IOS ? 'Голос не воспроизвёлся. Проверьте громкость и что переключатель «Без звука» сбоку iPhone выключен.' : 'Голос не воспроизвёлся. Проверьте громкость и что в Android установлен «Синтезатор речи Google».')
       : ru ? 'Если голос слышно — всё в порядке.'
-        : IOS ? 'Русского голоса нет: Настройки → Универсальный доступ → Устный контент → Голоса → Русский.'
-          : 'Русского голоса нет: установите русский язык в Настройки Android → Синтез речи → Google.';
+        : en ? (IOS ? 'Английского голоса нет: Настройки → Универсальный доступ → Устный контент → Голоса → Английский.'
+          : 'Английского голоса нет: установите английский язык в Настройки Android → Синтез речи → Google.')
+          : IOS ? 'Русского голоса нет: Настройки → Универсальный доступ → Устный контент → Голоса → Русский.'
+            : 'Русского голоса нет: установите русский язык в Настройки Android → Синтез речи → Google.';
   });
 
   $('obLive').addEventListener('click', async () => {
@@ -150,7 +155,9 @@ export function initOnboarding(hooks) {
     if (!ok) { st.className = 'ob-status err'; return; }
     st.className = 'ob-status ok';
     stopSpeaking();
-    speak('Привет! Меня зовут Бая. Я буду диктовать ваш конспект — если что-то непонятно, скажите «стоп» и задайте вопрос.', { rate: hooks.getSettings().rate });
+    speak(hooks.getSettings().contentLang === 'en'
+      ? 'Hi! This is the voice that will dictate your notes. If something is unclear, say “stop” and ask a question.'
+      : 'Привет! Меня зовут Бая. Я буду диктовать ваш конспект — если что-то непонятно, скажите «стоп» и задайте вопрос.', { rate: hooks.getSettings().rate });
   });
 
   $('obMic').addEventListener('click', async () => {

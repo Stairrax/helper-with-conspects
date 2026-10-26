@@ -320,6 +320,7 @@ body.has-stop .toast { bottom: calc(var(--nav-h) + var(--stop-h) + var(--safe-b)
   padding: calc(24px + env(safe-area-inset-top)) 20px calc(24px + var(--safe-b));
 }
 .ob-step { max-width: 520px; margin: 0 auto; }
+.ob-lang { float: right; margin: -8px -8px 0 0; }
 .ob-step h2 { font-size: 26px; font-weight: 500; margin: 8px 0 16px; }
 .ob-logo { width: 72px; height: 72px; border-radius: 20px; margin-top: 24px; }
 .ob-num { color: var(--accent); font-size: 14px; font-weight: 500; }

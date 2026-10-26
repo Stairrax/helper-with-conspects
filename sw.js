@@ -2,7 +2,7 @@
 // Запросы к API нейросетей никогда не кэшируются.
 
 // При выпуске новой версии поднимайте VERSION и ?v= в index.html (importmap и app.js) — одно и то же число.
-const VERSION = 'kd-v48';
+const VERSION = 'kd-v49';
 const SHELL = [
   './',
   'index.html',
@@ -13,6 +13,8 @@ const SHELL = [
   'js/abbr.js',
   'js/commands.js',
   'js/lecture.js',
+  'js/i18n.js',
+  'js/i18n-en.js',
   'js/platform.js',
   'js/ai.js',
   'js/analyze.js',
@@ -112,14 +114,15 @@ async function remindDue() {
   const c = await caches.open('kd-meta');
   const r = await c.match(META('due.json'));
   if (!r) return;
-  const { on, items } = await r.json();
+  const { on, lang, items } = await r.json();
   const now = Date.now();
   const due = (items || []).filter((x) => x.due <= now).sort((a, b) => a.due - b.due);
   if (!on || !due.length) return;
   const last = await c.match(META('reminded.json'));
   if (last && now - (await last.json()).at < 0.8 * DAY) return; // не чаще раза в сутки
-  await self.registration.showNotification('Пора повторить', {
-    body: due.length === 1 ? `«${due[0].t}»` : `«${due[0].t}» и ещё ${due.length - 1}`,
+  const en = lang === 'en';
+  await self.registration.showNotification(en ? 'Time to review' : 'Пора повторить', {
+    body: due.length === 1 ? `«${due[0].t}»` : en ? `“${due[0].t}” and ${due.length - 1} more` : `«${due[0].t}» и ещё ${due.length - 1}`,
     icon: 'icons/icon-192.png', tag: 'kd-review', data: { url: './?go=review' },
   });
   await c.put(META('reminded.json'), new Response(JSON.stringify({ at: now })));

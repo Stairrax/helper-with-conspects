@@ -19,12 +19,14 @@ import { initOnboarding, onboardingDone } from './onboarding.js';
 import { setRipple } from './ripple.js';
 import { IOS, SYS } from './platform.js';
 import { LectureRecorder, lectureSupported, tidyTranscript, roughParagraphs, fmtClock as lectureClock } from './lecture.js';
+import { setUiLang, T } from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 let settings = loadSettings();
+setUiLang(settings.uiLang);
 const THEMES = { classic: 'классика', neon: 'неон', light: 'светлая', auto: 'как в системе' };
 const lightScheme = matchMedia('(prefers-color-scheme: light)');
 applyLook();
@@ -209,7 +211,7 @@ const dict = new Dictation({
   kickGenerator: () => gen.loop(),
   onActivity: (playing) => updateMedia(dictTitle(), playing),
 });
-const dictTitle = () => (dict.mode === 'review' ? 'Повторение' : project?.topics.find((t) => t.id === progress?.topicId)?.title) || 'Диктор конспектов';
+const dictTitle = () => (dict.mode === 'review' ? T('Повторение') : project?.topics.find((t) => t.id === progress?.topicId)?.title) || T('Диктор конспектов');
 
 function resetDictation() {
   stopSpeaking();
@@ -233,7 +235,7 @@ function renderSources() {
   ul.innerHTML = sources.map((s) => `
     <li>
       <svg><use href="#i-${s.kind === 'images' ? 'camera' : 'doc'}"/></svg>
-      <span class="name">${esc(s.name)}</span>
+      <span class="name" data-no-i18n>${esc(s.name)}</span>
       <span class="size">${s.kind === 'images' ? `${s.images.length} стр.` : fmtChars((s.text || '').length)}</span>
       <button class="icon-btn small" data-del="${s.id}" aria-label="Удалить"><svg><use href="#i-close"/></svg></button>
     </li>`).join('');
@@ -500,7 +502,7 @@ function renderPlan() {
         const pt = byId.get(p);
         if (!pt) return '';
         const bad = pos.get(p) > i || project.plan.skipped[p];
-        return `<span class="${bad ? 'bad' : ''}">«${esc(pt.title)}»${bad ? (project.plan.skipped[p] ? ' (пропущена)' : ' (идёт позже)') : ''}</span>`;
+        return `<span class="${bad ? 'bad' : ''}">«<span data-no-i18n>${esc(pt.title)}</span>»${bad ? (project.plan.skipped[p] ? ' (пропущена)' : ' (идёт позже)') : ''}</span>`;
       }).filter(Boolean).join(', ');
       let stLong = '';
       if (t.status === 'ready') {
@@ -510,10 +512,10 @@ function renderPlan() {
       else if (t.status === 'error') stLong = `<span class="bad">${esc(t.error)}</span>`;
       else stLong = 'В очереди на подготовку';
       const points = openPoints.has(id) && t.points?.length
-        ? `<ol class="points">${t.points.map((p) => `<li class="${p.c.length ? '' : 'miss'}">${esc(p.p)} <i>${p.c.length ? '→ ' + p.c.map((x) => x + 1).join(', ') : '— не покрыт'}</i></li>`).join('')}</ol>`
+        ? `<ol class="points">${t.points.map((p) => `<li class="${p.c.length ? '' : 'miss'}"><span data-no-i18n>${esc(p.p)}</span> <i>${p.c.length ? '→ ' + p.c.map((x) => x + 1).join(', ') : '— не покрыт'}</i></li>`).join('')}</ol>`
         : '';
       detail = `<div class="pdetail">
-        ${t.summary ? `<p>${esc(t.summary)}</p>` : ''}
+        ${t.summary ? `<p data-no-i18n>${esc(t.summary)}</p>` : ''}
         ${prereq ? `<p>Нужно знать: ${prereq}</p>` : ''}
         <p>${stLong}${skipped ? '' : ` · по бюджету ${fmtDur(alloc[id] || 0)}`}</p>
         ${stat?.studiedAt ? `<p>${stat.total ? `Самопроверка: ${fmtScore(stat.right)} из ${stat.total}` : 'Самопроверки не было'}${stat.asked ? ` · вопросов задано: ${stat.asked}` : ''} · повторить ${fmtDue(stat.due)}</p>` : ''}
@@ -534,7 +536,7 @@ function renderPlan() {
     return `<li class="${skipped ? 'skipped' : ''} ${isCur ? 'current' : ''} ${done ? 'done' : ''}" data-id="${id}">
       <button class="phead" data-act="open">
         <span class="pnum">${skipped ? '–' : done ? '✓' : n}</span>
-        <span class="pbody"><span class="ptitle">${esc(t.title)}${badges}</span>
+        <span class="pbody"><span class="ptitle"><span data-no-i18n>${esc(t.title)}</span>${badges}</span>
           <span class="pmeta"><span class="dots">${dots(t.difficulty || 3)}</span> · ≈${fmtDur(est)}</span></span>
         <span class="pstate ${stCls}">${st}</span>
       </button>
@@ -651,41 +653,43 @@ const TR = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 
 const translit = (s) => [...s].map((c) => { const l = c.toLowerCase(); const t = TR[l]; return t === undefined ? c : c === l ? t : t.charAt(0).toUpperCase() + t.slice(1); }).join('').replace(/\s+/g, '_');
 
 function buildExport() {
-  const subj = curSubject()?.title || 'Конспект';
+  const E = (ru, en) => (settings.contentLang === 'en' ? en : ru); // файл — на языке конспекта
+  const subj = curSubject()?.title || E('Конспект', 'Notes');
   const stats = progress?.stats || {};
   const qa = progress?.qa || [];
-  const lines = [`# ${subj}`, '', `Сохранено ${new Date().toLocaleString('ru-RU')} из приложения «Диктор конспектов».`, ''];
+  const lines = [`# ${subj}`, '', E(`Сохранено ${new Date().toLocaleString('ru-RU')} из приложения «Диктор конспектов».`, `Saved ${new Date().toLocaleString('en-GB')} from the Notes Narrator app.`), ''];
   for (const t of activeSeq(project)) {
     lines.push(`## ${t.title}`, '');
     if (t.chunks?.length) {
       for (const c of t.chunks) lines.push(c.k === 'explain' || c.k === 'example' ? `> ${c.t}` : c.t, '');
     } else lines.push(t.text, '');
-    if (t.recap) lines.push(`**Главное:** ${t.recap}`, '');
+    if (t.recap) lines.push(`**${E('Главное', 'Key points')}:** ${t.recap}`, '');
     if (t.formulas?.length) {
-      lines.push('**Формулы:**', '');
+      lines.push(`**${E('Формулы', 'Formulas')}:**`, '');
       for (const f of t.formulas) lines.push(`- ${f.n ? f.n + ': ' : ''}${f.f}${f.d ? `  \n  ${f.d}` : ''}`);
       lines.push('');
     }
     const st = stats[t.id];
-    if (st?.total) lines.push(`Самопроверка: ${fmtScore(st.right)} из ${st.total}${st.weak ? ' — стоит повторить' : ''}`, '');
+    if (st?.total) lines.push(E(`Самопроверка: ${fmtScore(st.right)} из ${st.total}${st.weak ? ' — стоит повторить' : ''}`, `Self-check: ${fmtScore(st.right)} of ${st.total}${st.weak ? ' — worth reviewing' : ''}`), '');
     if (t.quiz?.length) {
-      lines.push('**Вопросы для самопроверки:**', '');
-      t.quiz.forEach((q, i) => lines.push(`${i + 1}. ${q.q}`, `   Ответ: ${q.a}`));
+      lines.push(`**${E('Вопросы для самопроверки', 'Self-check questions')}:**`, '');
+      t.quiz.forEach((q, i) => lines.push(`${i + 1}. ${q.q}`, `   ${E('Ответ', 'Answer')}: ${q.a}`));
       lines.push('');
     }
     const tqa = qa.filter((x) => x.topicId === t.id && x.a && !x.error);
     if (tqa.length) {
-      lines.push('**Мои вопросы:**', '');
+      lines.push(`**${E('Мои вопросы', 'My questions')}:**`, '');
       for (const x of tqa) lines.push(`- ${x.q}`, `  ${x.a.trim()}`);
       lines.push('');
     }
   }
   const other = qa.filter((x) => !x.topicId && x.a && !x.error);
   if (other.length) {
-    lines.push('## Другие вопросы', '');
+    lines.push(`## ${E('Другие вопросы', 'Other questions')}`, '');
     for (const x of other) lines.push(`- ${x.q}`, `  ${x.a.trim()}`);
   }
-  return { name: `${subj.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'конспект'}.md`, text: lines.join('\n') };
+  return { name: `${subj.replace(/[\\/:*?"<>|]+/g, ' ')
+    .trim() || E('конспект', 'notes')}.md`, text: lines.join('\n') };
 }
 
 /** На Android — системное меню «Поделиться» (Telegram, Google Диск, почта…), иначе — скачивание. false — если отменили. */
@@ -819,7 +823,7 @@ function renderDictation() {
   const showAnswer = last && (['thinking', 'answering', 'confirm'].includes(st) || (pausedLike && Date.now() - last.t < 10 * 60000));
   const fb = QUIZ.includes(st) ? dict.feedback : null;
   $('answer').classList.toggle('hidden', !showAnswer && !fb);
-  if (fb) $('answer').innerHTML = `<div class="q">Ваш ответ: ${esc(fb.answer)}</div>${esc(fb.entry.a || '…')}`;
+  if (fb) $('answer').innerHTML = `<div class="q">${T('Ваш ответ:')} ${esc(fb.answer)}</div>${esc(fb.entry.a || '…')}`;
   else if (showAnswer) $('answer').innerHTML = `<div class="q">${esc(last.q)}</div>${esc(last.a || '…')}`;
   const older = showAnswer ? qa.slice(0, -1) : qa;
   $('historyCard').classList.toggle('hidden', !older.length);
@@ -1133,8 +1137,8 @@ function renderSettings() {
   $('baseUrl').value = settings.baseUrl;
   $('baseUrl').placeholder = prov.base || 'https://…/v1';
   if (!modelsLoaded) $('modelList').innerHTML = (prov.models || []).map((m) => `<option value="${esc(m)}"></option>`).join('');
-  $('providerHint').innerHTML = (PROVIDER_HINTS[settings.provider] || '') +
-    (prov.keyUrl ? ` Ключ: <a href="${prov.keyUrl}" target="_blank" rel="noopener">${esc(prov.keyUrl.replace('https://', ''))}</a>` : '');
+  $('providerHint').innerHTML = `<span>${PROVIDER_HINTS[settings.provider] || ''}</span>` +
+    (prov.keyUrl ? ` <span>Ключ:</span> <a href="${prov.keyUrl}" target="_blank" rel="noopener">${esc(prov.keyUrl.replace('https://', ''))}</a>` : '');
   $('rate').value = settings.rate;
   $('rateVal').textContent = Number(settings.rate).toFixed(1);
   $('pause').value = settings.pause;
@@ -1179,7 +1183,9 @@ function renderSettings() {
   document.querySelectorAll('input[name=contentLang]').forEach((r) => { r.checked = r.value === (settings.contentLang || 'ru'); });
   $('contentLangHint').textContent = settings.contentLang === 'en'
     ? 'Конспект на английском: нейросеть готовит куски, вопросы и ответы по-английски, распознаёт английскую речь и команды («stop», «next», «repeat», «go to topic two»), голос — английский (Android или Piper: Lessac, Amy, Ryan).'
-    : '';
+    : settings.uiLang === 'en' ? 'Конспект на русском: нейросеть готовит куски, вопросы и ответы по-русски, распознаёт русскую речь и команды, голос — русский.' : '';
+  document.querySelectorAll('input[name=uiLang]').forEach((r) => { r.checked = r.value === (settings.uiLang || 'ru'); });
+  document.querySelectorAll('.cmds[data-lang]').forEach((el) => el.classList.toggle('hidden', el.dataset.lang !== (settings.contentLang === 'en' ? 'en' : 'ru')));
   $('remind').checked = !!settings.remind;
 }
 
@@ -1319,6 +1325,8 @@ function applyEngine() {
   });
 }
 
+let neuralLoading = false;
+
 /** Загружает выбранный нейроголос; also — ещё один элемент для статуса (в мастере первого запуска). */
 async function downloadNeural(also = null) {
   const out = $('neuralStatus');
@@ -1330,6 +1338,7 @@ async function downloadNeural(also = null) {
   st.textContent = downloaded ? 'Загружаю голос…' : `Скачиваю голос (около ${mb} МБ)…`;
   const busy = !['idle', 'finished'].includes(dict.state);
   if (busy) toast(`${downloaded ? 'Загружаю' : 'Скачиваю'} голос «${NEURAL_VOICES[id].replace(/ \(.*\)/, '')}» — пока говорю голосом ${SYS}`, 5000);
+  neuralLoading = true;
   try {
     await prepareNeural(id, (p) => {
       if (p.stage === 'model' && p.total) st.textContent = `Скачиваю голос: ${Math.round((p.loaded / p.total) * 100)}%`;
@@ -1344,6 +1353,8 @@ async function downloadNeural(also = null) {
   } catch (e) {
     st.textContent = '✗ Не удалось загрузить голос: ' + (e.message || e) + `. Пока говорю голосом ${SYS} — ` + 'попробуйте позже или через Wi-Fi.';
     return false;
+  } finally {
+    neuralLoading = false;
   }
 }
 
@@ -1357,6 +1368,21 @@ $('intonation').addEventListener('change', (e) => {
   settings.intonation = e.target.checked;
   saveSettings(settings);
   setIntonation(settings.intonation);
+});
+// Язык интерфейса: перевод накладывается при запуске, поэтому после смены — перезагрузка
+document.querySelectorAll('input[name=uiLang]').forEach((r) => r.addEventListener('change', () => {
+  settings.uiLang = r.value === 'en' ? 'en' : 'ru';
+  saveSettings(settings);
+  try { sessionStorage.setItem('kd.tab', 'settings'); } catch { /* ignore */ }
+  location.reload();
+}));
+// в мастере первого запуска — сразу и интерфейс, и конспект
+$('obLang').textContent = settings.uiLang === 'en' ? 'Русский' : 'English';
+$('obLang').addEventListener('click', () => {
+  const lang = settings.uiLang === 'en' ? 'ru' : 'en';
+  Object.assign(settings, { uiLang: lang, contentLang: lang, neuralVoice: lang === 'en' ? 'en-lessac' : 'silero-baya' });
+  saveSettings(settings);
+  location.reload();
 });
 // Язык конспекта: распознавание, голос, команды и всё, что пишет нейросеть
 document.querySelectorAll('input[name=contentLang]').forEach((r) => r.addEventListener('change', () => {
@@ -1387,7 +1413,7 @@ $('neuralVoice').addEventListener('change', (e) => {
 $('testNeural').addEventListener('click', async () => {
   audioContext();
   stopSpeaking();
-  if ($('neuralStatus').textContent.startsWith('Скач')) return toast('Голос ещё скачивается');
+  if (neuralLoading) return toast('Голос ещё скачивается');
   speak(settings.voiceStyle === 'jarvis'
     ? `Добрый день${settings.address ? ', ' + settings.address : ''}. Все системы в норме. Начинаем диктовку: производная — это скорость изменения функции.`
     : 'Привет! Так звучит нейросетевой голос. Активные доходы — это зарплата и подработка. Их планируют, считая «на руки», то есть после удержания налога.', { rate: settings.rate });
@@ -1578,7 +1604,7 @@ function buildAnki() {
   const rows = [];
   for (const t of activeSeq(project)) {
     for (const q of t.quiz || []) rows.push([q.q, q.a, tag(t.title)]);
-    for (const f of t.formulas || []) rows.push([`Формула: ${f.n || t.title}`, f.f + (f.d ? `<br>${f.d}` : ''), tag(t.title)]);
+    for (const f of t.formulas || []) rows.push([`${settings.contentLang === 'en' ? 'Formula' : 'Формула'}: ${f.n || t.title}`, f.f + (f.d ? `<br>${f.d}` : ''), tag(t.title)]);
   }
   const head = ['#separator:tab', '#html:true', `#deck:${cell(title)}`, '#notetype:Basic', '#tags column:3'];
   return { rows: rows.length, text: [...head, ...rows.map((r) => r.map(cell).join('\t'))].join('\n') + '\n', title };
@@ -1606,7 +1632,7 @@ function syncDue() {
   }
   for (const k of Object.keys(all)) if (!subjects?.list.some((x) => x.id === k)) delete all[k];
   try { localStorage.setItem('kd.due', JSON.stringify(all)); } catch { /* ignore */ }
-  const body = JSON.stringify({ on: !!settings.remind, items: Object.values(all).flat() });
+  const body = JSON.stringify({ on: !!settings.remind, lang: settings.uiLang, items: Object.values(all).flat() });
   caches.open('kd-meta').then((c) => c.put('due.json', new Response(body, { headers: { 'content-type': 'application/json' } }))).catch(() => {});
 }
 
@@ -1668,7 +1694,7 @@ $('restoreInput').addEventListener('change', async (e) => {
 // ---------- Предметы ----------
 
 function renderSubject() {
-  $('subjectName').textContent = curSubject()?.title || 'Предмет';
+  $('subjectName').textContent = curSubject()?.title || T('Предмет');
   $('subjectList').innerHTML = (subjects?.list || []).map((x) =>
     `<button class="sheet-item ${x.id === cur() ? 'active' : ''}" data-subject="${x.id}">${esc(x.title)}</button>`).join('');
 }
@@ -1700,7 +1726,7 @@ async function openSubject(id) {
 }
 
 function newSubject() {
-  const title = (prompt('Название предмета', `Предмет ${subjects.list.length + 1}`) || '').trim();
+  const title = (prompt('Название предмета', T(`Предмет ${subjects.list.length + 1}`)) || '').trim();
   if (!title) return;
   const id = 's' + uid();
   subjects.list.push({ id, title: title.slice(0, 40) });
@@ -1724,7 +1750,7 @@ async function deleteSubject() {
   await idbDel('sources:' + s.id);
   clearProgress(s.id);
   subjects.list = subjects.list.filter((x) => x.id !== s.id);
-  if (!subjects.list.length) subjects.list.push({ id: 's' + uid(), title: 'Предмет 1' });
+  if (!subjects.list.length) subjects.list.push({ id: 's' + uid(), title: T('Предмет 1') });
   await openSubject(subjects.list[0].id);
   switchTab('load');
   toast('Предмет удалён');
@@ -1739,7 +1765,7 @@ async function loadOrMigrateSubjects() {
   const oldSources = await idbGet('sources');
   const oldProgress = loadProgress();
   const name = oldProject?.sources?.[0]?.name || oldSources?.[0]?.name;
-  subjects = { list: [{ id, title: name ? name.replace(/\.[a-z0-9]+$/i, '').slice(0, 40) : 'Предмет 1' }], current: id };
+  subjects = { list: [{ id, title: name ? name.replace(/\.[a-z0-9]+$/i, '').slice(0, 40) : T('Предмет 1') }], current: id };
   if (oldProject) await idbSet('project:' + id, oldProject);
   if (oldSources) await idbSet('sources:' + id, oldSources);
   if (oldProgress) saveProgress(oldProgress, id);
@@ -1904,6 +1930,7 @@ async function init() {
   const go = new URLSearchParams(location.search).get('go');
   if (go === 'dictate' && project) switchTab('dictate');
   if (go === 'review' && project) switchTab('plan'); // из уведомления «пора повторить»
+  try { if (sessionStorage.getItem('kd.tab')) { switchTab(sessionStorage.getItem('kd.tab')); sessionStorage.removeItem('kd.tab'); } } catch { /* ignore */ }
   syncDue();
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

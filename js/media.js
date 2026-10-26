@@ -2,6 +2,8 @@
 // Chrome передаёт нажатия кнопок гарнитуры только странице, которая сама что-то воспроизводит,
 // поэтому во время занятия тихо проигрывается беззвучный звук.
 
+import { T } from './i18n.js';
+
 let audio = null;
 let handlers = null;
 
@@ -56,8 +58,8 @@ export function updateMedia(title, playing) {
   if (!mediaSupported || !handlers) return;
   try {
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: title || 'Диктор конспектов',
-      artist: 'Диктор конспектов',
+      title: title || T('Диктор конспектов'),
+      artist: T('Диктор конспектов'),
       artwork: [{ src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' }],
     });
     navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
