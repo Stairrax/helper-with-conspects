@@ -29,6 +29,7 @@ export const DEFAULT_SETTINGS = {
   abbreviate: false,      // диктовать сокращениями: «физ. лиц», «НДФЛ»
   formulasApart: true,    // 3+ формулы в теме — в отдельный блок, голос объясняет словами
   fxPause: false,         // пауза в диктовке, пока открыт блок формул
+  remind: false,          // уведомление «пора повторить» (Periodic Background Sync)
   listenOnly: false,      // «Только слушаю»: текст подряд, без пауз на запись (в транспорте)
   voiceStyle: 'none',     // 'none' | 'jarvis' — стиль ИИ-ассистента
   address: '',            // обращение: '' | 'сэр' | 'мэм'

@@ -145,6 +145,7 @@
           </div>
           <button id="exportBtn" class="btn text">Сохранить конспект и вопросы в файл</button>
           <button id="shareBtn" class="btn text">Поделиться готовым конспектом</button>
+          <button id="ankiBtn" class="btn text">Карточки для Anki</button>
         </div>
         <ol id="planList" class="plan"></ol>
         <p class="muted small center">Нажмите на тему, чтобы переставить, пропустить или начать с неё.</p>
@@ -334,6 +335,7 @@
         </div>
         <label class="switch"><span>Пауза дольше в сложных местах</span><input id="scalePause" type="checkbox"><i></i></label>
         <label class="switch"><span>Подстраивать паузу<small>длиннее, если часто прошу повторить</small></span><input id="adaptivePause" type="checkbox"><i></i></label>
+        <label class="switch" id="remindRow"><span>Напоминать о повторении<small id="remindHint">уведомление, когда пора повторить тему — для установленного приложения на Android</small></span><input id="remind" type="checkbox"><i></i></label>
         <label class="switch"><span>Самопроверка после темы<small>2–3 вопроса, ответ голосом</small></span><input id="selfCheck" type="checkbox"><i></i></label>
         <label class="switch"><span>Формулы — отдельным блоком<small>если в теме 3 формулы и больше, голос рассказывает словами, из чего складывается величина, а сами формулы — в блоке «∑ Формулы» на экране диктовки и в плане: их удобнее учить глазами, решая задачи</small></span><input id="formulasApart" type="checkbox"><i></i></label>
         <label class="switch"><span>Пауза, пока открыты формулы<small>диктовка останавливается, когда открываете «∑ Формулы», и продолжается, когда закрываете</small></span><input id="fxPause" type="checkbox"><i></i></label>
@@ -530,22 +532,22 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/abbr.js": "./js/abbr.js?v=44",
-      "./js/ai.js": "./js/ai.js?v=44",
-      "./js/analyze.js": "./js/analyze.js?v=44",
-      "./js/anthropic.js": "./js/anthropic.js?v=44",
-      "./js/app.js": "./js/app.js?v=44",
-      "./js/commands.js": "./js/commands.js?v=44",
-      "./js/dictation.js": "./js/dictation.js?v=44",
-      "./js/extract.js": "./js/extract.js?v=44",
-      "./js/gemini.js": "./js/gemini.js?v=44",
-      "./js/media.js": "./js/media.js?v=44",
-      "./js/neural.js": "./js/neural.js?v=44",
-      "./js/onboarding.js": "./js/onboarding.js?v=44",
-      "./js/openai.js": "./js/openai.js?v=44",
-      "./js/ripple.js": "./js/ripple.js?v=44",
-      "./js/speech.js": "./js/speech.js?v=44",
-      "./js/storage.js": "./js/storage.js?v=44"
+      "./js/abbr.js": "./js/abbr.js?v=45",
+      "./js/ai.js": "./js/ai.js?v=45",
+      "./js/analyze.js": "./js/analyze.js?v=45",
+      "./js/anthropic.js": "./js/anthropic.js?v=45",
+      "./js/app.js": "./js/app.js?v=45",
+      "./js/commands.js": "./js/commands.js?v=45",
+      "./js/dictation.js": "./js/dictation.js?v=45",
+      "./js/extract.js": "./js/extract.js?v=45",
+      "./js/gemini.js": "./js/gemini.js?v=45",
+      "./js/media.js": "./js/media.js?v=45",
+      "./js/neural.js": "./js/neural.js?v=45",
+      "./js/onboarding.js": "./js/onboarding.js?v=45",
+      "./js/openai.js": "./js/openai.js?v=45",
+      "./js/ripple.js": "./js/ripple.js?v=45",
+      "./js/speech.js": "./js/speech.js?v=45",
+      "./js/storage.js": "./js/storage.js?v=45"
     }
   }
   </script>
@@ -579,6 +581,6 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=44"></script>
+  <script type="module" src="js/app.js?v=45"></script>
 </body>
 </html>

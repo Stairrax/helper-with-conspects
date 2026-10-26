@@ -47,7 +47,7 @@ function saveProject() {
   saveProjectTimer = setTimeout(() => { if (p && id) idbSet('project:' + id, p); }, 400);
 }
 const saveSources = () => idbSet('sources:' + cur(), sources);
-const persistProgress = () => { if (progress) saveProgress(progress, cur()); };
+const persistProgress = () => { if (progress) { saveProgress(progress, cur()); syncDueSoon(); } };
 
 // ---------- Утилиты ----------
 
@@ -1106,6 +1106,7 @@ function renderSettings() {
   $('ripple').checked = settings.ripple !== false;
   $('formulasApart').checked = settings.formulasApart !== false;
   $('fxPause').checked = !!settings.fxPause;
+  $('remind').checked = !!settings.remind;
 }
 
 // Оформление: тема (тот же выбор делает скрипт в <head> до первой отрисовки) и «капля» при нажатии
@@ -1466,6 +1467,74 @@ async function importKonspekt(data) {
 }
 
 $('shareBtn').addEventListener('click', shareKonspekt);
+
+// ---------- Карточки для Anki ----------
+// Текстовый файл, который Anki импортирует сам (Файл → Импорт): вопрос — ответ, колода — предмет, метка — тема.
+
+function buildAnki() {
+  const title = curSubject()?.title || 'Конспект';
+  const cell = (s) => String(s || '').replace(/[\t\r\n]+/g, ' ').trim();
+  const tag = (s) => cell(s).replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'тема';
+  const rows = [];
+  for (const t of activeSeq(project)) {
+    for (const q of t.quiz || []) rows.push([q.q, q.a, tag(t.title)]);
+    for (const f of t.formulas || []) rows.push([`Формула: ${f.n || t.title}`, f.f + (f.d ? `<br>${f.d}` : ''), tag(t.title)]);
+  }
+  const head = ['#separator:tab', '#html:true', `#deck:${cell(title)}`, '#notetype:Basic', '#tags column:3'];
+  return { rows: rows.length, text: [...head, ...rows.map((r) => r.map(cell).join('\t'))].join('\n') + '\n', title };
+}
+
+$('ankiBtn').addEventListener('click', async () => {
+  if (!project) return toast('Сначала составьте план');
+  const { rows, text, title } = buildAnki();
+  if (!rows) return toast('Пока нет карточек: вопросы появляются, когда темы подготовлены с самопроверкой, а формулы — в темах с формулами.', 6000);
+  const name = `${title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'конспект'} — карточки.txt`;
+  if (await shareOrDownload(new File([text], name, { type: 'text/plain' }))) toast(`Карточек: ${rows}. В Anki: Файл → Импорт → этот файл.`, 6000);
+});
+
+// ---------- Напоминания о повторении ----------
+// Сроки повторения кладём в Cache Storage: его читает service worker, которого Chrome будит примерно раз в день
+// (Periodic Background Sync — только для установленного приложения), и показывает уведомление «пора повторить».
+
+function syncDueSoon() { clearTimeout(syncDueSoon.t); syncDueSoon.t = setTimeout(syncDue, 1500); }
+function syncDue() {
+  let all = {};
+  try { all = JSON.parse(localStorage.getItem('kd.due') || '{}'); } catch { /* ignore */ }
+  if (project && progress) {
+    all[cur()] = project.topics.filter((t) => progress.stats?.[t.id]?.due && !project.plan.skipped[t.id])
+      .map((t) => ({ t: t.title, due: progress.stats[t.id].due }));
+  }
+  for (const k of Object.keys(all)) if (!subjects?.list.some((x) => x.id === k)) delete all[k];
+  try { localStorage.setItem('kd.due', JSON.stringify(all)); } catch { /* ignore */ }
+  const body = JSON.stringify({ on: !!settings.remind, items: Object.values(all).flat() });
+  caches.open('kd-meta').then((c) => c.put('due.json', new Response(body, { headers: { 'content-type': 'application/json' } }))).catch(() => {});
+}
+
+async function setRemind(on) {
+  settings.remind = false;
+  if (on) {
+    if (!('Notification' in window)) toast('Этот браузер не умеет показывать уведомления');
+    else if ((await Notification.requestPermission()) !== 'granted') toast('Уведомления не разрешены — их можно включить в настройках сайта в Chrome', 5000);
+    else {
+      settings.remind = true;
+      const reg = await navigator.serviceWorker?.ready;
+      let ok = false;
+      try {
+        const st = await navigator.permissions?.query({ name: 'periodic-background-sync' });
+        if (reg?.periodicSync && st?.state === 'granted') { await reg.periodicSync.register('kd-review', { minInterval: 12 * 3600 * 1000 }); ok = true; }
+      } catch { /* не поддерживается */ }
+      toast(ok ? 'Напоминания включены: Chrome проверяет примерно раз в день.'
+        : 'Напоминания включены, но браузер пока не разрешает проверять в фоне. Обычно это работает в установленном приложении на Android — установите его на главный экран.', 6500);
+    }
+  } else {
+    try { await (await navigator.serviceWorker?.ready)?.periodicSync?.unregister('kd-review'); } catch { /* ignore */ }
+  }
+  saveSettings(settings);
+  renderSettings();
+  syncDue();
+}
+$('remind').addEventListener('change', (e) => setRemind(e.target.checked));
+navigator.serviceWorker?.addEventListener('message', (e) => { if (e.data?.type === 'review' && project) switchTab('plan'); });
 $('subjectImport').addEventListener('click', () => { openSubjectSheet(false); $('importInput').click(); });
 $('importInput').addEventListener('change', async (e) => {
   const f = e.target.files?.[0];
@@ -1730,7 +1799,10 @@ async function init() {
   renderInstall();
   if (!settings.apiKey && !onboardingDone()) wizard.open(0);
   // быстрое действие на иконке: «Продолжить диктовку»
-  if (new URLSearchParams(location.search).get('go') === 'dictate' && project) switchTab('dictate');
+  const go = new URLSearchParams(location.search).get('go');
+  if (go === 'dictate' && project) switchTab('dictate');
+  if (go === 'review' && project) switchTab('plan'); // из уведомления «пора повторить»
+  syncDue();
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   window.addEventListener('pagehide', persistProgress);

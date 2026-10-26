@@ -2,7 +2,7 @@
 // Запросы к API нейросетей никогда не кэшируются.
 
 // При выпуске новой версии поднимайте VERSION и ?v= в index.html (importmap и app.js) — одно и то же число.
-const VERSION = 'kd-v44';
+const VERSION = 'kd-v45';
 const SHELL = [
   './',
   'index.html',
@@ -43,7 +43,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== VERSION && k !== 'kd-cdn' && k !== 'kd-voices' && k !== 'kd-fonts').map((k) => caches.delete(k)))) // скачанный голос не удаляем
+      .then((keys) => Promise.all(keys.filter((k) => k !== VERSION && k !== 'kd-cdn' && k !== 'kd-voices' && k !== 'kd-fonts' && k !== 'kd-meta').map((k) => caches.delete(k)))) // скачанный голос не удаляем
       .then(() => self.clients.claim()),
   );
 });
@@ -97,4 +97,38 @@ self.addEventListener('fetch', (e) => {
       .catch(async () => (await caches.match(req, { ignoreSearch: true })) ||
         (req.mode === 'navigate' ? caches.match('index.html') : Response.error())),
   );
+});
+
+// ---------- Напоминания о повторении ----------
+// Страница кладёт сроки в kd-meta/due.json; Chrome будит service worker примерно раз в день (periodicsync).
+
+const META = (name) => new URL(name, self.registration.scope).href;
+const DAY = 24 * 3600 * 1000;
+
+async function remindDue() {
+  const c = await caches.open('kd-meta');
+  const r = await c.match(META('due.json'));
+  if (!r) return;
+  const { on, items } = await r.json();
+  const now = Date.now();
+  const due = (items || []).filter((x) => x.due <= now).sort((a, b) => a.due - b.due);
+  if (!on || !due.length) return;
+  const last = await c.match(META('reminded.json'));
+  if (last && now - (await last.json()).at < 0.8 * DAY) return; // не чаще раза в сутки
+  await self.registration.showNotification('Пора повторить', {
+    body: due.length === 1 ? `«${due[0].t}»` : `«${due[0].t}» и ещё ${due.length - 1}`,
+    icon: 'icons/icon-192.png', tag: 'kd-review', data: { url: './?go=review' },
+  });
+  await c.put(META('reminded.json'), new Response(JSON.stringify({ at: now })));
+}
+
+self.addEventListener('periodicsync', (e) => { if (e.tag === 'kd-review') e.waitUntil(remindDue()); });
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+    const w = wins[0];
+    if (w) { w.postMessage({ type: 'review' }); return w.focus(); }
+    return self.clients.openWindow(e.notification.data?.url || './');
+  }));
 });
