@@ -28,6 +28,7 @@ export const DEFAULT_SETTINGS = {
   intonation: true,       // живая интонация голосов Silero: логические ударения, «нá руки»
   abbreviate: false,      // диктовать сокращениями: «физ. лиц», «НДФЛ»
   formulasApart: true,    // 3+ формулы в теме — в отдельный блок, голос объясняет словами
+  fxPause: false,         // пауза в диктовке, пока открыт блок формул
   listenOnly: false,      // «Только слушаю»: текст подряд, без пауз на запись (в транспорте)
   voiceStyle: 'none',     // 'none' | 'jarvis' — стиль ИИ-ассистента
   address: '',            // обращение: '' | 'сэр' | 'мэм'
@@ -36,7 +37,7 @@ export const DEFAULT_SETTINGS = {
   selfCheck: true,        // самопроверка после каждой темы
   breakEvery: 40,         // напоминать о перерыве каждые N минут (0 — не напоминать)
   headsetButtons: false,  // управление кнопками наушников
-  theme: 'classic',       // 'classic' | 'neon' — оформление
+  theme: 'classic',       // 'classic' | 'neon' | 'light' | 'auto' (как в системе) — оформление
   ripple: true,           // «капля» при нажатии на кнопки
 };
 

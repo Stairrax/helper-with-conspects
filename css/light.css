@@ -1,0 +1,49 @@
+/* Светлая тема «Тетрадь»: бумажный фон, кусок текста — на тетрадном листе с полями и линейкой.
+   Включается атрибутом <html data-theme="light"> (или «как в системе», когда телефон в светлом режиме).
+   Шрифты Onest (описан в neon.css) и Literata лежат в fonts/ и скачиваются только при этой теме. */
+
+@font-face { font-family: 'Literata'; font-weight: 400; font-display: swap; src: url(../fonts/literata-cyrillic-400.woff2) format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: 'Literata'; font-weight: 400; font-display: swap; src: url(../fonts/literata-latin-400.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4eee3; --surface: #fffbf3; --surface2: #efe7d8; --surface3: #e5dbc8; --line: #e0d4bf;
+  --text: #211d17; --muted: #6f6453;
+  --accent: #0f766e; --on-accent: #ffffff; --accent-soft: #d5ebe7;
+  --ok: #15803d; --on-ok: #ffffff; --warn: #b45309; --danger: #b91c1c; --stop: #c2410c; --listen: #9d174d;
+  --ripple-ring: #0f766e; --ripple-ring2: #5eead4;
+}
+[data-theme="light"] body { font-family: 'Onest', Roboto, system-ui, sans-serif; }
+[data-theme="light"] .appbar h1, [data-theme="light"] .topic h2, [data-theme="light"] .plan-sum .big { font-weight: 600; }
+
+[data-theme="light"] .chunk {
+  background: #fffdf8 repeating-linear-gradient(to bottom, transparent 0 35px, #e9dcc6 35px 36px);
+  background-position: 0 3px; border: 1px solid #e6d9c3; border-radius: 22px;
+  justify-content: flex-start; padding-top: 44px;
+  box-shadow: 0 1px 0 #ddd0b8, 0 14px 30px rgba(90, 64, 30, .08);
+}
+[data-theme="light"] .chunk::before { content: ''; position: absolute; left: 40px; top: 0; bottom: 0; width: 2px; background: #f1b9b3; }
+[data-theme="light"] .chunk p { font-family: 'Literata', 'Noto Serif', Georgia, serif; font-size: 23px; line-height: 36px; padding-left: 34px; color: #1d1a15; }
+[data-theme="light"] .qa-open .chunk p { font-size: 18px; line-height: 36px; }
+[data-theme="light"] .chunk-hint { color: #9a8f7c; }
+
+[data-theme="light"] .mic.on { background: #dcfce7; }
+[data-theme="light"] .switch i { border-color: #b9ad97; }
+[data-theme="light"] .switch i::after { background: #9a8f7c; }
+[data-theme="light"] .switch input:checked + i::after { background: #fff; }
+[data-theme="light"] .plan li { box-shadow: 0 1px 0 #e3d7c2; }
+[data-theme="light"] .plan li.done .pnum { background: #dcfce7; }
+[data-theme="light"] .banner.warn { color: #92400e; }
+[data-theme="light"] .badge.weak { background: #fde8cc; }
+[data-theme="light"] .badge.good { background: #dcfce7; }
+[data-theme="light"] .sheet-handle { background: #cfc3ad; }
+[data-theme="light"] .sheet-scrim { background: rgba(40, 30, 15, .35); }
+[data-theme="light"] .toast { background: #211d17; color: #fff; }
+[data-theme="light"] .navbar { background: #fffbf3; border-top: 1px solid #e6d9c3; }
+[data-theme="light"] .stopbar { background: linear-gradient(to top, var(--bg) 75%, transparent); }
+[data-theme="light"] .stop { border-radius: 24px; box-shadow: 0 10px 24px rgba(194, 65, 12, .3); --ripple-ring: #fdba74; --ripple-ring2: #fed7aa; }
+[data-theme="light"] .stop.listening { --ripple-ring: #f9a8d4; --ripple-ring2: #fbcfe8; }
+[data-theme="light"] .icon-btn.play { border-radius: 50%; box-shadow: 0 10px 22px rgba(15, 118, 110, .3); }
+[data-theme="light"] .dot.s-speaking { box-shadow: 0 0 0 4px rgba(15, 118, 110, .18); }
+[data-theme="light"] .fx-f { color: #1d1a15; }
+[data-theme="light"] .ripple-dot { background: #0f766e; }

@@ -8,6 +8,7 @@ import {
 import { stream, conn } from './ai.js';
 import { activeSeq, pauseFor, LISTEN_GAP_MS } from './analyze.js';
 import { abbreviate } from './abbr.js';
+import { matchAppCommand, findTopic, looksLikeRequest, aiCommand, HELP_TEXT } from './commands.js';
 
 const DICTATING = ['speaking', 'gap', 'waiting'];
 const QA_STATES = ['thinking', 'answering'];
@@ -194,6 +195,103 @@ export class Dictation {
     const i = seq.findIndex((x) => x.id === id);
     if (i >= 0) return seq[i + 1]?.id || null;
     return seq.find((x) => x.id !== id && !this.pos.done?.[x.id])?.id || null;
+  }
+
+  prevTopicId(id) {
+    const seq = this.seq();
+    const i = seq.findIndex((x) => x.id === id);
+    return i > 0 ? seq[i - 1].id : null;
+  }
+
+  /** Тема, о которой сейчас речь: прерванная, текущая или только что продиктованная. */
+  hereTopicId() {
+    return this.resumePos?.topicId || (this.state === 'topicEnd' && this.lastSpoken?.topicId) || this.pos.topicId || this.lastSpoken?.topicId || null;
+  }
+
+  /** Диктовка с начала темы id. */
+  gotoTopic(id) {
+    stopSpeaking();
+    this.abortAnswer();
+    this.clearQuestion();
+    this.resolveWaiter(null);
+    this.cancelAutoResume();
+    this.token++;
+    this.mode = 'dictate';
+    this.quiz = null;
+    if (this.pos.done) delete this.pos.done[id];
+    this.pos.topicId = id;
+    this.pos.chunk = 0;
+    this.announced = null;
+    this.endedTopic = null;
+    this.resumePos = null;
+    this.save();
+    this.run();
+  }
+
+  whereText() {
+    const seq = this.seq();
+    const id = this.hereTopicId();
+    const i = seq.findIndex((x) => x.id === id);
+    if (i < 0) return seq.length ? `В плане тем: ${seq.length}. Диктовка ещё не начата.` : 'Плана пока нет.';
+    const t = seq[i];
+    const n = t.chunks?.length || 0;
+    const at = Math.min(n, (this.resumePos?.chunk ?? this.pos.chunk) + 1);
+    const left = seq.slice(i + 1).filter((x) => !this.pos.done?.[x.id]).length;
+    return `Тема ${i + 1} из ${seq.length}: «${t.title}»${n ? `, кусок ${at} из ${n}` : ''}. ${left ? `Дальше ещё тем: ${left}.` : 'Это последняя тема.'}`;
+  }
+
+  /**
+   * Команда приложения — голосом или текстом: темы, формулы, экраны, настройки.
+   * Во время диктовки отвечаем подсказкой на экране, а не голосом — чтобы не сбивать.
+   */
+  async appCommand(c) {
+    const quiet = DICTATING.includes(this.state) || this.state === 'reviewing';
+    const reply = async (text) => {
+      if (quiet) return this.h.toast(text, 3500);
+      const st = this.state;
+      const my = ++this.token;
+      stopSpeaking();
+      await this.say(text);
+      if (my === this.token && this.state === st) this.h.emit();
+    };
+    switch (c.cmd) {
+      case 'gotoTopic': {
+        const t = findTopic(this.seq(), c.arg);
+        if (!t) return reply(c.arg?.n ? `Темы номер ${c.arg.n} нет.` : 'Не нашёл такую тему. Скажите номер темы или слова из названия.');
+        this.h.toast(`Тема «${t.title}»`);
+        return this.gotoTopic(t.id);
+      }
+      case 'prevTopic': {
+        const id = this.prevTopicId(this.hereTopicId());
+        if (!id) return reply('Это первая тема.');
+        return this.gotoTopic(id);
+      }
+      case 'skipTopic': return this.skipTopic();
+      case 'repeatTopic': return this.repeatTopic();
+      case 'where': return reply(this.whereText());
+      case 'rate': return this.changeRate(c.arg < 0 ? -0.1 : 0.1);
+      case 'help':
+        if (quiet) this.interrupt('pause');
+        return reply(HELP_TEXT).then(() => null);
+      default: {
+        const text = this.h.appCommand?.(c, this.hereTopicId());
+        if (text) return reply(text);
+      }
+    }
+  }
+
+  /** Вопрос или просьба? Команды узнаём сразу, просьбы своими словами («сделай паузы подольше») разбирает нейросеть. */
+  async tryCommand(text) {
+    const local = matchAppCommand(text);
+    if (local) { await this.appCommand(local); return true; }
+    if (!looksLikeRequest(text)) return false;
+    const prev = this.state;
+    this.set('thinking');
+    const c = await aiCommand(text, this.settings);
+    if (this.state === 'thinking') this.set(prev);
+    if (!c) return false;
+    await this.appCommand(c);
+    return true;
   }
 
   // ---------- Микрофон ----------
@@ -877,6 +975,18 @@ export class Dictation {
       return;
     }
     const cmd = matchCommand(text);
+    // команда приложения («перейди к третьей теме», «покажи формулы», «паузы подольше») — по финальному результату
+    if (r.final && !cmd && !this.qBuf && !['quiz', 'quizListen', 'quizGrade'].includes(st)) {
+      const app = matchAppCommand(text);
+      const key = app && app.cmd + JSON.stringify(app.arg ?? '');
+      if (app && !(this.lastCmd?.cmd === key && Date.now() - this.lastCmd.at < CMD_REPEAT_MS)) {
+        this.consumed.add(r.id);
+        this.lastCmd = { cmd: key, at: Date.now() };
+        this.heard = '';
+        this.appCommand(app);
+        return;
+      }
+    }
     // одну и ту же команду распознавание часто присылает дважды (промежуточный и финальный вариант,
     // а на Android — ещё и повтором в следующем результате): второй раз не выполняем
     if (cmd && cmd !== 'spell' && this.lastCmd?.cmd === cmd && Date.now() - this.lastCmd.at < CMD_REPEAT_MS) {
@@ -1113,6 +1223,7 @@ ${prevQa ? `\nПРЕДЫДУЩИЕ ВОПРОСЫ В ЭТОЙ СЕССИИ:\n${p
     question = question.trim();
     if (!question) return;
     this.clearQuestion();
+    if (await this.tryCommand(question)) { this.heard = ''; this.h.emit(); return; }
     this.resolveWaiter(null);
     if (DICTATING.includes(this.state) || this.state === 'topicEnd' || this.state === 'reviewing') this.interrupt('question');
     stopSpeaking();

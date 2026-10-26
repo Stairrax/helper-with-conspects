@@ -12,12 +12,16 @@
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/styles.css">
   <link rel="stylesheet" href="css/neon.css">
+  <link rel="stylesheet" href="css/light.css">
   <script>
-    // тема — до первой отрисовки, чтобы экран не мигал
+    // тема — до первой отрисовки, чтобы экран не мигал (то же делает applyLook в app.js)
     try {
-      if (JSON.parse(localStorage.getItem('kd.settings') || '{}').theme === 'neon') {
-        document.documentElement.dataset.theme = 'neon';
-        document.querySelector('meta[name=theme-color]').content = '#000000';
+      let t = JSON.parse(localStorage.getItem('kd.settings') || '{}').theme;
+      if (t === 'auto') t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'classic';
+      if (t === 'neon' || t === 'light') {
+        document.documentElement.dataset.theme = t;
+        document.querySelector('meta[name=theme-color]').content = t === 'neon' ? '#000000' : '#f4eee3';
+        document.querySelector('meta[name=color-scheme]').content = t === 'light' ? 'light' : 'dark';
       }
     } catch { /* ignore */ }
   </script>
@@ -331,6 +335,7 @@
         <label class="switch"><span>Подстраивать паузу<small>длиннее, если часто прошу повторить</small></span><input id="adaptivePause" type="checkbox"><i></i></label>
         <label class="switch"><span>Самопроверка после темы<small>2–3 вопроса, ответ голосом</small></span><input id="selfCheck" type="checkbox"><i></i></label>
         <label class="switch"><span>Формулы — отдельным блоком<small>если в теме 3 формулы и больше, голос рассказывает словами, из чего складывается величина, а сами формулы — в блоке «∑ Формулы» на экране диктовки и в плане: их удобнее учить глазами, решая задачи</small></span><input id="formulasApart" type="checkbox"><i></i></label>
+        <label class="switch"><span>Пауза, пока открыты формулы<small>диктовка останавливается, когда открываете «∑ Формулы», и продолжается, когда закрываете</small></span><input id="fxPause" type="checkbox"><i></i></label>
         <label class="switch"><span>Диктовать сокращениями<small>как преподаватель: «физ. лиц», «юр. лица», «НДФЛ», «РФ», «ЦБ», «ИП», «госбюджет», «т. е.» — записывать быстрее; на экране тоже сокращения</small></span><input id="abbreviate" type="checkbox"><i></i></label>
         <label class="field mt">Напоминать о перерыве <b id="breakVal"></b>
           <input id="breakEvery" type="range" min="0" max="90" step="5">
@@ -348,6 +353,11 @@
             <li><b>записал</b> / <b>готово</b> — в паузе: дальше; пока читается новый кусок — ничего не пропускается</li>
             <li>сразу вопросом: <b>почему…</b>, <b>что такое…</b>, <b>вопрос…</b></li>
             <li>после ответа: <b>да</b> / <b>дальше</b></li>
+            <li><b>перейди к третьей теме</b>, <b>к теме налоги</b>, <b>предыдущая тема</b>, <b>последняя тема</b>, <b>какая сейчас тема</b></li>
+            <li><b>покажи формулы</b>, <b>формулы следующей темы</b>, <b>закрой формулы</b></li>
+            <li><b>открой план</b> / <b>настройки</b>, <b>только слушаю</b>, <b>режим записи</b>, <b>паузы подольше</b> / <b>покороче</b></li>
+            <li><b>включи</b> / <b>выключи сокращения</b>, <b>интонацию</b>, <b>самопроверку</b>; <b>светлая</b> / <b>тёмная</b> / <b>неоновая тема</b>; <b>скрой текст</b>; <b>сохрани конспект</b></li>
+            <li><b>что ты умеешь</b> — список команд. Можно и своими словами («сделай паузы покороче») — нейросеть поймёт, что сделать. Команды работают и текстом в поле вопроса</li>
           </ul>
         </details>
       </div>
@@ -357,6 +367,8 @@
         <div class="seg">
           <label><input type="radio" name="theme" value="classic"><span>Классика</span></label>
           <label><input type="radio" name="theme" value="neon"><span>Неон</span></label>
+          <label><input type="radio" name="theme" value="light"><span>Светлая</span></label>
+          <label><input type="radio" name="theme" value="auto"><span>Как в системе</span></label>
         </div>
         <label class="switch"><span>Капля при нажатии<small>от пальца по кнопке расходится волна, от главных кнопок — круги, как по воде</small></span><input id="ripple" type="checkbox"><i></i></label>
       </div>
@@ -499,21 +511,22 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/abbr.js": "./js/abbr.js?v=41",
-      "./js/ai.js": "./js/ai.js?v=41",
-      "./js/analyze.js": "./js/analyze.js?v=41",
-      "./js/anthropic.js": "./js/anthropic.js?v=41",
-      "./js/app.js": "./js/app.js?v=41",
-      "./js/dictation.js": "./js/dictation.js?v=41",
-      "./js/extract.js": "./js/extract.js?v=41",
-      "./js/gemini.js": "./js/gemini.js?v=41",
-      "./js/media.js": "./js/media.js?v=41",
-      "./js/neural.js": "./js/neural.js?v=41",
-      "./js/onboarding.js": "./js/onboarding.js?v=41",
-      "./js/openai.js": "./js/openai.js?v=41",
-      "./js/ripple.js": "./js/ripple.js?v=41",
-      "./js/speech.js": "./js/speech.js?v=41",
-      "./js/storage.js": "./js/storage.js?v=41"
+      "./js/abbr.js": "./js/abbr.js?v=42",
+      "./js/ai.js": "./js/ai.js?v=42",
+      "./js/analyze.js": "./js/analyze.js?v=42",
+      "./js/anthropic.js": "./js/anthropic.js?v=42",
+      "./js/app.js": "./js/app.js?v=42",
+      "./js/commands.js": "./js/commands.js?v=42",
+      "./js/dictation.js": "./js/dictation.js?v=42",
+      "./js/extract.js": "./js/extract.js?v=42",
+      "./js/gemini.js": "./js/gemini.js?v=42",
+      "./js/media.js": "./js/media.js?v=42",
+      "./js/neural.js": "./js/neural.js?v=42",
+      "./js/onboarding.js": "./js/onboarding.js?v=42",
+      "./js/openai.js": "./js/openai.js?v=42",
+      "./js/ripple.js": "./js/ripple.js?v=42",
+      "./js/speech.js": "./js/speech.js?v=42",
+      "./js/storage.js": "./js/storage.js?v=42"
     }
   }
   </script>
@@ -547,6 +560,6 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=41"></script>
+  <script type="module" src="js/app.js?v=42"></script>
 </body>
 </html>

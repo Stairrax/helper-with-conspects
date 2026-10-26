@@ -23,6 +23,8 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 let settings = loadSettings();
+const THEMES = { classic: 'классика', neon: 'неон', light: 'светлая', auto: 'как в системе' };
+const lightScheme = matchMedia('(prefers-color-scheme: light)');
 applyLook();
 let subjects = null;        // { list: [{id, title}], current }
 let sources = [];
@@ -189,6 +191,7 @@ const dict = new Dictation({
   saveProgress: persistProgress,
   emit,
   toast,
+  appCommand,
   kickGenerator: () => gen.loop(),
   onActivity: (playing) => updateMedia(dictTitle(), playing),
 });
@@ -364,6 +367,7 @@ $('analyzeBtn').addEventListener('click', async () => {
 let openTopic = null;
 let fxFrom = null; // тема на экране диктовки — с неё открывается блок формул
 let fxAt = null;   // тема, формулы которой открыты
+let fxPaused = false; // диктовку остановило окно формул — при закрытии продолжаем
 let openPoints = new Set();
 const dots = (d) => '●'.repeat(d) + '○'.repeat(5 - d);
 
@@ -631,11 +635,11 @@ async function shareOrDownload(file) {
   return true;
 }
 
-$('exportBtn').addEventListener('click', async () => {
-  if (!project) return;
+async function exportFile() {
   const { name, text } = buildExport();
   await shareOrDownload(new File([text], name, { type: 'text/markdown' }));
-});
+}
+$('exportBtn').addEventListener('click', () => { if (project) exportFile(); });
 
 $('fitPauseBtn').addEventListener('click', () => {
   if (!project) return;
@@ -854,8 +858,69 @@ function openFormulas(id) {
     seq.slice(i).find(hasFx) || [...seq.slice(0, i)].reverse().find(hasFx) || list[0];
   fxAt = t.id;
   renderFormulas();
+  const wasOpen = !$('fxSheet').classList.contains('hidden');
   $('fxSheet').classList.remove('hidden');
   $('fxList').scrollTop = 0;
+  // по желанию — пока смотрите формулы, диктовка стоит; закрыли окно — продолжается
+  if (!wasOpen && settings.fxPause && ['speaking', 'gap', 'waiting', 'reviewing'].includes(dict.state)) {
+    dict.interrupt('pause');
+    fxPaused = true;
+  }
+}
+
+function closeFormulas() {
+  $('fxSheet').classList.add('hidden');
+  if (fxPaused && dict.state === 'paused') dict.resume();
+  fxPaused = false;
+}
+
+/** Формулы соседней темы с блоком (dir = 1 / -1) относительно темы id. */
+function fxNeighbor(id, dir) {
+  const seq = project ? activeSeq(project) : [];
+  const i = seq.findIndex((x) => x.id === id);
+  const part = dir > 0 ? seq.slice(i + 1) : seq.slice(0, Math.max(0, i)).reverse();
+  return part.find(hasFx) || null;
+}
+
+// ---------- Команды приложения голосом или текстом (разбор — js/commands.js, темы — dictation.js) ----------
+
+function appCommand(c, topicId) {
+  const set = (key, v) => { settings[key] = v; saveSettings(settings); renderSettings(); render(); };
+  const sheetOpen = !$('fxSheet').classList.contains('hidden');
+  switch (c.cmd) {
+    case 'fx': {
+      if (!fxTopics().length) return 'В этом конспекте нет блоков формул: они появляются у тем, где формул три и больше.';
+      const base = sheetOpen ? fxAt : topicId;
+      if (c.arg === 'next' || c.arg === 'prev') {
+        const t = fxNeighbor(base, c.arg === 'next' ? 1 : -1);
+        if (!t) return c.arg === 'next' ? 'Дальше тем с формулами нет.' : 'Раньше тем с формулами нет.';
+        openFormulas(t.id);
+      } else openFormulas(base);
+      return '';
+    }
+    case 'fxClose': closeFormulas(); return '';
+    case 'tab': closeFormulas(); switchTab(c.arg); return '';
+    case 'listenOnly':
+      set('listenOnly', !!c.arg);
+      return c.arg ? 'Только слушаю: текст пойдёт подряд, без пауз на запись.' : 'Записываю: снова паузы на запись.';
+    case 'pauseLen': {
+      const p = Math.min(15, Math.max(1, (+settings.pause || 3) + (c.arg < 0 ? -1 : 1)));
+      set('pause', p);
+      return `Пауза между кусками — ${String(p).replace('.', ',')} ${plural(Math.round(p), ['секунда', 'секунды', 'секунд'])}.`;
+    }
+    case 'abbreviate': set('abbreviate', !!c.arg); return c.arg ? 'Диктую сокращениями.' : 'Диктую без сокращений.';
+    case 'intonation': set('intonation', !!c.arg); setIntonation(!!c.arg); return c.arg ? 'Живая интонация включена.' : 'Живая интонация выключена.';
+    case 'selfCheck': set('selfCheck', !!c.arg); return c.arg ? 'Самопроверка после темы включена.' : 'Самопроверка выключена.';
+    case 'showText': set('showText', !!c.arg); return '';
+    case 'theme': {
+      if (!THEMES[c.arg]) return '';
+      set('theme', c.arg);
+      applyLook();
+      return `Оформление: ${THEMES[c.arg]}.`;
+    }
+    case 'export': if (project) exportFile(); return project ? '' : 'Сначала добавьте материал и составьте план.';
+  }
+  return '';
 }
 
 function renderFormulas() {
@@ -877,7 +942,7 @@ function renderFormulas() {
 }
 
 $('fxBtn').addEventListener('click', () => openFormulas(fxFrom));
-$('fxSheet').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) $('fxSheet').classList.add('hidden'); });
+$('fxSheet').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeFormulas(); });
 for (const [btn, step] of [['fxPrev', -1], ['fxNext', 1]]) {
   $(btn).addEventListener('click', () => {
     const list = fxTopics();
@@ -1006,16 +1071,21 @@ function renderSettings() {
   document.querySelectorAll('input[name=theme]').forEach((r) => { r.checked = r.value === settings.theme; });
   $('ripple').checked = settings.ripple !== false;
   $('formulasApart').checked = settings.formulasApart !== false;
+  $('fxPause').checked = !!settings.fxPause;
 }
 
 // Оформление: тема (тот же выбор делает скрипт в <head> до первой отрисовки) и «капля» при нажатии
 function applyLook() {
-  const neon = settings.theme === 'neon';
-  if (neon) document.documentElement.dataset.theme = 'neon';
-  else delete document.documentElement.dataset.theme;
-  document.querySelector('meta[name=theme-color]').content = neon ? '#000000' : '#0b0c10';
+  let t = THEMES[settings.theme] ? settings.theme : 'classic';
+  if (t === 'auto') t = lightScheme.matches ? 'light' : 'classic';
+  if (t === 'classic') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = t;
+  document.querySelector('meta[name=theme-color]').content = { classic: '#0b0c10', neon: '#000000', light: '#f4eee3' }[t];
+  document.querySelector('meta[name=color-scheme]').content = t === 'light' ? 'light' : 'dark';
   setRipple(settings.ripple !== false);
 }
+// «как в системе»: телефон сам переключился на тёмную или светлую тему
+lightScheme.addEventListener?.('change', () => { if (settings.theme === 'auto') applyLook(); });
 
 // Когда слушает микрофон. На Android включённый микрофон переводит звук в «режим звонка».
 function micMode() {
@@ -1069,6 +1139,7 @@ bind('adaptivePause', 'adaptivePause');
 bind('selfCheck', 'selfCheck');
 bind('abbreviate', 'abbreviate');
 bind('formulasApart', 'formulasApart');
+bind('fxPause', 'fxPause');
 // включили — у тем, подготовленных раньше, ищем формулы
 $('formulasApart').addEventListener('change', () => { if (project && !gen.running && gen.pick(project)) gen.loop(); });
 bind('breakEvery', 'breakEvery', Number, 'input');
