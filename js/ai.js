@@ -3,10 +3,24 @@
 import * as gemini from './gemini.js';
 import * as openai from './openai.js';
 import * as anthropic from './anthropic.js';
+import { FREE_PROXY, deviceId } from './config.js';
 
 export { GeminiError as AIError } from './gemini.js';
 
 export const PROVIDERS = {
+  // без своего ключа — через сервер автора (есть, только если задан его адрес в config.js)
+  ...(FREE_PROXY ? {
+    free: {
+      name: 'Бесплатно, без ключа',
+      kind: 'openai',
+      base: FREE_PROXY,
+      model: 'auto',
+      models: [],
+      keyUrl: '',
+      keyHint: '',
+      noKey: true,
+    },
+  } : {}),
   openrouter: {
     name: 'OpenRouter (работает из России, есть бесплатные модели)',
     kind: 'openai',
@@ -67,6 +81,8 @@ export const PROVIDERS = {
 export function conn(settings) {
   const p = PROVIDERS[settings.provider] || PROVIDERS.gemini;
   const base = (settings.baseUrl || '').trim();
+  // модель выбирает сервер; вместо ключа — номер устройства для дневного лимита
+  if (p.noKey) return { kind: 'openai', apiKey: deviceId(), model: 'auto', baseUrl: p.base, fallbacks: [], lang: settings.contentLang === 'en' ? 'en' : 'ru' };
   return {
     kind: p.kind,
     apiKey: settings.apiKey,
@@ -76,6 +92,9 @@ export function conn(settings) {
     lang: settings.contentLang === 'en' ? 'en' : 'ru',
   };
 }
+
+/** Можно ли обращаться к нейросети: свой ключ или бесплатный режим. */
+export const hasAI = (settings) => !!(PROVIDERS[settings.provider]?.noKey || settings.apiKey);
 
 export const providerName = (settings) => (PROVIDERS[settings.provider] || PROVIDERS.gemini).name.replace(/ \(.*\)$/, '');
 

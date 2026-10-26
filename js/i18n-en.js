@@ -108,6 +108,19 @@ export const EXACT = {
   'Любой сервис с OpenAI-совместимым API (/chat/completions): укажите адрес, ключ и модель.': 'Any service with an OpenAI-compatible API (/chat/completions): enter the address, key and model.',
   'По умолчанию (русский)': 'Default',
 
+  // бесплатный режим
+  'Бесплатно, без ключа': 'Free, no key',
+  'Через сервер автора. Есть дневной лимит; если его не хватает, укажите свой ключ OpenRouter — «Настроить заново».': 'Through the author’s server. There is a daily limit; if it’s not enough, add your own OpenRouter key — “Set up again”.',
+  'Ничего настраивать не нужно: запросы идут через сервер автора приложения. Есть дневной лимит на устройство.': 'Nothing to set up: requests go through the app author’s server. There is a daily limit per device.',
+  'Ничего настраивать не нужно: нейросеть уже подключена.': 'Nothing to set up: the AI is already connected.',
+  'У меня свой ключ OpenRouter': 'I have my own OpenRouter key', 'Последний шаг': 'Last step',
+  'На сегодня бесплатные запросы закончились. Продолжите завтра или укажите свой ключ: Настройки → Настроить заново.': 'Free requests are used up for today. Continue tomorrow or add your own key: Settings → Set up again.',
+  'Бесплатный режим сейчас недоступен. Попробуйте позже или укажите свой ключ: Настройки → Настроить заново.': 'Free mode is unavailable right now. Try later or add your own key: Settings → Set up again.',
+  'Бесплатный режим не настроен на сервере.': 'Free mode isn’t set up on the server.',
+  'Сервер нейросети не отвечает. Попробуйте ещё раз.': 'The AI server isn’t responding. Try again.',
+  'Этот сервер работает только для приложения «Диктор конспектов».': 'This server only works for the Notes Narrator app.',
+  'Запрос слишком большой.': 'The request is too large.', 'Неверный запрос.': 'Invalid request.',
+
   // язык
   'Язык конспекта': 'Notes language', 'Язык интерфейса': 'Interface language', 'Русский': 'Russian',
   'Конспект на английском: нейросеть готовит куски, вопросы и ответы по-английски, распознаёт английскую речь и команды («stop», «next», «repeat», «go to topic two»), голос — английский (Android или Piper: Lessac, Amy, Ryan).':

@@ -73,10 +73,11 @@ const between = (text) => text.split('<<<')[1].split('>>>')[0].trim();
 
 /** Заглушка нейросети (OpenRouter, Gemini, Anthropic). ai — счётчики и запросы, чтобы тест мог их проверить. */
 export async function mockAI(page, ai) {
-  await page.route(/generativelanguage\.googleapis|openrouter\.ai\/api|api\.anthropic\.com/, async (route) => {
+  await page.route(/generativelanguage\.googleapis|openrouter\.ai\/api|api\.anthropic\.com|free-proxy\.test/, async (route) => {
     const url = route.request().url();
     const body = JSON.parse(route.request().postData() || '{}');
-    const isA = url.includes('anthropic'), isO = url.includes('openrouter'), isStream = url.includes('streamGenerateContent') || body.stream;
+    const isA = url.includes('anthropic'), isO = url.includes('openrouter') || url.includes('free-proxy'), isStream = url.includes('streamGenerateContent') || body.stream;
+    ai.auth = route.request().headers().authorization || '';
     let text;
     if (isA) text = (body.messages[0].content || []).map((c) => c.text || '').join('');
     else if (isO) { const c = body.messages.at(-1).content; text = typeof c === 'string' ? c : c.map((x) => x.text || '').join(''); }
@@ -160,7 +161,7 @@ export const DEFAULT_SETTINGS = {
  * settings — поверх DEFAULT_SETTINGS (null — чистый первый запуск с мастером).
  */
 export async function makeOpen(browser, base) {
-  return async function open({ settings = {}, desktop = false, permissions = [], userAgent, titles = ['Доходы и расходы', 'Сложный процент'], locale = 'ru-RU' } = {}) {
+  return async function open({ settings = {}, desktop = false, permissions = [], userAgent, titles = ['Доходы и расходы', 'Сложный процент'], locale = 'ru-RU', freeProxy = '' } = {}) {
     const ctx = await browser.newContext(desktop
       ? { viewport: { width: 1280, height: 800 }, permissions, locale }
       : { viewport: { width: 412, height: 915 }, isMobile: true, hasTouch: true, permissions, locale, ...(userAgent ? { userAgent } : {}) });
@@ -169,6 +170,8 @@ export async function makeOpen(browser, base) {
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push('console: ' + m.text()); });
     await page.addInitScript(fakeSpeech);
+    // бесплатный режим: адрес сервера, как будто он записан в js/config.js
+    if (freeProxy) await page.addInitScript((u) => localStorage.setItem('kd.freeProxy', u), freeProxy);
     const ai = { prompts: [], titles, segment: 0, plan: 0, generate: 0, answer: 0, command: 0, tidy: 0, extract: 0 };
     await mockAI(page, ai);
     await page.goto(base);

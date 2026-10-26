@@ -1,6 +1,7 @@
 // Хранилище: настройки и прогресс — localStorage, тяжёлые данные проекта — IndexedDB.
 
 import { IOS } from './platform.js';
+import { FREE_PROXY } from './config.js';
 
 const LS_SETTINGS = 'kd.settings';
 const LS_PROGRESS = 'kd.progress';
@@ -74,6 +75,8 @@ export function loadSettings() {
   }
   const out = { ...DEFAULT_SETTINGS, profiles: {}, ...first, ...saved };
   if (IOS && !out.themePicked) out.theme = 'ios';
+  // своего ключа нет — бесплатный режим через сервер автора (если он настроен)
+  if (FREE_PROXY && !out.apiKey && out.provider === 'openrouter') out.provider = 'free';
   return out;
 }
 

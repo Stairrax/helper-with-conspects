@@ -63,7 +63,8 @@ async function freeModels() {
 // ---------- Мастер ----------
 
 /**
- * hooks: getSettings(), save(), liveVoice(statusEl) -> Promise<boolean>, onFinish(goSettings), importFile()
+ * hooks: getSettings(), save(), liveVoice(statusEl) -> Promise<boolean>, onFinish(goSettings), importFile(),
+ *   free — есть бесплатный режим: ключ не нужен, мастер сразу переходит к звуку
  */
 export function initOnboarding(hooks) {
   const root = $('onboard');
@@ -77,7 +78,19 @@ export function initOnboarding(hooks) {
     hooks.onFinish(goSettings);
   };
 
-  $('obStart').addEventListener('click', () => show(1));
+  if (hooks.free) {
+    $('obNeedKey').textContent = 'Ничего настраивать не нужно: нейросеть уже подключена.';
+    $('obStart').textContent = 'Начать';
+    $('obOwnKey').classList.remove('hidden');
+  }
+  $('obStart').addEventListener('click', () => {
+    if (!hooks.free) { $('obStep2').textContent = 'Шаг 2 из 2'; show(1); return; }
+    const s = hooks.getSettings();
+    if (!s.apiKey) { s.provider = 'free'; hooks.save(); }
+    $('obStep2').textContent = 'Последний шаг';
+    show(2);
+  });
+  $('obOwnKey').addEventListener('click', () => { $('obStep2').textContent = 'Шаг 2 из 2'; show(1); });
   // присланный готовый конспект диктуется без ключа — мастер можно пройти потом (Настройки → Настроить заново)
   $('obImport').addEventListener('click', () => { close(false); hooks.importFile?.(); });
   $('obOther').addEventListener('click', () => close(true));

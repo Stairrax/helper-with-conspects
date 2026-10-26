@@ -1,0 +1,17 @@
+# Настройки сервера бесплатного режима для Cloudflare Workers (если ставите через командную строку: npx wrangler deploy).
+# Ключ OpenRouter сюда НЕ пишите — он задаётся секретом: npx wrangler secret put OPENROUTER_KEY
+
+name = "konspekt-free"
+main = "worker.js"
+compatibility_date = "2025-09-01"
+
+[vars]
+# сайт приложения; несколько — через запятую
+ALLOWED_ORIGINS = "https://stairrax.github.io"
+# модель для всех пользователей (можно несколько через запятую: первая — основная, остальные — запасные)
+MODELS = "google/gemini-2.5-flash"
+# запросов в сутки на одно устройство и на один IP-адрес (один конспект — это примерно 10–30 запросов)
+DAILY_PER_DEVICE = "300"
+DAILY_PER_IP = "1500"
+# максимальная длина одного ответа в токенах
+MAX_TOKENS = "16000"

@@ -47,10 +47,13 @@ function errMessage(body) {
   return (typeof e === 'string' ? e : e.message || JSON.stringify(e)) + raw;
 }
 
-const isDailyLimit = (body) => /per-day|free-models-per-day|daily/i.test(errMessage(body));
+// сервер бесплатного режима повторять стоит, только если не ответила сама нейросеть
+const canRetry = (status, data) => (data?.error?.proxy ? data.error.code === 'upstream' : (status === 429 && !isDailyLimit(data)) || status >= 500);
+const isDailyLimit = (body) => body?.error?.code === 'daily_limit' || /per-day|free-models-per-day|daily/i.test(errMessage(body));
 
 function humanError(status, body) {
   const msg = errMessage(body);
+  if (body?.error?.proxy) return body.error.message; // сервер бесплатного режима сам пишет понятный текст
   if (status === 401) return 'Неверный API-ключ (401). Проверьте ключ в настройках.';
   if (status === 402) return 'Недостаточно средств на счёте провайдера (402). Выберите бесплатную модель (с «:free» на конце) или пополните баланс.';
   if (status === 403) return 'Доступ запрещён (403): ' + msg;
@@ -119,7 +122,7 @@ export async function generate(opts) {
       attempt--;
       continue;
     } else {
-      err = new AIError(humanError(res.status, data), { status: res.status, retryable: (res.status === 429 && !isDailyLimit(data)) || res.status >= 500 });
+      err = new AIError(humanError(res.status, data), { status: res.status, retryable: canRetry(res.status, data) });
     }
     if (!err.retryable || attempt > retries) throw err;
     let wait = err.status === 429 ? retryAfter(res) || 15000 * attempt : 2000 * 2 ** (attempt - 1);
@@ -141,7 +144,7 @@ export async function stream(opts) {
     if (!res.ok || !res.body) {
       const data = await res.json().catch(() => ({}));
       const noFallbacks = res.status === 400 && (opts.fallbacks || []).length > 0; // повторим обычным запросом без них
-      throw new AIError(humanError(res.status, data), { status: res.status, retryable: (res.status === 429 && !isDailyLimit(data)) || res.status >= 500 || noFallbacks });
+      throw new AIError(humanError(res.status, data), { status: res.status, retryable: canRetry(res.status, data) || noFallbacks });
     }
     const reader = res.body.getReader();
     const dec = new TextDecoder();

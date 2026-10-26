@@ -42,6 +42,8 @@ js/lecture.js         запись лекции: расшифровка речи
 js/i18n.js            язык интерфейса: перевод экрана по словарю на лету
 js/i18n-en.js         английский словарь интерфейса
 js/platform.js        iPhone или Android
+js/config.js          адрес сервера бесплатного режима (без своего ключа)
+server/               сервер бесплатного режима для Cloudflare Workers — как поставить, в server/README.md
 voices/silero-ru/     файлы модели Silero (CC BY-NC-SA 4.0)
 js/analyze.js         темы, план, оценка времени, генерация кусков и проверка полноты
 js/ai.js              выбор провайдера нейросети

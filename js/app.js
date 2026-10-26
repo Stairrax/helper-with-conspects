@@ -8,7 +8,7 @@ import { fileToSource } from './extract.js';
 import {
   analyze, generateTopicChunks, generateExtras, extractFormulas, FX_MIN, orderTopics, activeSeq, estimateTopicSec, allocateBudget, fitPause,
 } from './analyze.js';
-import { listModels, conn, PROVIDERS, providerName } from './ai.js';
+import { listModels, conn, PROVIDERS, providerName, hasAI } from './ai.js';
 import {
   loadVoices, getVoices, speak, stopSpeaking, setEngine, setStyle, setIntonation, setSpeechLang, srSupported, ttsSupported, hasBtHeadset, onBtChange,
 } from './speech.js';
@@ -306,7 +306,7 @@ $('lectureDone').addEventListener('click', async () => {
   $('lecturePanel').classList.add('hidden');
   if (!raw) return toast('Запись пустая');
   let text = roughParagraphs(raw);
-  if ($('lectureTidy').checked && settings.apiKey) {
+  if ($('lectureTidy').checked && hasAI(settings)) {
     try { text = await tidyTranscript(raw, settings, (m) => toast(m, 8000)); } catch (e) {
       toast('Не получилось навести порядок — сохраняю расшифровку как есть: ' + (e.message || e), 6000);
     }
@@ -388,7 +388,7 @@ function logLine(msg, cls = '') {
 }
 
 $('analyzeBtn').addEventListener('click', async () => {
-  if (!settings.apiKey) { wizard.open(1); return; }
+  if (!hasAI(settings)) { wizard.open(1); return; }
   if (!sources.length) return toast('Добавьте хотя бы один конспект');
   const budgetMin = getBudget();
   if (!budgetMin) return toast('Укажите, сколько у вас времени');
@@ -1092,7 +1092,7 @@ $('questionInput').addEventListener('input', (e) => {
 function sendQuestion() {
   const q = $('questionInput').value.trim();
   if (!q) return;
-  if (!settings.apiKey) { toast(`Укажите ключ API (${providerName(settings)}) в настройках`); return; }
+  if (!hasAI(settings)) { toast(`Укажите ключ API (${providerName(settings)}) в настройках`); return; }
   $('questionInput').value = '';
   $('questionInput').style.height = '';
   $('questionInput').blur();
@@ -1118,6 +1118,7 @@ function renderVoices() {
 
 let modelsLoaded = false;
 const PROVIDER_HINTS = {
+  free: 'Ничего настраивать не нужно: запросы идут через сервер автора приложения. Есть дневной лимит на устройство.',
   openrouter: 'Один ключ — доступ к моделям Google, Anthropic, DeepSeek и других; работает из России. Бесплатные модели оканчиваются на «:free» (нажмите «Проверить ключ» — они будут в начале списка), но у них низкие дневные лимиты.',
   anthropic: 'Claude напрямую. Нужен отдельный ключ API с оплатой в console.anthropic.com — подписка claude.ai (Pro/Max) не даёт доступа к API. Из России API не работает (блокировка по стране); Claude доступен и через OpenRouter.',
   gemini: 'Бесплатный ключ в Google AI Studio. Из России Google блокирует запросы — нужен VPN или свой прокси (поле «Адрес API»).',
@@ -1128,7 +1129,9 @@ const PROVIDER_HINTS = {
 
 function renderSettings() {
   const prov = PROVIDERS[settings.provider] || PROVIDERS.gemini;
-  $('aiSummary').innerHTML = settings.apiKey
+  $('aiSummary').innerHTML = prov.noKey
+    ? 'Бесплатно, без ключа<span class="muted">Через сервер автора. Есть дневной лимит; если его не хватает, укажите свой ключ OpenRouter — «Настроить заново».</span>'
+    : settings.apiKey
     ? `${esc(providerName(settings))} · ключ указан<span class="muted">Модель: ${esc(settings.model)}${settings.fallbackModels?.length && settings.provider === 'openrouter' ? ` (+${settings.fallbackModels.length} запасные)` : ''}</span>`
     : '<span style="color:var(--warn)">Ключ не указан — нажмите «Настроить заново».</span>';
   $('provider').value = settings.provider;
@@ -1139,6 +1142,7 @@ function renderSettings() {
   $('baseUrl').value = settings.baseUrl;
   $('baseUrl').placeholder = prov.base || 'https://…/v1';
   if (!modelsLoaded) $('modelList').innerHTML = (prov.models || []).map((m) => `<option value="${esc(m)}"></option>`).join('');
+  document.querySelectorAll('.key-field').forEach((el) => el.classList.toggle('hidden', !!prov.noKey));
   $('providerHint').innerHTML = `<span>${PROVIDER_HINTS[settings.provider] || ''}</span>` +
     (prov.keyUrl ? ` <span>Ключ:</span> <a href="${prov.keyUrl}" target="_blank" rel="noopener">${esc(prov.keyUrl.replace('https://', ''))}</a>` : '');
   $('rate').value = settings.rate;
@@ -1845,11 +1849,12 @@ function renderWarnings() {
 
 const wizard = initOnboarding({
   getSettings: () => settings,
+  free: !!PROVIDERS.free,
   importFile: () => $('importInput').click(),
   save: () => { saveSettings(settings); renderSettings(); },
   liveVoice: (statusEl) => {
     settings.voiceEngine = 'neural';
-    settings.neuralVoice = 'silero-baya';
+    settings.neuralVoice = settings.contentLang === 'en' ? 'en-lessac' : 'silero-baya';
     saveSettings(settings);
     renderSettings();
     audioContext();
@@ -1930,7 +1935,7 @@ async function init() {
   if (project && (last === 'plan' || last === 'dictate')) switchTab(last);
   else if (project && started) switchTab('dictate');
   renderInstall();
-  if (!settings.apiKey && !onboardingDone()) wizard.open(0);
+  if (!settings.apiKey && !onboardingDone()) wizard.open(0); // и в бесплатном режиме: проверить звук и микрофон
   // быстрое действие на иконке: «Продолжить диктовку»
   const go = new URLSearchParams(location.search).get('go');
   if (go === 'dictate' && project) switchTab('dictate');

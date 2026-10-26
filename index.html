@@ -268,19 +268,19 @@
           <select id="provider"></select>
         </label>
         <p class="hint" id="providerHint"></p>
-        <label class="field">Ключ API
+        <label class="field key-field">Ключ API
           <div class="row">
             <input id="apiKey" type="password" autocomplete="off" spellcheck="false">
             <button id="showKey" class="icon-btn" aria-label="Показать ключ"><svg><use href="#i-eye"/></svg></button>
           </div>
         </label>
-        <label class="field">Модель
+        <label class="field key-field">Модель
           <input id="model" type="text" list="modelList" spellcheck="false" autocapitalize="off">
           <datalist id="modelList"></datalist>
         </label>
-        <button id="checkKey" class="btn tonal wide">Проверить ключ</button>
-        <div id="keyStatus" class="status small"></div>
-        <details class="mini">
+        <button id="checkKey" class="btn tonal wide key-field">Проверить ключ</button>
+        <div id="keyStatus" class="status small key-field"></div>
+        <details class="mini key-field">
           <summary>Свой адрес API</summary>
           <label class="field">Адрес (например, прокси)
             <input id="baseUrl" type="text" inputmode="url" spellcheck="false" autocapitalize="off">
@@ -552,10 +552,11 @@
       <ul class="ob-list">
         <li>Читает конспект вслух короткими кусками — вы успеваете записывать.</li>
         <li>Останавливается по кнопке или слову «стоп» и отвечает на вопросы.</li>
-        <li>Нужна одна настройка — бесплатный ключ OpenRouter. Это займёт пару минут.</li>
+        <li id="obNeedKey">Нужна одна настройка — бесплатный ключ OpenRouter. Это займёт пару минут.</li>
       </ul>
       <button id="obInstall" class="btn tonal wide hidden">Установить как приложение</button>
       <button id="obStart" class="btn filled wide">Настроить</button>
+      <button id="obOwnKey" class="btn text wide hidden">У меня свой ключ OpenRouter</button>
       <button id="obImport" class="btn text wide">Мне прислали готовый конспект</button>
       <button id="obRestore" class="btn text wide">Восстановить из резервной копии</button>
     </section>
@@ -581,7 +582,7 @@
     </section>
 
     <section class="ob-step hidden">
-      <div class="ob-num">Шаг 2 из 2</div>
+      <div class="ob-num" id="obStep2">Шаг 2 из 2</div>
       <h2>Звук и микрофон</h2>
       <p class="muted">Проверьте, что слышно голос, и разрешите микрофон — он нужен для команд «стоп», «дальше» и вопросов голосом. Голос <span class="sys">Android</span> звучит механически. Живой голос «Бая» работает прямо на телефоне, без интернета: его один раз скачивают — около 120&nbsp;МБ, лучше по Wi-Fi.</p>
       <button id="obVoice" class="btn tonal wide">Прослушать голос</button>
@@ -601,26 +602,27 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/abbr.js": "./js/abbr.js?v=50",
-      "./js/ai.js": "./js/ai.js?v=50",
-      "./js/analyze.js": "./js/analyze.js?v=50",
-      "./js/anthropic.js": "./js/anthropic.js?v=50",
-      "./js/app.js": "./js/app.js?v=50",
-      "./js/commands.js": "./js/commands.js?v=50",
-      "./js/lecture.js": "./js/lecture.js?v=50",
-      "./js/i18n.js": "./js/i18n.js?v=50",
-      "./js/i18n-en.js": "./js/i18n-en.js?v=50",
-      "./js/platform.js": "./js/platform.js?v=50",
-      "./js/dictation.js": "./js/dictation.js?v=50",
-      "./js/extract.js": "./js/extract.js?v=50",
-      "./js/gemini.js": "./js/gemini.js?v=50",
-      "./js/media.js": "./js/media.js?v=50",
-      "./js/neural.js": "./js/neural.js?v=50",
-      "./js/onboarding.js": "./js/onboarding.js?v=50",
-      "./js/openai.js": "./js/openai.js?v=50",
-      "./js/ripple.js": "./js/ripple.js?v=50",
-      "./js/speech.js": "./js/speech.js?v=50",
-      "./js/storage.js": "./js/storage.js?v=50"
+      "./js/abbr.js": "./js/abbr.js?v=51",
+      "./js/ai.js": "./js/ai.js?v=51",
+      "./js/analyze.js": "./js/analyze.js?v=51",
+      "./js/anthropic.js": "./js/anthropic.js?v=51",
+      "./js/app.js": "./js/app.js?v=51",
+      "./js/commands.js": "./js/commands.js?v=51",
+      "./js/lecture.js": "./js/lecture.js?v=51",
+      "./js/config.js": "./js/config.js?v=51",
+      "./js/i18n.js": "./js/i18n.js?v=51",
+      "./js/i18n-en.js": "./js/i18n-en.js?v=51",
+      "./js/platform.js": "./js/platform.js?v=51",
+      "./js/dictation.js": "./js/dictation.js?v=51",
+      "./js/extract.js": "./js/extract.js?v=51",
+      "./js/gemini.js": "./js/gemini.js?v=51",
+      "./js/media.js": "./js/media.js?v=51",
+      "./js/neural.js": "./js/neural.js?v=51",
+      "./js/onboarding.js": "./js/onboarding.js?v=51",
+      "./js/openai.js": "./js/openai.js?v=51",
+      "./js/ripple.js": "./js/ripple.js?v=51",
+      "./js/speech.js": "./js/speech.js?v=51",
+      "./js/storage.js": "./js/storage.js?v=51"
     }
   }
   </script>
@@ -654,6 +656,6 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=50"></script>
+  <script type="module" src="js/app.js?v=51"></script>
 </body>
 </html>
