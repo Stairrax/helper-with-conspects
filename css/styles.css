@@ -439,6 +439,7 @@ body.has-stop .toast { bottom: calc(var(--nav-h) + var(--stop-h) + var(--safe-b)
   .desk-only { display: block; }
 }
 .desk-only { display: none; }
+body.ios .android-only, body:not(.ios) .ios-only { display: none !important; }
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 6px 0 0; color: var(--muted); font-size: 14px; }
 .keys kbd { font: 600 12px/1 ui-monospace, monospace; color: var(--text); background: var(--surface3); border-radius: 6px; padding: 5px 8px; justify-self: start; }
 

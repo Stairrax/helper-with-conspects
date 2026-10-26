@@ -160,10 +160,10 @@ export const DEFAULT_SETTINGS = {
  * settings — поверх DEFAULT_SETTINGS (null — чистый первый запуск с мастером).
  */
 export async function makeOpen(browser, base) {
-  return async function open({ settings = {}, desktop = false, permissions = [], titles = ['Доходы и расходы', 'Сложный процент'] } = {}) {
+  return async function open({ settings = {}, desktop = false, permissions = [], userAgent, titles = ['Доходы и расходы', 'Сложный процент'] } = {}) {
     const ctx = await browser.newContext(desktop
       ? { viewport: { width: 1280, height: 800 }, permissions }
-      : { viewport: { width: 412, height: 915 }, isMobile: true, hasTouch: true, permissions });
+      : { viewport: { width: 412, height: 915 }, isMobile: true, hasTouch: true, permissions, ...(userAgent ? { userAgent } : {}) });
     const page = await ctx.newPage();
     const errors = [];
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));

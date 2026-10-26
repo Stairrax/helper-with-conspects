@@ -2,7 +2,7 @@
 // Запросы к API нейросетей никогда не кэшируются.
 
 // При выпуске новой версии поднимайте VERSION и ?v= в index.html (importmap и app.js) — одно и то же число.
-const VERSION = 'kd-v46';
+const VERSION = 'kd-v47';
 const SHELL = [
   './',
   'index.html',
@@ -13,6 +13,7 @@ const SHELL = [
   'js/abbr.js',
   'js/commands.js',
   'js/lecture.js',
+  'js/platform.js',
   'js/ai.js',
   'js/analyze.js',
   'js/anthropic.js',
@@ -33,6 +34,7 @@ const SHELL = [
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/maskable-512.png',
+  'icons/apple-touch-icon.png',
 ];
 const CDN = /^https:\/\/(cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|unpkg\.com)\//;
 

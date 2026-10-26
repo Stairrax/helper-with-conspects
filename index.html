@@ -6,6 +6,10 @@
   <meta name="theme-color" content="#0b0c10">
   <meta name="color-scheme" content="dark">
   <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Диктор">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="description" content="Голосовой диктатор конспектов: диктует материал кусками, мгновенно останавливается по команде «стоп» и отвечает на вопросы.">
   <title>Диктор конспектов</title>
   <link rel="manifest" href="manifest.webmanifest">
@@ -273,7 +277,7 @@
       <div class="card">
         <div class="card-title">Голос</div>
         <div class="seg" id="engineSeg">
-          <label><input type="radio" name="voiceEngine" value="system"><span>Android</span></label>
+          <label><input type="radio" name="voiceEngine" value="system"><span class="sys">Android</span></label>
           <label><input type="radio" name="voiceEngine" value="neural"><span>Нейросеть на телефоне</span></label>
         </div>
         <div class="row mt">
@@ -296,7 +300,15 @@
               <button id="testVoice" class="icon-btn" aria-label="Прослушать"><svg><use href="#i-volume"/></svg></button>
             </div>
           </label>
-          <details class="mini">
+          <details class="mini ios-only">
+            <summary>Как сделать голос iPhone естественнее</summary>
+            <ol class="cmds">
+              <li>Настройки → <b>Универсальный доступ</b> → <b>Устный контент</b> → <b>Голоса</b> → <b>Русский</b>.</li>
+              <li>Выберите голос с пометкой <b>«улучшенный»</b> (например, «Милена») и скачайте его.</li>
+              <li>Вернитесь сюда и нажмите 🔊, чтобы послушать.</li>
+            </ol>
+          </details>
+          <details class="mini android-only">
             <summary>Как сделать голос Android естественнее</summary>
             <ol class="cmds">
               <li>Настройки телефона → поиск «Синтез речи» (или «Преобразование текста в речь»).</li>
@@ -315,7 +327,8 @@
           </label>
           <div id="neuralStatus" class="status small"></div>
           <label class="switch" id="intonationRow"><span>Живая интонация<small>голос выделяет главное, как лектор: термин перед «— это», слова в «кавычках», «не …, а …», «важно»; разговорные ударения — «нá руки», «зá город», «нé был». Выключите и включите, нажимая 🔊, чтобы сравнить</small></span><input id="intonation" type="checkbox"><i></i></label>
-          <p class="hint">Работает прямо на телефоне, без интернета и лимитов. Живые голоса (Бая, Ксения, Ксюша, Айдар, Евгений) один раз скачиваются вместе — около 120 МБ, остальные — около 65 МБ каждый; лучше по Wi-Fi. Если голос не загрузится, приложение будет говорить голосом Android.</p>
+          <p class="hint">Работает прямо на телефоне, без интернета и лимитов. Живые голоса (Бая, Ксения, Ксюша, Айдар, Евгений) один раз скачиваются вместе — около 120 МБ, остальные — около 65 МБ каждый; лучше по Wi-Fi. Если голос не загрузится, приложение будет говорить голосом <span class="sys">Android</span>.</p>
+          <p class="hint ios-only">На iPhone живым голосам может не хватить памяти браузера — если страница перезагружается во время загрузки голоса, выберите голос iPhone.</p>
           <p class="hint">Живые голоса — модель <a href="https://github.com/snakers4/silero-models" target="_blank" rel="noopener">Silero</a> (© Silero Team, лицензия <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.ru" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>: только некоммерческое использование). Остальные — <a href="https://github.com/rhasspy/piper" target="_blank" rel="noopener">Piper</a>.</p>
         </div>
         <label class="field">Скорость речи <b id="rateVal"></b>
@@ -348,7 +361,7 @@
         </div>
         <label class="switch"><span>Пауза дольше в сложных местах</span><input id="scalePause" type="checkbox"><i></i></label>
         <label class="switch"><span>Подстраивать паузу<small>длиннее, если часто прошу повторить</small></span><input id="adaptivePause" type="checkbox"><i></i></label>
-        <label class="switch" id="remindRow"><span>Напоминать о повторении<small id="remindHint">уведомление, когда пора повторить тему — для установленного приложения на Android</small></span><input id="remind" type="checkbox"><i></i></label>
+        <label class="switch android-only" id="remindRow"><span>Напоминать о повторении<small id="remindHint">уведомление, когда пора повторить тему — для установленного приложения на Android</small></span><input id="remind" type="checkbox"><i></i></label>
         <label class="switch"><span>Самопроверка после темы<small>2–3 вопроса, ответ голосом</small></span><input id="selfCheck" type="checkbox"><i></i></label>
         <label class="switch"><span>Формулы — отдельным блоком<small>если в теме 3 формулы и больше, голос рассказывает словами, из чего складывается величина, а сами формулы — в блоке «∑ Формулы» на экране диктовки и в плане: их удобнее учить глазами, решая задачи</small></span><input id="formulasApart" type="checkbox"><i></i></label>
         <label class="switch"><span>Пауза, пока открыты формулы<small>диктовка останавливается, когда открываете «∑ Формулы», и продолжается, когда закрываете</small></span><input id="fxPause" type="checkbox"><i></i></label>
@@ -527,7 +540,7 @@
     <section class="ob-step hidden">
       <div class="ob-num">Шаг 2 из 2</div>
       <h2>Звук и микрофон</h2>
-      <p class="muted">Проверьте, что слышно голос, и разрешите микрофон — он нужен для команд «стоп», «дальше» и вопросов голосом. Голос Android звучит механически. Живой голос «Бая» работает прямо на телефоне, без интернета: его один раз скачивают — около 120&nbsp;МБ, лучше по Wi-Fi.</p>
+      <p class="muted">Проверьте, что слышно голос, и разрешите микрофон — он нужен для команд «стоп», «дальше» и вопросов голосом. Голос <span class="sys">Android</span> звучит механически. Живой голос «Бая» работает прямо на телефоне, без интернета: его один раз скачивают — около 120&nbsp;МБ, лучше по Wi-Fi.</p>
       <button id="obVoice" class="btn tonal wide">Прослушать голос</button>
       <div id="obVoiceStatus" class="ob-status"></div>
       <button id="obLive" class="btn tonal wide">Включить живой голос «Бая»</button>
@@ -545,23 +558,24 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/abbr.js": "./js/abbr.js?v=46",
-      "./js/ai.js": "./js/ai.js?v=46",
-      "./js/analyze.js": "./js/analyze.js?v=46",
-      "./js/anthropic.js": "./js/anthropic.js?v=46",
-      "./js/app.js": "./js/app.js?v=46",
-      "./js/commands.js": "./js/commands.js?v=46",
-      "./js/lecture.js": "./js/lecture.js?v=46",
-      "./js/dictation.js": "./js/dictation.js?v=46",
-      "./js/extract.js": "./js/extract.js?v=46",
-      "./js/gemini.js": "./js/gemini.js?v=46",
-      "./js/media.js": "./js/media.js?v=46",
-      "./js/neural.js": "./js/neural.js?v=46",
-      "./js/onboarding.js": "./js/onboarding.js?v=46",
-      "./js/openai.js": "./js/openai.js?v=46",
-      "./js/ripple.js": "./js/ripple.js?v=46",
-      "./js/speech.js": "./js/speech.js?v=46",
-      "./js/storage.js": "./js/storage.js?v=46"
+      "./js/abbr.js": "./js/abbr.js?v=47",
+      "./js/ai.js": "./js/ai.js?v=47",
+      "./js/analyze.js": "./js/analyze.js?v=47",
+      "./js/anthropic.js": "./js/anthropic.js?v=47",
+      "./js/app.js": "./js/app.js?v=47",
+      "./js/commands.js": "./js/commands.js?v=47",
+      "./js/lecture.js": "./js/lecture.js?v=47",
+      "./js/platform.js": "./js/platform.js?v=47",
+      "./js/dictation.js": "./js/dictation.js?v=47",
+      "./js/extract.js": "./js/extract.js?v=47",
+      "./js/gemini.js": "./js/gemini.js?v=47",
+      "./js/media.js": "./js/media.js?v=47",
+      "./js/neural.js": "./js/neural.js?v=47",
+      "./js/onboarding.js": "./js/onboarding.js?v=47",
+      "./js/openai.js": "./js/openai.js?v=47",
+      "./js/ripple.js": "./js/ripple.js?v=47",
+      "./js/speech.js": "./js/speech.js?v=47",
+      "./js/storage.js": "./js/storage.js?v=47"
     }
   }
   </script>
@@ -595,6 +609,6 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=46"></script>
+  <script type="module" src="js/app.js?v=47"></script>
 </body>
 </html>

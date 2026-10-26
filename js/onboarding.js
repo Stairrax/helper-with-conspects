@@ -1,5 +1,6 @@
 // Мастер первого запуска: ключ OpenRouter → автоматический подбор бесплатной модели → проверка звука и микрофона.
 
+import { IOS } from './platform.js';
 import { speak, stopSpeaking, loadVoices, getVoices, ttsSupported, srSupported, checkAudioDevices } from './speech.js';
 
 const OR_BASE = 'https://openrouter.ai/api/v1';
@@ -133,9 +134,10 @@ export function initOnboarding(hooks) {
     stopSpeaking();
     const r = await speak('Привет! Я буду диктовать ваш конспект. Если что-то непонятно — скажите «стоп» и задайте вопрос.', { rate: hooks.getSettings().rate });
     st.textContent = r === 'error'
-      ? 'Голос не воспроизвёлся. Проверьте громкость и что в Android установлен «Синтезатор речи Google».'
+      ? (IOS ? 'Голос не воспроизвёлся. Проверьте громкость и что переключатель «Без звука» сбоку iPhone выключен.' : 'Голос не воспроизвёлся. Проверьте громкость и что в Android установлен «Синтезатор речи Google».')
       : ru ? 'Если голос слышно — всё в порядке.'
-        : 'Русского голоса нет: установите русский язык в Настройки Android → Синтез речи → Google.';
+        : IOS ? 'Русского голоса нет: Настройки → Универсальный доступ → Устный контент → Голоса → Русский.'
+          : 'Русского голоса нет: установите русский язык в Настройки Android → Синтез речи → Google.';
   });
 
   $('obLive').addEventListener('click', async () => {

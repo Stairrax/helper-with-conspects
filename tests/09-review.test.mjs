@@ -34,8 +34,13 @@ export default async ({ open, prepare, FINANCE, ok }) => {
   }, tid);
   await page.reload(); await page.waitForTimeout(2500);
   const sw = ctx.serviceWorkers()[0] || await ctx.waitForEvent('serviceworker');
-  await sw.evaluate(() => remindDue());
-  await sw.evaluate(() => remindDue());
-  const notes = await page.evaluate(async () => (await (await navigator.serviceWorker.ready).getNotifications()).map((n) => `${n.title}: ${n.body}`));
+  // уведомление перехватываем: облегчённый Chromium в GitHub Actions их не показывает даже с разрешением
+  const notes = await sw.evaluate(async () => {
+    const shown = [];
+    self.registration.showNotification = async (title, o) => { shown.push(`${title}: ${o.body}`); };
+    await remindDue();
+    await remindDue();
+    return shown;
+  });
   ok(notes.length === 1 && notes[0] === 'Пора повторить: «Доходы и расходы»', 'уведомление, не чаще раза в сутки: ' + JSON.stringify(notes));
 };

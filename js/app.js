@@ -17,6 +17,7 @@ import { enableMedia, disableMedia, updateMedia, mediaSupported } from './media.
 import { Dictation, STATE_TEXT } from './dictation.js';
 import { initOnboarding, onboardingDone } from './onboarding.js';
 import { setRipple } from './ripple.js';
+import { IOS, SYS } from './platform.js';
 import { LectureRecorder, lectureSupported, tidyTranscript, roughParagraphs, fmtClock as lectureClock } from './lecture.js';
 
 const $ = (id) => document.getElementById(id);
@@ -27,6 +28,17 @@ let settings = loadSettings();
 const THEMES = { classic: 'классика', neon: 'неон', light: 'светлая', auto: 'как в системе' };
 const lightScheme = matchMedia('(prefers-color-scheme: light)');
 applyLook();
+// iPhone: свои подписи («голос iPhone») и инструкции; блоки .ios-only / .android-only
+if (IOS) {
+  document.body.classList.add('ios');
+  document.querySelectorAll('.sys').forEach((e) => { e.textContent = SYS; });
+  // звук и синтез речи Safari разрешает только из касания — «разблокируем» их на первом же нажатии
+  document.addEventListener('touchend', function unlock() {
+    document.removeEventListener('touchend', unlock, true);
+    try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch { /* ignore */ }
+    try { audioContext(); } catch { /* ignore */ }
+  }, true);
+}
 let subjects = null;        // { list: [{id, title}], current }
 let sources = [];
 let project = null;
@@ -1145,7 +1157,7 @@ function renderSettings() {
   $('styleHint').textContent = settings.voiceStyle !== 'jarvis' ? ''
     : settings.voiceEngine === 'neural'
       ? 'Стилизация под ИИ-ассистента из кино: тон ниже, «цифровой» оттенок и лёгкое эхо. Это не голос актёра — копировать чужой голос без разрешения нельзя. Лучше всего звучит с мужскими голосами.'
-      : 'С голосом Android можно только понизить тон. Полный эффект — с нейросетевым голосом.';
+      : `С голосом ${SYS} можно только понизить тон. Полный эффект — с нейросетевым голосом.`;
   const mic = micMode();
   document.querySelectorAll('input[name=micMode]').forEach((r) => { r.checked = r.value === mic; });
   $('micHint').textContent = micHint(mic);
@@ -1291,7 +1303,7 @@ function applyEngine() {
   setEngine(settings.voiceEngine, settings.neuralVoice, (err) => {
     // нейроголос не сработал посреди занятия — дальше говорим голосом Android
     setEngine('system');
-    if (!neuralFailNotified) { neuralFailNotified = true; toast('Нейросетевой голос не сработал — говорю голосом Android. ' + (err?.message || ''), 6000); }
+    if (!neuralFailNotified) { neuralFailNotified = true; toast(`Нейросетевой голос не сработал — говорю голосом ${SYS}. ` + (err?.message || ''), 6000); }
   });
 }
 
@@ -1305,7 +1317,7 @@ async function downloadNeural(also = null) {
   const downloaded = mb === 0;
   st.textContent = downloaded ? 'Загружаю голос…' : `Скачиваю голос (около ${mb} МБ)…`;
   const busy = !['idle', 'finished'].includes(dict.state);
-  if (busy) toast(`${downloaded ? 'Загружаю' : 'Скачиваю'} голос «${NEURAL_VOICES[id].replace(/ \(.*\)/, '')}» — пока говорю голосом Android`, 5000);
+  if (busy) toast(`${downloaded ? 'Загружаю' : 'Скачиваю'} голос «${NEURAL_VOICES[id].replace(/ \(.*\)/, '')}» — пока говорю голосом ${SYS}`, 5000);
   try {
     await prepareNeural(id, (p) => {
       if (p.stage === 'model' && p.total) st.textContent = `Скачиваю голос: ${Math.round((p.loaded / p.total) * 100)}%`;
@@ -1318,7 +1330,7 @@ async function downloadNeural(also = null) {
     if (busy) toast(`✓ Голос «${NEURAL_VOICES[id].replace(/ \(.*\)/, '')}» включён`);
     return true;
   } catch (e) {
-    st.textContent = '✗ Не удалось загрузить голос: ' + (e.message || e) + '. Пока говорю голосом Android — попробуйте позже или через Wi-Fi.';
+    st.textContent = '✗ Не удалось загрузить голос: ' + (e.message || e) + `. Пока говорю голосом ${SYS} — ` + 'попробуйте позже или через Wi-Fi.';
     return false;
   }
 }
@@ -1755,7 +1767,7 @@ $('btBannerClose').addEventListener('click', () => { btBannerHidden = true; rend
 
 function renderWarnings() {
   const warn = [];
-  if (!ttsSupported) warn.push('Этот браузер не поддерживает синтез речи. Откройте приложение в Chrome на Android.');
+  if (!ttsSupported) warn.push(IOS ? 'Этот браузер не поддерживает синтез речи. Откройте приложение в Safari.' : 'Этот браузер не поддерживает синтез речи. Откройте приложение в Chrome на Android.');
   if (!srSupported) {
     warn.push('Этот браузер не распознаёт речь — голосовые команды недоступны. Откройте приложение в Chrome; пока можно пользоваться кнопкой «СТОП / ВОПРОС» и писать вопросы.');
   }
@@ -1791,7 +1803,7 @@ $('rerunWizard').addEventListener('click', () => wizard.open(1));
 // ---------- Установка как приложения ----------
 
 let installPrompt = null;
-const isInstalled = () => matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches;
+const isInstalled = () => matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
 
 function renderInstall() {
   const show = !isInstalled();
@@ -1805,6 +1817,8 @@ async function installApp() {
     const { outcome } = await installPrompt.userChoice.catch(() => ({}));
     installPrompt = null;
     if (outcome === 'accepted') toast('Устанавливаю… Потом открывайте приложение с иконки на экране.', 5000);
+  } else if (IOS) {
+    toast('В Safari: кнопка «Поделиться» (квадрат со стрелкой) → «На экран „Домой“» → «Добавить».', 8000);
   } else {
     toast('Откройте меню Chrome ⋮ → «Установить приложение» (или «Добавить на главный экран»).', 6000);
   }
