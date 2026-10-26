@@ -77,11 +77,12 @@
       <div class="card">
         <div class="card-title">Конспекты</div>
         <ul id="sourceList" class="sources"></ul>
-        <p id="sourcesEmpty" class="muted small">Добавьте один или несколько конспектов: текст, файл (.txt, .md, .pdf, .docx) или фото страниц.</p>
+        <p id="sourcesEmpty" class="muted small">Добавьте один или несколько конспектов: текст, файл (.txt, .md, .pdf, .docx), фото страниц или запишите лекцию.</p>
         <div class="add-row">
           <button id="addTextBtn" class="chip-btn"><svg><use href="#i-edit"/></svg>Текст</button>
           <button id="addFileBtn" class="chip-btn"><svg><use href="#i-doc"/></svg>Файл</button>
           <button id="addPhotoBtn" class="chip-btn"><svg><use href="#i-camera"/></svg>Фото</button>
+          <button id="addLectureBtn" class="chip-btn"><svg><use href="#i-mic"/></svg>Лекция</button>
         </div>
         <input id="fileInput" type="file" multiple accept=".txt,.md,.markdown,.pdf,.docx,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
         <input id="photoInput" type="file" multiple accept="image/*" hidden>
@@ -91,6 +92,18 @@
           <div class="row end">
             <button id="pasteCancel" class="btn text">Отмена</button>
             <button id="pasteAdd" class="btn tonal">Добавить</button>
+          </div>
+        </div>
+        <div id="lecturePanel" class="lecture hidden">
+          <input id="lectureTitle" type="text" placeholder="Название лекции (необязательно)">
+          <div class="lecture-head"><span id="lectureDot" class="rec-dot"></span><b id="lectureClock">00:00</b><span id="lectureState" class="muted small"></span></div>
+          <div id="lectureText" class="lecture-text"></div>
+          <label class="switch"><span>Навести порядок нейросетью<small>знаки препинания, абзацы, исправление ошибок распознавания — примерно один запрос на каждые 20 минут лекции</small></span><input id="lectureTidy" type="checkbox" checked><i></i></label>
+          <p class="hint">Пока идёт запись, экран не гаснет — не блокируйте телефон. Нужен интернет: речь распознаёт Google. Звук не сохраняется, только текст; закроете приложение — запись продолжится с того же места.</p>
+          <div class="row end">
+            <button id="lectureCancel" class="btn text danger">Удалить</button>
+            <button id="lecturePause" class="btn tonal">Пауза</button>
+            <button id="lectureDone" class="btn filled">Готово</button>
           </div>
         </div>
       </div>
@@ -532,22 +545,23 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/abbr.js": "./js/abbr.js?v=45",
-      "./js/ai.js": "./js/ai.js?v=45",
-      "./js/analyze.js": "./js/analyze.js?v=45",
-      "./js/anthropic.js": "./js/anthropic.js?v=45",
-      "./js/app.js": "./js/app.js?v=45",
-      "./js/commands.js": "./js/commands.js?v=45",
-      "./js/dictation.js": "./js/dictation.js?v=45",
-      "./js/extract.js": "./js/extract.js?v=45",
-      "./js/gemini.js": "./js/gemini.js?v=45",
-      "./js/media.js": "./js/media.js?v=45",
-      "./js/neural.js": "./js/neural.js?v=45",
-      "./js/onboarding.js": "./js/onboarding.js?v=45",
-      "./js/openai.js": "./js/openai.js?v=45",
-      "./js/ripple.js": "./js/ripple.js?v=45",
-      "./js/speech.js": "./js/speech.js?v=45",
-      "./js/storage.js": "./js/storage.js?v=45"
+      "./js/abbr.js": "./js/abbr.js?v=46",
+      "./js/ai.js": "./js/ai.js?v=46",
+      "./js/analyze.js": "./js/analyze.js?v=46",
+      "./js/anthropic.js": "./js/anthropic.js?v=46",
+      "./js/app.js": "./js/app.js?v=46",
+      "./js/commands.js": "./js/commands.js?v=46",
+      "./js/lecture.js": "./js/lecture.js?v=46",
+      "./js/dictation.js": "./js/dictation.js?v=46",
+      "./js/extract.js": "./js/extract.js?v=46",
+      "./js/gemini.js": "./js/gemini.js?v=46",
+      "./js/media.js": "./js/media.js?v=46",
+      "./js/neural.js": "./js/neural.js?v=46",
+      "./js/onboarding.js": "./js/onboarding.js?v=46",
+      "./js/openai.js": "./js/openai.js?v=46",
+      "./js/ripple.js": "./js/ripple.js?v=46",
+      "./js/speech.js": "./js/speech.js?v=46",
+      "./js/storage.js": "./js/storage.js?v=46"
     }
   }
   </script>
@@ -581,6 +595,6 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=45"></script>
+  <script type="module" src="js/app.js?v=46"></script>
 </body>
 </html>

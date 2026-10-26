@@ -155,7 +155,7 @@ details.mini[open] summary::after { transform: rotate(-90deg); }
 .sources li svg { color: var(--muted); }
 .sources .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sources .size { color: var(--muted); font-size: 13px; white-space: nowrap; }
-.add-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.add-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .chip-btn {
   display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 48px;
   border: 1px solid var(--line); border-radius: 14px; background: none; font-size: 15px; font-weight: 500;
@@ -409,6 +409,17 @@ body.has-stop .toast { bottom: calc(var(--nav-h) + var(--stop-h) + var(--safe-b)
 .fx-f { font: 22px/1.4 'Noto Serif', 'Cambria Math', Georgia, serif; overflow-wrap: anywhere; user-select: text; }
 .fx-d { color: var(--muted); font-size: 14px; margin-top: 6px; }
 .fx-close { margin-top: 8px; min-height: 48px; flex: none; }
+
+/* ---------- Запись лекции ---------- */
+.lecture { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.lecture-head { display: flex; align-items: center; gap: 10px; font-size: 22px; }
+.lecture-head b { font-variant-numeric: tabular-nums; font-weight: 500; }
+.rec-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--muted); flex: none; }
+.rec-dot.on { background: var(--stop); animation: rec 1.2s ease-in-out infinite; }
+@keyframes rec { 50% { opacity: .35; } }
+.lecture-text { max-height: 34vh; min-height: 96px; overflow-y: auto; background: var(--surface2); border-radius: 14px; padding: 12px 14px; font-size: 15px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lecture-text i { color: var(--muted); font-style: normal; }
+.lecture-text:empty::before { content: 'Здесь появится текст лекции'; color: var(--muted); }
 
 /* ---------- Компьютер и планшет: вкладки слева, шире текст ---------- */
 @media (min-width: 900px) {

@@ -17,6 +17,7 @@ import { enableMedia, disableMedia, updateMedia, mediaSupported } from './media.
 import { Dictation, STATE_TEXT } from './dictation.js';
 import { initOnboarding, onboardingDone } from './onboarding.js';
 import { setRipple } from './ripple.js';
+import { LectureRecorder, lectureSupported, tidyTranscript, roughParagraphs, fmtClock as lectureClock } from './lecture.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -246,6 +247,61 @@ $('pasteAdd').addEventListener('click', () => {
   saveSources();
   renderSources();
 });
+
+// ---------- Запись лекции ----------
+
+const lecture = new LectureRecorder(renderLecture);
+function renderLecture(u) {
+  if ($('lecturePanel').classList.contains('hidden') && !u.running) return;
+  $('lectureClock').textContent = lectureClock(u.ms);
+  $('lectureDot').classList.toggle('on', u.running);
+  $('lectureState').textContent = u.error || (u.running ? 'Записываю…' : u.text ? 'Пауза' : '');
+  $('lecturePause').textContent = u.running ? 'Пауза' : u.text ? 'Продолжить' : 'Начать';
+  const box = $('lectureText');
+  const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+  box.innerHTML = esc(u.text) + (u.interim ? ` <i>${esc(u.interim)}</i>` : '');
+  if (atEnd) box.scrollTop = box.scrollHeight;
+}
+function openLecture(startNow) {
+  $('pastePanel').classList.add('hidden');
+  $('lecturePanel').classList.remove('hidden');
+  $('lectureTitle').value = lecture.title || '';
+  if (startNow && !lecture.running) {
+    // микрофон нужен записи: диктовку ставим на паузу
+    if (['speaking', 'gap', 'waiting', 'reviewing'].includes(dict.state)) dict.interrupt('pause');
+    dict.rec.stop();
+    lecture.start();
+  } else lecture.emit();
+}
+$('addLectureBtn').addEventListener('click', () => {
+  if (!lectureSupported) return toast('Этот браузер не умеет распознавать речь. Запись лекции работает в Chrome.', 5000);
+  openLecture(!lecture.hasDraft); // есть незаконченная запись — сначала показываем её
+});
+$('lectureTitle').addEventListener('input', (e) => { lecture.title = e.target.value; lecture.save(); });
+$('lecturePause').addEventListener('click', () => { if (lecture.running) lecture.pause(); else openLecture(true); });
+$('lectureCancel').addEventListener('click', () => {
+  if (lecture.text && !confirm('Удалить запись лекции?')) return;
+  lecture.discard();
+  $('lecturePanel').classList.add('hidden');
+});
+$('lectureDone').addEventListener('click', async () => {
+  const title = $('lectureTitle').value.trim() || `Лекция ${new Date().toLocaleDateString('ru-RU')}`;
+  const raw = lecture.finish();
+  $('lecturePanel').classList.add('hidden');
+  if (!raw) return toast('Запись пустая');
+  let text = roughParagraphs(raw);
+  if ($('lectureTidy').checked && settings.apiKey) {
+    try { text = await tidyTranscript(raw, settings, (m) => toast(m, 8000)); } catch (e) {
+      toast('Не получилось навести порядок — сохраняю расшифровку как есть: ' + (e.message || e), 6000);
+    }
+  }
+  sources.push({ id: uid(), name: title, kind: 'text', text });
+  saveSources();
+  renderSources();
+  toast(`Лекция «${title}» добавлена в материал — можно составлять план.`, 5000);
+});
+// незаконченная запись (закрыли приложение посреди пары) — показываем, чтобы продолжить или сохранить
+if (lecture.hasDraft) openLecture(false);
 
 $('addFileBtn').addEventListener('click', () => $('fileInput').click());
 $('addPhotoBtn').addEventListener('click', () => $('photoInput').click());
