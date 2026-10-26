@@ -1,5 +1,7 @@
 // Хранилище: настройки и прогресс — localStorage, тяжёлые данные проекта — IndexedDB.
 
+import { IOS } from './platform.js';
+
 const LS_SETTINGS = 'kd.settings';
 const LS_PROGRESS = 'kd.progress';
 
@@ -40,7 +42,8 @@ export const DEFAULT_SETTINGS = {
   headsetButtons: false,  // управление кнопками наушников
   contentLang: 'ru',      // 'ru' | 'en' — язык конспекта: распознавание, голос, команды и тексты нейросети
   uiLang: 'ru',           // 'ru' | 'en' — язык интерфейса (при первом запуске — язык браузера)
-  theme: 'classic',       // 'classic' | 'neon' | 'light' | 'auto' (как в системе) — оформление
+  theme: 'classic',       // 'ios' | 'classic' | 'neon' | 'light' | 'auto' (как в системе) — оформление; на iPhone — 'ios'
+  themePicked: false,     // оформление выбрано вручную (иначе на iPhone — iOS)
   ripple: true,           // «капля» при нажатии на кнопки
 };
 
@@ -69,7 +72,9 @@ export function loadSettings() {
     first.contentLang = 'en';
     first.neuralVoice = 'en-lessac';
   }
-  return { ...DEFAULT_SETTINGS, profiles: {}, ...first, ...saved };
+  const out = { ...DEFAULT_SETTINGS, profiles: {}, ...first, ...saved };
+  if (IOS && !out.themePicked) out.theme = 'ios';
+  return out;
 }
 
 export function saveSettings(s) {

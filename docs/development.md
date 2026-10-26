@@ -27,6 +27,7 @@ index.html            разметка и экраны
 css/styles.css        тёмная mobile-first тема
 css/neon.css          тема «Неон»
 css/light.css         светлая тема «Тетрадь»
+css/ios.css           оформление iOS (на iPhone — по умолчанию)
 fonts/                шрифты тем: Onest, Unbounded, Literata (SIL OFL 1.1)
 js/ripple.js          «капля» при нажатии на кнопки
 js/app.js             интерфейс, план, фоновая подготовка кусков

@@ -14,6 +14,18 @@ export default async ({ open, ok }) => {
   await page.click('#installBtn');
   ok(/На экран „Домой“/.test(await page.textContent('#toast')), 'установка: подсказка про «Поделиться → На экран „Домой“»');
 
+  // оформление iOS — само, пока не выбрали другое
+  ok(await page.evaluate(() => document.documentElement.dataset.theme) === 'ios', 'на iPhone — оформление iOS');
+  await page.click('[data-tab=settings]');
+  ok(await page.isChecked('input[name=theme][value=ios]') && !(await page.isVisible('#rippleRow')), 'в настройках выбрано «iOS», «капли» нет');
+  await page.evaluate(() => scrollTo(0, 800)); await page.waitForTimeout(500);
+  ok(await page.evaluate(() => document.body.classList.contains('scrolled') && +getComputedStyle(document.querySelector('.ios-bar')).opacity > .9
+    && document.getElementById('iosBarTitle').textContent === 'Настройки'), 'прокрутили — большой заголовок сменился компактной панелью');
+  await page.evaluate(() => { const r = document.querySelector('input[name=theme][value=classic]'); r.checked = true; r.dispatchEvent(new Event('change')); });
+  await page.reload(); await page.waitForTimeout(400);
+  ok(await page.evaluate(() => !document.documentElement.dataset.theme), 'выбрали «Классику» — она и остаётся после перезапуска');
+
   const android = await open();
   ok(await android.page.evaluate(() => !document.body.classList.contains('ios')), 'на Android — как раньше');
+  ok(await android.page.evaluate(() => document.documentElement.dataset.theme !== 'ios'), 'на Android оформление iOS само не включается');
 };
