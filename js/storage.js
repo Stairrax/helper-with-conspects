@@ -1,6 +1,6 @@
 // Хранилище: настройки и прогресс — localStorage, тяжёлые данные проекта — IndexedDB.
 
-import { IOS } from './platform.js';
+import { IOS, ANDROID } from './platform.js';
 import { FREE_PROXY } from './config.js';
 
 const LS_SETTINGS = 'kd.settings';
@@ -43,8 +43,8 @@ export const DEFAULT_SETTINGS = {
   headsetButtons: false,  // управление кнопками наушников
   contentLang: 'ru',      // 'ru' | 'en' — язык конспекта: распознавание, голос, команды и тексты нейросети
   uiLang: 'ru',           // 'ru' | 'en' — язык интерфейса (при первом запуске — язык браузера)
-  theme: 'classic',       // 'ios' | 'classic' | 'neon' | 'light' | 'auto' (как в системе) — оформление; на iPhone — 'ios'
-  themePicked: false,     // оформление выбрано вручную (иначе на iPhone — iOS)
+  theme: 'classic',       // 'android' | 'ios' | 'classic' | 'neon' | 'light' | 'auto' (как в системе) — оформление; на Android — 'android', на iPhone — 'ios'
+  themePicked: false,     // оформление выбрано вручную (иначе на Android — Android, на iPhone — iOS)
   ripple: true,           // «капля» при нажатии на кнопки
 };
 
@@ -75,6 +75,7 @@ export function loadSettings() {
   }
   const out = { ...DEFAULT_SETTINGS, profiles: {}, ...first, ...saved };
   if (IOS && !out.themePicked) out.theme = 'ios';
+  else if (ANDROID && !out.themePicked) out.theme = 'android';
   // своего ключа нет — бесплатный режим через сервер автора (если он настроен)
   if (FREE_PROXY && !out.apiKey && out.provider === 'openrouter') out.provider = 'free';
   return out;

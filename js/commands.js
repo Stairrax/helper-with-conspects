@@ -38,6 +38,7 @@ const STATE = [];
 const R = (re, f) => STATE.push([re, f]);
 
 // оформление — раньше тем: «светлая тема» — это не тема конспекта
+R(/(?:^|\s)(?:андроид|android)\S*(?: тем| оформлен| стил)|(?:тем|оформлен|стил)\S* (?:андроид|android|как на андроиде)/, () => ({ cmd: 'theme', arg: 'android' }));
 R(/(?:^|\s)(?:айфон|ios|ай ос|эппл|apple)\S*(?: тем| оформлен| стил)|(?:тем|оформлен|стил)\S* (?:айфон|ios|ай ос|как на айфоне)/, () => ({ cmd: 'theme', arg: 'ios' }));
 R(/(?:^|\s)(?:неонов|неон)/, (t) => (/(?:тем|включ|сделай|поставь|оформлен)/.test(t) ? { cmd: 'theme', arg: 'neon' } : null));
 R(/(?:^|\s)(?:светл|белая тема|дневная тема)/, (t) => (/(?:тем|включ|сделай|поставь|оформлен|режим)/.test(t) ? { cmd: 'theme', arg: 'light' } : null));
@@ -80,6 +81,7 @@ R(/(?:^|\s)(?:что ты умеешь|какие (?:есть )?команды|�
 R(/(?:^|\s)(?:light|white|day) (?:theme|mode)/, () => ({ cmd: 'theme', arg: 'light' }));
 R(/(?:^|\s)(?:dark|night|classic) (?:theme|mode)/, () => ({ cmd: 'theme', arg: 'classic' }));
 R(/(?:^|\s)(?:ios|iphone|apple) (?:theme|style|look|mode)/, () => ({ cmd: 'theme', arg: 'ios' }));
+R(/(?:^|\s)(?:android|material) (?:theme|style|look|mode)/, () => ({ cmd: 'theme', arg: 'android' }));
 R(/(?:^|\s)neon(?: theme| mode)?$/, () => ({ cmd: 'theme', arg: 'neon' }));
 R(/(?:^|\s)previous topic|(?:^|\s)go back (?:a|one) topic|(?:^|\s)topic before/, () => ({ cmd: 'prevTopic' }));
 R(/(?:^|\s)(?:what|which) topic|(?:^|\s)where are we|(?:^|\s)how much (?:is )?left/, () => ({ cmd: 'where' }));
@@ -159,7 +161,7 @@ export const COMMAND_LIST = [
   ['intonation', 'живая интонация: arg — true | false'],
   ['selfCheck', 'самопроверка после темы: arg — true | false'],
   ['showText', 'показывать текст куска: arg — true | false'],
-  ['theme', 'оформление: arg — "ios" | "classic" | "neon" | "light" | "auto"'],
+  ['theme', 'оформление: arg — "android" | "ios" | "classic" | "neon" | "light" | "auto"'],
   ['export', 'сохранить конспект и вопросы в файл'],
   ['help', 'рассказать, какие есть команды'],
 ];
