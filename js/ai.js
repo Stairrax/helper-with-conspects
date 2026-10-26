@@ -73,6 +73,7 @@ export function conn(settings) {
     model: settings.model || p.model,
     baseUrl: base || p.base,
     fallbacks: settings.provider === 'openrouter' ? settings.fallbackModels || [] : [],
+    lang: settings.contentLang === 'en' ? 'en' : 'ru',
   };
 }
 
@@ -81,8 +82,14 @@ export const providerName = (settings) => (PROVIDERS[settings.provider] || PROVI
 const IMPL = { gemini, openai, anthropic };
 const impl = (opts) => IMPL[opts.kind] || gemini;
 
-export const generate = (opts) => impl(opts).generate(opts);
-export const stream = (opts) => impl(opts).stream(opts);
+// Конспект на английском: инструкции у нейросети русские, а всё, что она пишет для студента, — по-английски
+const EN_NOTE = '\n\nВАЖНО: конспект и студент — на английском языке. Всё, что ты пишешь для студента (названия тем, куски диктовки, ' +
+  'пояснения, примеры, выжимки, вопросы и ответы, исправленный текст), пиши на английском; правила произношения русских чисел и букв не применяй. ' +
+  'Служебные поля JSON и их названия не меняй.';
+const withLang = (opts) => (opts.lang === 'en' ? { ...opts, system: (opts.system || '') + EN_NOTE } : opts);
+
+export const generate = (opts) => impl(opts).generate(withLang(opts));
+export const stream = (opts) => impl(opts).stream(withLang(opts));
 export const listModels = (c) => impl(c).listModels(c.apiKey, c.baseUrl);
 
 /** Запрос, ожидающий JSON. При битом JSON — повтор. */

@@ -39,7 +39,7 @@ function fakeSpeech() {
     getVoices: () => [{ name: 'Fake RU', lang: 'ru-RU', voiceURI: 'fake-ru' }],
     addEventListener() {}, onvoiceschanged: null,
     speak(u) {
-      this._u = u; this.speaking = true; window.__spoken.push(u.text);
+      this._u = u; this.speaking = true; window.__spoken.push(u.text); window.__ttsLang = u.lang;
       setTimeout(() => u.onstart && u.onstart(), 10);
       // __dur растягивает куски, но не объявления «Тема: …» — чтобы тест успел дойти до куска
       const hold = (window.__hold && u.text.includes(window.__hold)) || (window.__dur && !/^(Тема|Продолжаем тему)/.test(u.text));
@@ -53,7 +53,7 @@ function fakeSpeech() {
   };
   Object.defineProperty(window, 'speechSynthesis', { value: fake });
   class FakeSR {
-    start() { window.__sr = this; this.i = 0; setTimeout(() => this.onstart && this.onstart(), 5); }
+    start() { window.__sr = this; window.__srLang = this.lang; this.i = 0; setTimeout(() => this.onstart && this.onstart(), 5); }
     abort() { setTimeout(() => this.onend && this.onend(), 5); }
     stop() { this.abort(); }
   }

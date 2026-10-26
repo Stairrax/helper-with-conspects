@@ -17,7 +17,14 @@ export const NEURAL_VOICES = {
   dmitri: 'Дмитрий (мужской)',
   denis: 'Денис (мужской)',
   ruslan: 'Руслан (мужской)',
+  // для конспектов на английском (Piper)
+  'en-lessac': 'Lessac (женский, английский)',
+  'en-amy': 'Amy (женский, английский)',
+  'en-ryan': 'Ryan (мужской, английский)',
 };
+
+/** Язык голоса: 'en' — английские голоса Piper, остальные — русские. */
+export const voiceLang = (id) => (String(id).startsWith('en-') ? 'en' : 'ru');
 
 export const isSilero = (id) => id.startsWith('silero-');
 
@@ -55,11 +62,14 @@ function voiceSpec(id) {
       })),
     };
   }
-  const file = `ru_RU-${id}-medium.onnx`;
+  const en = voiceLang(id) === 'en';
+  const name = en ? id.slice(3) : id;
+  const file = `${en ? 'en_US' : 'ru_RU'}-${name}-medium.onnx`;
+  const bases = en ? HF.map((b) => b.replace('/ru/ru_RU', '/en/en_US')) : HF;
   return {
     id,
-    model: HF.map((b) => `${b}/${id}/medium/${file}`),
-    config: HF.map((b) => `${b}/${id}/medium/${file}.json`),
+    model: bases.map((b) => `${b}/${name}/medium/${file}`),
+    config: bases.map((b) => `${b}/${name}/medium/${file}.json`),
   };
 }
 

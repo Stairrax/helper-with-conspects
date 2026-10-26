@@ -28,14 +28,21 @@ export function loadVoices() {
   });
 }
 
+// Язык конспекта: распознавание речи, голос системы и команды. Русский по умолчанию; 'en' — английские конспекты
+let lang = 'ru';
+export function setSpeechLang(l) { lang = l === 'en' ? 'en' : 'ru'; }
+export const speechLang = () => lang;
+const locale = () => (lang === 'en' ? 'en-US' : 'ru-RU');
+const ofLang = (v) => new RegExp(`^${lang}`, 'i').test(v.lang);
+
 export function getVoices() {
-  const ru = voices.filter((v) => /^ru/i.test(v.lang));
-  const other = voices.filter((v) => !/^ru/i.test(v.lang));
-  return [...ru, ...other];
+  return [...voices.filter(ofLang), ...voices.filter((v) => !ofLang(v))];
 }
 
 function pickVoice(uri) {
-  return voices.find((v) => v.voiceURI === uri) || voices.find((v) => /^ru/i.test(v.lang)) || null;
+  const v = voices.find((x) => x.voiceURI === uri);
+  // выбранный голос другого языка (конспект сменили на английский) — берём голос нужного языка
+  return (v && ofLang(v) ? v : null) || voices.find(ofLang) || v || null;
 }
 
 export function isSpeaking() {
@@ -142,7 +149,7 @@ function speakSystem(text, { rate = 1, voiceURI = '', onStart, echoTail = 900 } 
     const go = () => {
       if (myEpoch !== epoch) return resolve('cancel'); // успели нажать «стоп» до начала речи
       const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'ru-RU';
+      u.lang = locale();
       const v = pickVoice(voiceURI);
       try { if (v) u.voice = v; } catch { /* голос недоступен */ }
       u.rate = rate;
@@ -240,19 +247,20 @@ export function ttsRecentlyActive() {
 
 const w = (alts) => new RegExp(`(?:^|\\s)(?:${alts})(?=\\s|$)`);
 const COMMANDS = [
-  ['repeatTopic', w('повтори(?:те)? (?:всю |эту )?тему|тему (?:с начала|заново|сначала)')],
-  ['skipTopic', w('пропусти(?:те)? тему|следующая тема|следующую тему|дальше тема|другая тема')],
-  ['stop', w('стоп|стой|стоять|хватит|остановись|остановите|замолчи|тихо')],
-  ['pause', w('пауза|подожди(?:те)?|погоди(?:те)?|секунду|минутку')],
-  ['repeat', w('повтори(?:те)?|еще раз|повтор|не расслышал[а]?|что что')],
-  ['slower', w('медленнее|помедленнее|медленней|помедленней')],
-  ['faster', w('быстрее|побыстрее|быстрей|побыстрей')],
-  ['continue', w('продолжай(?:те)?|продолжить|продолжаем|продолжи|поехали|давай(?:те)? дальше|едем дальше')],
+  // английские варианты — для конспектов на английском (Настройки → Язык конспекта)
+  ['repeatTopic', w('повтори(?:те)? (?:всю |эту )?тему|тему (?:с начала|заново|сначала)|repeat (?:the )?topic|topic again|restart (?:the )?topic')],
+  ['skipTopic', w('пропусти(?:те)? тему|следующая тема|следующую тему|дальше тема|другая тема|skip (?:the |this )?topic|next topic')],
+  ['stop', w('стоп|стой|стоять|хватит|остановись|остановите|замолчи|тихо|stop|hold on|shut up|enough')],
+  ['pause', w('пауза|подожди(?:те)?|погоди(?:те)?|секунду|минутку|pause|wait|one second|just a moment')],
+  ['repeat', w('повтори(?:те)?|еще раз|повтор|не расслышал[а]?|что что|repeat|again|say that again|one more time|pardon')],
+  ['slower', w('медленнее|помедленнее|медленней|помедленней|slower|slow down')],
+  ['faster', w('быстрее|побыстрее|быстрей|побыстрей|faster|speed up')],
+  ['continue', w('продолжай(?:те)?|продолжить|продолжаем|продолжи|поехали|давай(?:те)? дальше|едем дальше|continue|go on|resume|keep going|carry on')],
   // «записал» — студент дописал предыдущий кусок: в паузе это «дальше», а во время чтения нового куска его не пропускаем
-  ['written', w('записал[аи]?|записано|написал[аи]?|готово|успел[аи]?')],
-  ['next', w('дальше|следующий|следующее|пропусти(?:те)?|далее')],
+  ['written', w('записал[аи]?|записано|написал[аи]?|готово|успел[аи]?|done|got it|written|ready|finished')],
+  ['next', w('дальше|следующий|следующее|пропусти(?:те)?|далее|next|skip')],
 ];
-const SPELL = w('по буквам|как пишется|как это пишется|как писать|по слогам');
+const SPELL = w('по буквам|как пишется|как это пишется|как писать|по слогам|spell(?: it)?|how do you spell');
 
 /** Короткая фраза -> команда или null. */
 export function matchCommand(text) {
@@ -264,14 +272,14 @@ export function matchCommand(text) {
   return null;
 }
 
-const YES = w('да|ага|угу|конечно|давай(?:те)?|продолжа[а-я]*|продолжи|дальше|поехали|ок|окей|хорошо|го|можно|вперед');
-const NO = w('нет|не надо|не|стоп|подожди(?:те)?|погоди');
-export const isYes = (t) => { const n = norm(t); return n.split(' ').length <= 4 && YES.test(n) && !/(?:^|\s)нет(?=\s|$)/.test(n); };
+const YES = w('да|ага|угу|конечно|давай(?:те)?|продолжа[а-я]*|продолжи|дальше|поехали|ок|окей|хорошо|го|можно|вперед|yes|yeah|yep|sure|ok|okay|go on|continue|next');
+const NO = w('нет|не надо|не|стоп|подожди(?:те)?|погоди|no|nope|not yet|stop|wait');
+export const isYes = (t) => { const n = norm(t); return n.split(' ').length <= 4 && YES.test(n) && !/(?:^|\s)(?:нет|no|not)(?=\s|$)/.test(n); };
 export const isNo = (t) => { const n = norm(t); return n.split(' ').length <= 3 && NO.test(n); };
 
 /** Слово, которое просят продиктовать по буквам («как пишется фотосинтез» -> «фотосинтез»). */
 export function spellTarget(text) {
-  const m = String(text).match(/(?:пишется|писать|по буквам|по слогам)\s+(?:слово\s+)?(.+)$/i);
+  const m = String(text).match(/(?:пишется|писать|по буквам|по слогам|spell|spelled)\s+(?:слово\s+|the word\s+)?(.+)$/i);
   return m ? m[1].replace(/[?.!,]+$/g, '').trim() : '';
 }
 
@@ -325,14 +333,14 @@ export function mergeText(buf, part) {
   return `${buf} ${part}`;
 }
 
-export const isDontKnow = (t) => /^(я )?(не знаю|не помню|забыл[аи]?|без понятия|понятия не имею|сдаюсь|подскажи)/.test(norm(t));
+export const isDontKnow = (t) => /^(я )?(не знаю|не помню|забыл[аи]?|без понятия|понятия не имею|сдаюсь|подскажи)|^(i )?(don t know|dont know|do not know|forgot|no idea|give up|not sure)/.test(norm(t));
 
-const QUESTION_START = /^(вопрос|а |а$|почему|зачем|что|чем|как|какой|какая|какое|какие|каким|когда|где|куда|откуда|кто|сколько|объясни|поясни|расскажи|уточни|не понял|не поняла|непонятно|можно|разве|в чем|правильно ли|то есть|это значит)/;
+const QUESTION_START = /^(вопрос|а |а$|почему|зачем|что|чем|как|какой|какая|какое|какие|каким|когда|где|куда|откуда|кто|сколько|объясни|поясни|расскажи|уточни|не понял|не поняла|непонятно|можно|разве|в чем|правильно ли|то есть|это значит|question|why|what|how|when|where|who|which|explain|tell me|i don t understand|is it|does|do you|can you|could you)/;
 export const looksLikeQuestion = (t) => QUESTION_START.test(norm(t));
 
 /** Убирает служебные слова в начале вопроса. */
 export function stripCue(t) {
-  return String(t).trim().replace(/^(стоп|стой|пауза|подожди(те)?|вопрос|у меня вопрос|есть вопрос)[\s,.:!-]*/i, '').trim();
+  return String(t).trim().replace(/^(стоп|стой|пауза|подожди(те)?|вопрос|у меня вопрос|есть вопрос|stop|wait|question|i have a question)[\s,.:!-]*/i, '').trim();
 }
 
 // ---------- Распознавание ----------
@@ -408,7 +416,7 @@ export class Recognizer {
     const sid = ++this.session;
     let phrase = 0;   // номер фразы в сессии: промежуточный и финальный варианты одной фразы получают один id
     let last = null;  // последний финальный результат сессии: { text, at }
-    rec.lang = 'ru-RU';
+    rec.lang = locale();
     rec.continuous = true;
     rec.interimResults = true;
     rec.maxAlternatives = 1;

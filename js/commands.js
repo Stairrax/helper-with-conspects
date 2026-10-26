@@ -17,12 +17,19 @@ export function topicNumber(words) {
   for (const w of words) {
     if (/^\d{1,3}$/.test(w)) return +w;
     if (CARD[w]) return CARD[w];
+    if (EN_NUM[w]) return EN_NUM[w];
     const o = ORD_LONG.find(([st]) => w.startsWith(st));
     if (o) return o[1];
   }
   return 0;
 }
 const ORD_LONG = [...ORD].sort((a, b) => b[0].length - a[0].length); // «пятнадцатая» раньше «пятой»
+const EN_NUM = Object.fromEntries([
+  ['one', 'first'], ['two', 'second'], ['three', 'third'], ['four', 'fourth'], ['five', 'fifth'], ['six', 'sixth'], ['seven', 'seventh'],
+  ['eight', 'eighth'], ['nine', 'ninth'], ['ten', 'tenth'], ['eleven', 'eleventh'], ['twelve', 'twelfth'], ['thirteen', 'thirteenth'],
+  ['fourteen', 'fourteenth'], ['fifteen', 'fifteenth'], ['sixteen', 'sixteenth'], ['seventeen', 'seventeenth'], ['eighteen', 'eighteenth'],
+  ['nineteen', 'nineteenth'], ['twenty', 'twentieth'],
+].flatMap(([c, o], i) => [[c, i + 1], [o, i + 1]]).concat([['last', -1], ['final', -1]]));
 
 const on = (t) => !/(?:^|\s)(выключ|отключ|убер|не )/.test(t);
 const TOPIC = 'тем[аеуыой]{0,2}';
@@ -68,6 +75,37 @@ R(/(?:^|\s)(?:покажи|верни|открой) текст/, () => ({ cmd: '
 R(/(?:^|\s)(?:сохрани|экспорт|выгрузи|отправь|скачай) (?:\S+ )?(?:конспект|файл|вопрос)/, () => ({ cmd: 'export' }));
 R(/(?:^|\s)(?:что ты умеешь|какие (?:есть )?команды|список команд|помощь|справка|что можно (?:сказать|говорить))/, () => ({ cmd: 'help' }));
 
+// English — для конспектов на английском
+R(/(?:^|\s)(?:light|white|day) (?:theme|mode)/, () => ({ cmd: 'theme', arg: 'light' }));
+R(/(?:^|\s)(?:dark|night|classic) (?:theme|mode)/, () => ({ cmd: 'theme', arg: 'classic' }));
+R(/(?:^|\s)neon(?: theme| mode)?$/, () => ({ cmd: 'theme', arg: 'neon' }));
+R(/(?:^|\s)previous topic|(?:^|\s)go back (?:a|one) topic|(?:^|\s)topic before/, () => ({ cmd: 'prevTopic' }));
+R(/(?:^|\s)(?:what|which) topic|(?:^|\s)where are we|(?:^|\s)how much (?:is )?left/, () => ({ cmd: 'where' }));
+R(/(?:^|\s)(?:go|jump|skip|switch|move) (?:back )?to (?:the )?(?:\S+ )?topic|(?:^|\s)(?:open|start) (?:the )?(?:\S+ )?topic|^topic (?:number )?\S+$|^(?:the )?\S+ topic$/, (t) => {
+  if (/(?:^|\s)next topic$/.test(t)) return null; // «next topic» — команда диктовки
+  const rest = t.replace(/^.*?(?:^|\s)topic(?:\s+|$)/, '').replace(/^(?:number|about|on|called)\s+/, '').trim();
+  const before = t.replace(/(?:^|\s)topic(?:\s.*)?$/, '').split(' ');
+  const n = topicNumber([...rest.split(' ').slice(0, 2), ...before.slice(-1)]);
+  if (n) return { cmd: 'gotoTopic', arg: { n } };
+  if (rest.split(' ').filter((x) => x.length > 2).length) return { cmd: 'gotoTopic', arg: { q: rest } };
+  return null;
+});
+R(/(?:^|\s)close (?:the )?formulas|^close$/, () => ({ cmd: 'fxClose' }));
+R(/(?:^|\s)formulas (?:for|of) (?:the )?next|(?:^|\s)next formulas/, () => ({ cmd: 'fx', arg: 'next' }));
+R(/(?:^|\s)formulas (?:for|of) (?:the )?previous|(?:^|\s)previous formulas/, () => ({ cmd: 'fx', arg: 'prev' }));
+R(/(?:^|\s)(?:show|open)(?: me)? (?:the )?formulas|^formulas$/, () => ({ cmd: 'fx', arg: 'cur' }));
+R(/(?:^|\s)(?:open|show|go to)(?: the)? plan/, () => ({ cmd: 'tab', arg: 'plan' }));
+R(/(?:^|\s)(?:open|show|go to)(?: the)? settings/, () => ({ cmd: 'tab', arg: 'settings' }));
+R(/(?:^|\s)(?:open|show|go to)(?: the)? material/, () => ({ cmd: 'tab', arg: 'load' }));
+R(/(?:^|\s)listen(?:ing)? only|(?:^|\s)just listening|(?:^|\s)no pauses/, () => ({ cmd: 'listenOnly', arg: true }));
+R(/(?:^|\s)(?:writing|note taking) mode|(?:^|\s)with pauses|(?:^|\s)i m writing/, () => ({ cmd: 'listenOnly', arg: false }));
+R(/(?:^|\s)(?:longer|more|bigger) pauses?|(?:^|\s)pauses? longer/, () => ({ cmd: 'pauseLen', arg: +1 }));
+R(/(?:^|\s)(?:shorter|smaller) pauses?|(?:^|\s)pauses? shorter/, () => ({ cmd: 'pauseLen', arg: -1 }));
+R(/(?:^|\s)hide (?:the )?text/, () => ({ cmd: 'showText', arg: false }));
+R(/(?:^|\s)show (?:the )?text/, () => ({ cmd: 'showText', arg: true }));
+R(/(?:^|\s)(?:save|export|download) (?:the )?(?:\S+ )?(?:conspect|notes|file)/, () => ({ cmd: 'export' }));
+R(/(?:^|\s)(?:what can you do|what commands|list (?:of )?commands|^help$)/, () => ({ cmd: 'help' }));
+
 /** Распознаёт команду приложения во фразе (или null). Длинные фразы — скорее вопрос, а не команда. */
 export function matchAppCommand(text) {
   const t = norm(text);
@@ -99,7 +137,8 @@ export function findTopic(seq, arg) {
 
 /** Похоже на просьбу что-то сделать с приложением, а не на вопрос по конспекту? */
 export const looksLikeRequest = (text) =>
-  /^(?:пожалуйста |можешь |можно |давай |а )?(?:включи|выключи|отключи|открой|закрой|покажи|скрой|перейди|переключи|сделай|поставь|убери|верни|увеличь|уменьши|измени|смени|поменяй|начни|запусти|вернись|прочитай|диктуй|хочу|не надо)/.test(norm(text));
+  /^(?:пожалуйста |можешь |можно |давай |а )?(?:включи|выключи|отключи|открой|закрой|покажи|скрой|перейди|переключи|сделай|поставь|убери|верни|увеличь|уменьши|измени|смени|поменяй|начни|запусти|вернись|прочитай|диктуй|хочу|не надо)/.test(norm(text)) ||
+  /^(?:please |can you |could you |let s )?(?:turn on|turn off|switch|open|close|show|hide|go to|make|set|change|start|enable|disable|i want)/.test(norm(text));
 
 /** Что можно попросить — для справки и для нейросети. */
 export const COMMAND_LIST = [
@@ -144,3 +183,7 @@ export const HELP_TEXT = 'Можно сказать: «перейди к тре�
   '«какая сейчас тема», «покажи формулы», «формулы следующей темы», «закрой формулы», «открой план», «только слушаю», «режим записи», ' +
   '«паузы подольше», «быстрее», «медленнее», «включи сокращения», «светлая тема», «скрой текст», «сохрани конспект». ' +
   'А если сказать своими словами — я постараюсь понять.';
+
+export const HELP_TEXT_EN = 'You can say: “go to topic three” or “go to the topic taxes”, “previous topic”, “next topic”, “repeat topic”, ' +
+  '“what topic is this”, “show formulas”, “formulas for the next topic”, “close formulas”, “open the plan”, “listen only”, “writing mode”, ' +
+  '“longer pauses”, “faster”, “slower”, “light theme”, “hide text”, “save the notes”. You can also just say what you want — I’ll try to understand.';

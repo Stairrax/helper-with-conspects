@@ -275,6 +275,12 @@
       </div>
 
       <div class="card">
+        <div class="card-title">Язык конспекта</div>
+        <div class="seg">
+          <label><input type="radio" name="contentLang" value="ru"><span>Русский</span></label>
+          <label><input type="radio" name="contentLang" value="en"><span>English</span></label>
+        </div>
+        <p class="hint mt" id="contentLangHint"></p>
         <div class="card-title">Голос</div>
         <div class="seg" id="engineSeg">
           <label><input type="radio" name="voiceEngine" value="system"><span class="sys">Android</span></label>
@@ -558,24 +564,24 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/abbr.js": "./js/abbr.js?v=47",
-      "./js/ai.js": "./js/ai.js?v=47",
-      "./js/analyze.js": "./js/analyze.js?v=47",
-      "./js/anthropic.js": "./js/anthropic.js?v=47",
-      "./js/app.js": "./js/app.js?v=47",
-      "./js/commands.js": "./js/commands.js?v=47",
-      "./js/lecture.js": "./js/lecture.js?v=47",
-      "./js/platform.js": "./js/platform.js?v=47",
-      "./js/dictation.js": "./js/dictation.js?v=47",
-      "./js/extract.js": "./js/extract.js?v=47",
-      "./js/gemini.js": "./js/gemini.js?v=47",
-      "./js/media.js": "./js/media.js?v=47",
-      "./js/neural.js": "./js/neural.js?v=47",
-      "./js/onboarding.js": "./js/onboarding.js?v=47",
-      "./js/openai.js": "./js/openai.js?v=47",
-      "./js/ripple.js": "./js/ripple.js?v=47",
-      "./js/speech.js": "./js/speech.js?v=47",
-      "./js/storage.js": "./js/storage.js?v=47"
+      "./js/abbr.js": "./js/abbr.js?v=48",
+      "./js/ai.js": "./js/ai.js?v=48",
+      "./js/analyze.js": "./js/analyze.js?v=48",
+      "./js/anthropic.js": "./js/anthropic.js?v=48",
+      "./js/app.js": "./js/app.js?v=48",
+      "./js/commands.js": "./js/commands.js?v=48",
+      "./js/lecture.js": "./js/lecture.js?v=48",
+      "./js/platform.js": "./js/platform.js?v=48",
+      "./js/dictation.js": "./js/dictation.js?v=48",
+      "./js/extract.js": "./js/extract.js?v=48",
+      "./js/gemini.js": "./js/gemini.js?v=48",
+      "./js/media.js": "./js/media.js?v=48",
+      "./js/neural.js": "./js/neural.js?v=48",
+      "./js/onboarding.js": "./js/onboarding.js?v=48",
+      "./js/openai.js": "./js/openai.js?v=48",
+      "./js/ripple.js": "./js/ripple.js?v=48",
+      "./js/speech.js": "./js/speech.js?v=48",
+      "./js/storage.js": "./js/storage.js?v=48"
     }
   }
   </script>
@@ -609,6 +615,6 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=47"></script>
+  <script type="module" src="js/app.js?v=48"></script>
 </body>
 </html>

@@ -38,6 +38,7 @@ export const DEFAULT_SETTINGS = {
   selfCheck: true,        // самопроверка после каждой темы
   breakEvery: 40,         // напоминать о перерыве каждые N минут (0 — не напоминать)
   headsetButtons: false,  // управление кнопками наушников
+  contentLang: 'ru',      // 'ru' | 'en' — язык конспекта: распознавание, голос, команды и тексты нейросети
   theme: 'classic',       // 'classic' | 'neon' | 'light' | 'auto' (как в системе) — оформление
   ripple: true,           // «капля» при нажатии на кнопки
 };

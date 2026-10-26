@@ -10,9 +10,9 @@ import {
 } from './analyze.js';
 import { listModels, conn, PROVIDERS, providerName } from './ai.js';
 import {
-  loadVoices, getVoices, speak, stopSpeaking, setEngine, setStyle, setIntonation, srSupported, ttsSupported, hasBtHeadset, onBtChange,
+  loadVoices, getVoices, speak, stopSpeaking, setEngine, setStyle, setIntonation, setSpeechLang, srSupported, ttsSupported, hasBtHeadset, onBtChange,
 } from './speech.js';
-import { prepare as prepareNeural, missingMB, NEURAL_VOICES, VOICE_STYLES, audioContext, isSilero } from './neural.js';
+import { prepare as prepareNeural, missingMB, NEURAL_VOICES, VOICE_STYLES, audioContext, isSilero, voiceLang } from './neural.js';
 import { enableMedia, disableMedia, updateMedia, mediaSupported } from './media.js';
 import { Dictation, STATE_TEXT } from './dictation.js';
 import { initOnboarding, onboardingDone } from './onboarding.js';
@@ -28,6 +28,7 @@ let settings = loadSettings();
 const THEMES = { classic: 'классика', neon: 'неон', light: 'светлая', auto: 'как в системе' };
 const lightScheme = matchMedia('(prefers-color-scheme: light)');
 applyLook();
+setSpeechLang(settings.contentLang);
 // iPhone: свои подписи («голос iPhone») и инструкции; блоки .ios-only / .android-only
 if (IOS) {
   document.body.classList.add('ios');
@@ -989,13 +990,14 @@ function fxNeighbor(id, dir) {
 function appCommand(c, topicId) {
   const set = (key, v) => { settings[key] = v; saveSettings(settings); renderSettings(); render(); };
   const sheetOpen = !$('fxSheet').classList.contains('hidden');
+  const L = (ru, en) => (settings.contentLang === 'en' ? en : ru); // ответ голосом — на языке конспекта
   switch (c.cmd) {
     case 'fx': {
-      if (!fxTopics().length) return 'В этом конспекте нет блоков формул: они появляются у тем, где формул три и больше.';
+      if (!fxTopics().length) return L('В этом конспекте нет блоков формул: они появляются у тем, где формул три и больше.', 'There are no formula blocks in this conspect: they appear in topics with three or more formulas.');
       const base = sheetOpen ? fxAt : topicId;
       if (c.arg === 'next' || c.arg === 'prev') {
         const t = fxNeighbor(base, c.arg === 'next' ? 1 : -1);
-        if (!t) return c.arg === 'next' ? 'Дальше тем с формулами нет.' : 'Раньше тем с формулами нет.';
+        if (!t) return c.arg === 'next' ? L('Дальше тем с формулами нет.', 'No more topics with formulas ahead.') : L('Раньше тем с формулами нет.', 'No topics with formulas before this one.');
         openFormulas(t.id);
       } else openFormulas(base);
       return '';
@@ -1004,23 +1006,23 @@ function appCommand(c, topicId) {
     case 'tab': closeFormulas(); switchTab(c.arg); return '';
     case 'listenOnly':
       set('listenOnly', !!c.arg);
-      return c.arg ? 'Только слушаю: текст пойдёт подряд, без пауз на запись.' : 'Записываю: снова паузы на запись.';
+      return c.arg ? L('Только слушаю: текст пойдёт подряд, без пауз на запись.', 'Listen only: the text goes on without pauses for writing.') : L('Записываю: снова паузы на запись.', 'Writing mode: pauses for writing are back.');
     case 'pauseLen': {
       const p = Math.min(15, Math.max(1, (+settings.pause || 3) + (c.arg < 0 ? -1 : 1)));
       set('pause', p);
-      return `Пауза между кусками — ${String(p).replace('.', ',')} ${plural(Math.round(p), ['секунда', 'секунды', 'секунд'])}.`;
+      return L(`Пауза между кусками — ${String(p).replace('.', ',')} ${plural(Math.round(p), ['секунда', 'секунды', 'секунд'])}.`, `Pause between parts: ${p} ${p === 1 ? 'second' : 'seconds'}.`);
     }
     case 'abbreviate': set('abbreviate', !!c.arg); return c.arg ? 'Диктую сокращениями.' : 'Диктую без сокращений.';
     case 'intonation': set('intonation', !!c.arg); setIntonation(!!c.arg); return c.arg ? 'Живая интонация включена.' : 'Живая интонация выключена.';
-    case 'selfCheck': set('selfCheck', !!c.arg); return c.arg ? 'Самопроверка после темы включена.' : 'Самопроверка выключена.';
+    case 'selfCheck': set('selfCheck', !!c.arg); return c.arg ? L('Самопроверка после темы включена.', 'Self-check after each topic is on.') : L('Самопроверка выключена.', 'Self-check is off.');
     case 'showText': set('showText', !!c.arg); return '';
     case 'theme': {
       if (!THEMES[c.arg]) return '';
       set('theme', c.arg);
       applyLook();
-      return `Оформление: ${THEMES[c.arg]}.`;
+      return L(`Оформление: ${THEMES[c.arg]}.`, `Theme: ${{ classic: 'classic', neon: 'neon', light: 'light', auto: 'as in the system' }[c.arg]}.`);
     }
-    case 'export': if (project) exportFile(); return project ? '' : 'Сначала добавьте материал и составьте план.';
+    case 'export': if (project) exportFile(); return project ? '' : L('Сначала добавьте материал и составьте план.', 'First add material and make a plan.');
   }
   return '';
 }
@@ -1174,6 +1176,10 @@ function renderSettings() {
   $('ripple').checked = settings.ripple !== false;
   $('formulasApart').checked = settings.formulasApart !== false;
   $('fxPause').checked = !!settings.fxPause;
+  document.querySelectorAll('input[name=contentLang]').forEach((r) => { r.checked = r.value === (settings.contentLang || 'ru'); });
+  $('contentLangHint').textContent = settings.contentLang === 'en'
+    ? 'Конспект на английском: нейросеть готовит куски, вопросы и ответы по-английски, распознаёт английскую речь и команды («stop», «next», «repeat», «go to topic two»), голос — английский (Android или Piper: Lessac, Amy, Ryan).'
+    : '';
   $('remind').checked = !!settings.remind;
 }
 
@@ -1289,12 +1295,18 @@ $('voiceStyle').addEventListener('change', (e) => {
 $('address').addEventListener('change', (e) => { settings.address = e.target.value; saveSettings(settings); });
 
 // женский голос -> мужской того же движка (для стиля «Джарвис»)
-const MALE_VOICE = { irina: 'dmitri', 'silero-baya': 'silero-eugene', 'silero-xenia': 'silero-eugene', 'silero-kseniya': 'silero-eugene' };
-{
-  const opts = (live) => Object.entries(NEURAL_VOICES).filter(([id]) => isSilero(id) === live)
-    .map(([id, name]) => `<option value="${id}">${esc(name.replace(', живой', ''))}</option>`).join('');
-  $('neuralVoice').innerHTML = `<optgroup label="Живые голоса (Silero)">${opts(true)}</optgroup><optgroup label="Другие (Piper)">${opts(false)}</optgroup>`;
+const MALE_VOICE = { irina: 'dmitri', 'silero-baya': 'silero-eugene', 'silero-xenia': 'silero-eugene', 'silero-kseniya': 'silero-eugene', 'en-lessac': 'en-ryan', 'en-amy': 'en-ryan' };
+/** Список нейроголосов — для языка конспекта: русские (Silero и Piper) или английские (Piper). */
+function renderNeuralVoices() {
+  const lang = settings.contentLang === 'en' ? 'en' : 'ru';
+  const opts = (f) => Object.entries(NEURAL_VOICES).filter(([id]) => voiceLang(id) === lang && f(id))
+    .map(([id, name]) => `<option value="${id}">${esc(name.replace(', живой', '').replace(', английский', ''))}</option>`).join('');
+  $('neuralVoice').innerHTML = lang === 'en'
+    ? `<optgroup label="English (Piper)">${opts(() => true)}</optgroup>`
+    : `<optgroup label="Живые голоса (Silero)">${opts(isSilero)}</optgroup><optgroup label="Другие (Piper)">${opts((id) => !isSilero(id))}</optgroup>`;
+  $('neuralVoice').value = settings.neuralVoice;
 }
+renderNeuralVoices();
 let neuralFailNotified = false;
 
 function applyEngine() {
@@ -1346,6 +1358,26 @@ $('intonation').addEventListener('change', (e) => {
   saveSettings(settings);
   setIntonation(settings.intonation);
 });
+// Язык конспекта: распознавание, голос, команды и всё, что пишет нейросеть
+document.querySelectorAll('input[name=contentLang]').forEach((r) => r.addEventListener('change', () => {
+  const lang = r.value === 'en' ? 'en' : 'ru';
+  settings.contentLang = lang;
+  setSpeechLang(lang);
+  if (voiceLang(settings.neuralVoice) !== lang) settings.neuralVoice = lang === 'en' ? 'en-lessac' : 'silero-baya';
+  saveSettings(settings);
+  renderNeuralVoices();
+  renderSettings();
+  loadVoices().then(renderVoices);
+  applyEngine();
+  if (settings.voiceEngine === 'neural') downloadNeural();
+  // микрофон — сразу на новый язык
+  if (!['idle', 'finished'].includes(dict.state)) { dict.rec.stop(); dict.mic(false); }
+  const ready = project?.topics.some((t) => t.status === 'ready');
+  toast(lang === 'en'
+    ? `Конспект на английском.${ready ? ' Уже подготовленные темы остались на прежнем языке — «Подготовить заново» в плане.' : ''}`
+    : `Конспект на русском.${ready ? ' Уже подготовленные темы остались на прежнем языке — «Подготовить заново» в плане.' : ''}`, 5500);
+}));
+
 $('neuralVoice').addEventListener('change', (e) => {
   settings.neuralVoice = e.target.value;
   saveSettings(settings);

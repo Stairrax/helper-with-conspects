@@ -8,7 +8,7 @@ import {
 import { stream, conn } from './ai.js';
 import { activeSeq, pauseFor, LISTEN_GAP_MS } from './analyze.js';
 import { abbreviate } from './abbr.js';
-import { matchAppCommand, findTopic, looksLikeRequest, aiCommand, HELP_TEXT } from './commands.js';
+import { matchAppCommand, findTopic, looksLikeRequest, aiCommand, HELP_TEXT, HELP_TEXT_EN } from './commands.js';
 
 const DICTATING = ['speaking', 'gap', 'waiting'];
 const QA_STATES = ['thinking', 'answering'];
@@ -65,6 +65,12 @@ export function spellOut(word) {
     return ch !== low ? `заглавная ${name}` : name;
   }).filter(Boolean);
   return `${word}. По буквам: ${letters.join(', ')}. Ещё раз: ${word}.`;
+}
+
+/** Английское слово по буквам: «cell. Spelled: c, e, l, l. Once more: cell.» */
+export function spellOutEn(word) {
+  const letters = [...word].filter((ch) => /[A-Za-z0-9-]/.test(ch)).map((ch) => (ch === '-' ? 'hyphen' : ch !== ch.toLowerCase() ? `capital ${ch}` : ch));
+  return `${word}. Spelled: ${letters.join(', ')}. Once more: ${word}.`;
 }
 
 /** Термины из куска, которые стоит продиктовать по буквам. */
@@ -132,7 +138,15 @@ export class Dictation {
   get qa() { return (this.h.progress.qa ||= []); }
 
   /** Обращение к студенту («, сэр») — если выбрано в настройках. */
-  get a() { const x = this.settings.address; return x ? `, ${x}` : ''; }
+  get a() {
+    const x = this.settings.address;
+    return x ? `, ${this.en ? { сэр: 'sir', мэм: 'ma’am' }[x] || x : x}` : '';
+  }
+
+  /** Конспект на английском: диктор говорит по-английски. */
+  get en() { return this.settings.contentLang === 'en'; }
+  /** Фраза диктора на языке конспекта. */
+  L(ru, en) { return this.en ? en : ru; }
 
   /** Дополнение к инструкции нейросети: манера ассистента. */
   get manner() {
@@ -232,12 +246,13 @@ export class Dictation {
     const seq = this.seq();
     const id = this.hereTopicId();
     const i = seq.findIndex((x) => x.id === id);
-    if (i < 0) return seq.length ? `В плане тем: ${seq.length}. Диктовка ещё не начата.` : 'Плана пока нет.';
+    if (i < 0) return seq.length ? this.L(`В плане тем: ${seq.length}. Диктовка ещё не начата.`, `There are ${seq.length} topics in the plan. Dictation hasn’t started yet.`) : this.L('Плана пока нет.', 'There is no plan yet.');
     const t = seq[i];
     const n = t.chunks?.length || 0;
     const at = Math.min(n, (this.resumePos?.chunk ?? this.pos.chunk) + 1);
     const left = seq.slice(i + 1).filter((x) => !this.pos.done?.[x.id]).length;
-    return `Тема ${i + 1} из ${seq.length}: «${t.title}»${n ? `, кусок ${at} из ${n}` : ''}. ${left ? `Дальше ещё тем: ${left}.` : 'Это последняя тема.'}`;
+    return this.L(`Тема ${i + 1} из ${seq.length}: «${t.title}»${n ? `, кусок ${at} из ${n}` : ''}. ${left ? `Дальше ещё тем: ${left}.` : 'Это последняя тема.'}`,
+      `Topic ${i + 1} of ${seq.length}: “${t.title}”${n ? `, part ${at} of ${n}` : ''}. ${left ? `${left} more ${left === 1 ? 'topic' : 'topics'} to go.` : 'This is the last topic.'}`);
   }
 
   /**
@@ -257,13 +272,13 @@ export class Dictation {
     switch (c.cmd) {
       case 'gotoTopic': {
         const t = findTopic(this.seq(), c.arg);
-        if (!t) return reply(c.arg?.n ? `Темы номер ${c.arg.n} нет.` : 'Не нашёл такую тему. Скажите номер темы или слова из названия.');
+        if (!t) return reply(c.arg?.n ? this.L(`Темы номер ${c.arg.n} нет.`, `There is no topic ${c.arg.n}.`) : this.L('Не нашёл такую тему. Скажите номер темы или слова из названия.', 'I couldn’t find that topic. Say its number or words from its title.'));
         this.h.toast(`Тема «${t.title}»`);
         return this.gotoTopic(t.id);
       }
       case 'prevTopic': {
         const id = this.prevTopicId(this.hereTopicId());
-        if (!id) return reply('Это первая тема.');
+        if (!id) return reply(this.L('Это первая тема.', 'This is the first topic.'));
         return this.gotoTopic(id);
       }
       case 'skipTopic': return this.skipTopic();
@@ -272,7 +287,7 @@ export class Dictation {
       case 'rate': return this.changeRate(c.arg < 0 ? -0.1 : 0.1);
       case 'help':
         if (quiet) this.interrupt('pause');
-        return reply(HELP_TEXT).then(() => null);
+        return reply(this.en ? HELP_TEXT_EN : HELP_TEXT).then(() => null);
       default: {
         const text = this.h.appCommand?.(c, this.hereTopicId());
         if (text) return reply(text);
@@ -442,7 +457,7 @@ export class Dictation {
       if (!this.listenOnly && this.needBreak()) return this.takeBreak(my);
       if (this.pos.chunk === 0 && this.announced !== topic.id) {
         this.set('speaking');
-        const r = await this.say(`Тема: ${topic.title}.`);
+        const r = await this.say(this.L(`Тема: ${topic.title}.`, `Topic: ${topic.title}.`));
         if (my !== this.token) return;
         if (r === 'end') this.announced = topic.id;
         await sleep(600);
@@ -452,7 +467,7 @@ export class Dictation {
       if (this.resumeNote && this.pos.chunk > 0) {
         this.resumeNote = false;
         this.set('speaking');
-        await this.say(`Продолжаем тему «${topic.title}».`);
+        await this.say(this.L(`Продолжаем тему «${topic.title}».`, `Continuing the topic “${topic.title}”.`));
         if (my !== this.token) return;
         await sleep(400);
         if (my !== this.token) return;
@@ -566,7 +581,7 @@ export class Dictation {
     }
     if (!nextId) return this.finish(my);
     this.set('topicEnd');
-    await this.say(`Тема «${topic.title}» завершена${this.a}. Есть вопросы?`, true);
+    await this.say(this.L(`Тема «${topic.title}» завершена${this.a}. Есть вопросы?`, `That’s the end of “${topic.title}”${this.a}. Any questions?`), true);
     if (my !== this.token) return;
     if (this.settings.mode === 'all') {
       // короткая пауза на вопросы, потом — дальше
@@ -582,7 +597,8 @@ export class Dictation {
     this.resumePos = null;
     this.h.saveProgress();
     this.set('finished');
-    await this.say(this.listenOnly ? `Конспект прослушан${this.a}.` : `Диктовка завершена${this.a}. Если остались вопросы — нажмите «Стоп, вопрос».`);
+    await this.say(this.listenOnly ? this.L(`Конспект прослушан${this.a}.`, `That’s the whole conspect${this.a}.`)
+      : this.L(`Диктовка завершена${this.a}. Если остались вопросы — нажмите «Стоп, вопрос».`, `Dictation finished${this.a}. If you have questions, press “Stop, question”.`));
     if (my !== this.token) return;
     keepAwake(false);
     this.micForced = false;
@@ -602,12 +618,13 @@ export class Dictation {
     this.resumePos = { topicId: this.pos.topicId, chunk: this.pos.chunk };
     this.breakUntil = Date.now() + BREAK_MS;
     this.set('break', 'Отдохните 5 минут. Скажите «продолжай», если хотите раньше.');
-    await this.say(`Вы занимаетесь уже ${minutes} минут${this.a}. Сделайте перерыв пять минут: встаньте, разомнитесь, попейте воды. Я напомню, когда пора продолжать.`);
+    await this.say(this.L(`Вы занимаетесь уже ${minutes} минут${this.a}. Сделайте перерыв пять минут: встаньте, разомнитесь, попейте воды. Я напомню, когда пора продолжать.`,
+      `You have been studying for ${minutes} minutes${this.a}. Take a five-minute break: stand up, stretch, drink some water. I’ll tell you when it’s time to continue.`));
     while (my === this.token && Date.now() < this.breakUntil) await sleep(500);
     if (my !== this.token) return;
     this.breakUntil = 0;
     this.set('confirm');
-    await this.say(`Перерыв окончен${this.a}. Продолжаем?`, true);
+    await this.say(this.L(`Перерыв окончен${this.a}. Продолжаем?`, `Break’s over${this.a}. Shall we continue?`), true);
   }
 
   // ---------- Самопроверка ----------
@@ -616,14 +633,15 @@ export class Dictation {
     const qs = topic.quiz.slice(0, 3);
     this.quiz = { topic, qs, i: 0, results: [] };
     this.set('quiz');
-    await this.say(`Самопроверка по теме «${topic.title}». ${qs.length === 1 ? 'Один вопрос' : `${qs.length} вопроса`}. Отвечайте вслух или текстом. Можно сказать «не знаю» или «пропусти».`);
+    await this.say(this.L(`Самопроверка по теме «${topic.title}». ${qs.length === 1 ? 'Один вопрос' : `${qs.length} вопроса`}. Отвечайте вслух или текстом. Можно сказать «не знаю» или «пропусти».`,
+      `Self-check on “${topic.title}”. ${qs.length === 1 ? 'One question' : `${qs.length} questions`}. Answer aloud or in text. You can say “I don’t know” or “skip”.`));
     for (let i = 0; i < qs.length; i++) {
       if (my !== this.token) return;
       const q = qs[i];
       this.quiz.i = i;
       this.feedback = null;
       this.set('quiz');
-      await this.say(`Вопрос ${i + 1}. ${q.q}`, true);
+      await this.say(this.L(`Вопрос ${i + 1}. ${q.q}`, `Question ${i + 1}. ${q.q}`), true);
       if (my !== this.token) return;
       const ans = await this.waitAnswer(my);
       if (!ans || my !== this.token) return;
@@ -633,9 +651,10 @@ export class Dictation {
       let score;
       if (ans.type === 'dontknow') {
         score = 0;
-        this.feedback = { q: q.q, answer: 'не знаю', entry: { a: `Правильный ответ: ${q.a}` } };
+        const correct = this.L(`Правильный ответ: ${q.a}`, `The correct answer: ${q.a}`);
+        this.feedback = { q: q.q, answer: this.L('не знаю', 'I don’t know'), entry: { a: correct } };
         this.set('quiz');
-        await this.say(`Правильный ответ: ${q.a}`);
+        await this.say(correct);
       } else {
         score = await this.grade(my, topic, q, ans.text);
       }
@@ -654,7 +673,9 @@ export class Dictation {
     if (done.length) {
       this.set('quiz');
       const r = Number.isInteger(right) ? right : right.toFixed(1).replace('.', ',');
-      await this.say(`Результат: ${r} из ${done.length}.${right / done.length < 0.7 ? ' Эту тему стоит повторить — я отмечу её в плане.' : ` Отлично${this.a}!`}`);
+      const weak = right / done.length < 0.7;
+      await this.say(this.L(`Результат: ${r} из ${done.length}.${weak ? ' Эту тему стоит повторить — я отмечу её в плане.' : ` Отлично${this.a}!`}`,
+        `Result: ${String(r).replace(',', '.')} out of ${done.length}.${weak ? ' This topic is worth reviewing — I’ll mark it in the plan.' : ` Well done${this.a}!`}`));
     }
   }
 
@@ -679,16 +700,16 @@ export class Dictation {
     let failed = false;
     await this.streamSpeak(my, {
       system: 'Ты — доброжелательный экзаменатор. Оцени устный ответ студента по смыслу, а не дословно; ответ распознан с голоса и может содержать ошибки распознавания. ' +
-        'Начни строго с одного слова: «Верно.», «Частично.» или «Неверно.» Затем одно-два коротких предложения: что упущено или как правильно. Без markdown, формулы словами.' + this.manner,
+        (this.en ? 'Start with exactly one word: “Correct.”, “Partly.” or “Incorrect.”' : 'Начни строго с одного слова: «Верно.», «Частично.» или «Неверно.»') + ' Затем одно-два коротких предложения: что упущено или как правильно. Без markdown, формулы словами.' + this.manner,
       parts: [{ text: `Тема: ${topic.title}\nФрагмент конспекта:\n<<<\n${topic.text.slice(0, 6000)}\n>>>\nВопрос: ${q.q}\nЭталонный ответ: ${q.a}\nОтвет студента: ${answer}` }],
     }, entry, () => { failed = true; });
     if (my !== this.token) return null;
     if (failed) {
-      await this.say(`Не получилось проверить ответ. Правильный ответ: ${q.a}`);
+      await this.say(this.L(`Не получилось проверить ответ. Правильный ответ: ${q.a}`, `Couldn’t check the answer. The correct answer: ${q.a}`));
       return null;
     }
     const first = norm(entry.a).split(' ')[0];
-    return first === 'верно' ? 1 : first === 'частично' ? 0.5 : first === 'неверно' ? 0 : null;
+    return ['верно', 'correct', 'right'].includes(first) ? 1 : ['частично', 'partly', 'partially'].includes(first) ? 0.5 : ['неверно', 'incorrect', 'wrong'].includes(first) ? 0 : null;
   }
 
   // ---------- Быстрое повторение ----------
@@ -716,11 +737,11 @@ export class Dictation {
     const rv = this.review;
     if (rv.i === 0) {
       this.set('reviewing');
-      await this.say(`Быстрое повторение: ${rv.ids.length === 1 ? 'одна тема' : `тем — ${rv.ids.length}`}.`);
+      await this.say(this.L(`Быстрое повторение: ${rv.ids.length === 1 ? 'одна тема' : `тем — ${rv.ids.length}`}.`, `Quick review: ${rv.ids.length === 1 ? 'one topic' : `${rv.ids.length} topics`}.`));
     } else if (rv.resumed) {
       rv.resumed = false;
       this.set('reviewing');
-      await this.say('Продолжаем повторение.');
+      await this.say(this.L('Продолжаем повторение.', 'Continuing the review.'));
     }
     while (my === this.token && rv.i < rv.ids.length) {
       const t = this.topicById(rv.ids[rv.i]);
@@ -743,7 +764,7 @@ export class Dictation {
     delete this.pos.review;
     this.save();
     this.set('idle');
-    await this.say('Повторение закончено.');
+    await this.say(this.L('Повторение закончено.', 'Review finished.'));
   }
 
   stopReview() {
@@ -771,9 +792,9 @@ export class Dictation {
     stopSpeaking();
     const my = ++this.token;
     this.set('spelling');
-    if (!words.length) await this.say('Скажите «как пишется» и само слово.');
+    if (!words.length) await this.say(this.L('Скажите «как пишется» и само слово.', 'Say “spell” and the word.'));
     for (const w of words) {
-      await this.say(spellOut(w), false, 0.85);
+      await this.say(this.en ? spellOutEn(w) : spellOut(w), false, 0.85);
       if (my !== this.token) return;
     }
     if (my !== this.token) return;
@@ -1248,12 +1269,12 @@ ${prevQa ? `\nПРЕДЫДУЩИЕ ВОПРОСЫ В ЭТОЙ СЕССИИ:\n${p
     }, entry, async (e) => {
       entry.error = true;
       entry.a = '⚠ ' + (e.message || 'Ошибка');
-      await this.say('Не получилось получить ответ. ' + (e.code === 'NETWORK' ? 'Нет интернета.' : ''));
+      await this.say(this.L('Не получилось получить ответ. ' + (e.code === 'NETWORK' ? 'Нет интернета.' : ''), 'Couldn’t get an answer. ' + (e.code === 'NETWORK' ? 'No internet connection.' : '')));
     });
     if (my !== this.token) return;
     this.h.saveProgress();
     if (this.mode !== 'review' && !this.resumePos && !this.currentTopic()) { this.set('finished'); return; }
     this.set('confirm');
-    await this.say(`Продолжаем${this.a}?`, true);
+    await this.say(this.L(`Продолжаем${this.a}?`, `Shall we continue${this.a}?`), true);
   }
 }
