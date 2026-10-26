@@ -2,7 +2,7 @@
 // Рисуется поверх страницы и ничего не меняет в самих кнопках. Анимируются только transform и opacity —
 // это делает видеокарта, голос и распознавание не тормозят.
 
-const TARGETS = 'button, .seg label';
+const TARGETS = 'button, a.btn, .seg label';
 const DROP = '.icon-btn.play, .stop, .btn.filled.wide'; // у главных кнопок круги выходят за край
 const TAP_DELAY = 90; // мс: касание пальцем могло быть началом прокрутки — ждём, прежде чем рисовать
 const SLOP = 10;      // px: палец сдвинулся дальше — это прокрутка, а не нажатие
@@ -88,8 +88,13 @@ document.addEventListener('pointerdown', (e) => {
 
 document.addEventListener('pointermove', (e) => {
   const p = pending;
-  if (!p || e.pointerId !== p.id || p.parts) return;
-  if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > SLOP) { clearTimeout(p.timer); pending = null; }
+  if (!p || e.pointerId !== p.id) return;
+  // палец повели — это прокрутка: волны не будет, а если уже появилась (долго держали) — убираем
+  if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > SLOP) {
+    clearTimeout(p.timer);
+    p.parts?.forEach((x) => x.remove());
+    pending = null;
+  }
 }, { passive: true, capture: true });
 
 document.addEventListener('pointerup', (e) => {
