@@ -27,7 +27,7 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 
 let settings = loadSettings();
 setUiLang(settings.uiLang);
-const THEMES = { ios: 'iOS', classic: 'классика', neon: 'неон', light: 'светлая', auto: 'как в системе' };
+const THEMES = { android: 'Android', ios: 'iOS', classic: 'классика', neon: 'неон', light: 'светлая', auto: 'как в системе' };
 const lightScheme = matchMedia('(prefers-color-scheme: light)');
 applyLook();
 setSpeechLang(settings.contentLang);
@@ -1026,7 +1026,7 @@ function appCommand(c, topicId) {
       set('theme', c.arg);
       set('themePicked', true);
       applyLook();
-      return L(`Оформление: ${THEMES[c.arg]}.`, `Theme: ${{ ios: 'iOS', classic: 'classic', neon: 'neon', light: 'light', auto: 'as in the system' }[c.arg]}.`);
+      return L(`Оформление: ${THEMES[c.arg]}.`, `Theme: ${{ android: 'Android', ios: 'iOS', classic: 'classic', neon: 'neon', light: 'light', auto: 'as in the system' }[c.arg]}.`);
     }
     case 'export': if (project) exportFile(); return project ? '' : L('Сначала добавьте материал и составьте план.', 'First add material and make a plan.');
   }
@@ -1201,13 +1201,16 @@ function applyLook() {
   if (t === 'auto') t = lightScheme.matches ? 'light' : 'classic';
   if (t === 'classic') delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = t;
-  document.querySelector('meta[name=theme-color]').content = { classic: '#0b0c10', neon: '#000000', light: '#f4eee3', ios: lightScheme.matches ? '#f2f2f7' : '#000000' }[t];
-  document.querySelector('meta[name=color-scheme]').content = t === 'ios' ? 'light dark' : t === 'light' ? 'light' : 'dark';
+  document.querySelector('meta[name=theme-color]').content = {
+    classic: '#0b0c10', neon: '#000000', light: '#f4eee3',
+    ios: lightScheme.matches ? '#f2f2f7' : '#000000', android: lightScheme.matches ? '#f9f9ff' : '#111318',
+  }[t];
+  document.querySelector('meta[name=color-scheme]').content = t === 'ios' || t === 'android' ? 'light dark' : t === 'light' ? 'light' : 'dark';
   setRipple(settings.ripple !== false && t !== 'ios'); // в iOS нажатие — подсветкой, без «капли»
 }
-// «как в системе» и iOS: телефон сам переключился на тёмную или светлую тему
-lightScheme.addEventListener?.('change', () => { if (settings.theme === 'auto' || settings.theme === 'ios') applyLook(); });
-// iOS: большой заголовок уезжает вместе с экраном, вместо него — компактная панель
+// «как в системе», iOS и Android: телефон сам переключился на тёмную или светлую тему
+lightScheme.addEventListener?.('change', () => { if (['auto', 'ios', 'android'].includes(settings.theme)) applyLook(); });
+// iOS: большой заголовок уезжает вместе с экраном, вместо него — компактная панель; Android: панель окрашивается
 addEventListener('scroll', () => document.body.classList.toggle('scrolled', scrollY > 44), { passive: true });
 
 // Когда слушает микрофон. На Android включённый микрофон переводит звук в «режим звонка».
@@ -1467,7 +1470,7 @@ document.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener(
 }));
 document.querySelectorAll('input[name=theme]').forEach((r) => r.addEventListener('change', () => {
   settings.theme = r.value;
-  settings.themePicked = true; // выбрали сами — на iPhone больше не подставляем iOS
+  settings.themePicked = true; // выбрали сами — на iPhone и Android больше не подставляем их оформление
   saveSettings(settings);
   applyLook();
 }));
