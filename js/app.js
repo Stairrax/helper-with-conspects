@@ -834,6 +834,40 @@ setInterval(() => {
   $('breakText').textContent = `Перерыв: осталось ${Math.floor(left / 60000)}:${String(Math.floor((left % 60000) / 1000)).padStart(2, '0')}`;
 }, 500);
 $('repeatBtn').addEventListener('click', () => dict.repeat());
+
+// ---------- Клавиши (компьютер, планшет с клавиатурой) ----------
+
+const PAUSED_ST = ['paused', 'listening', 'confirm', 'topicEnd', 'break'];
+// e.code — физическая клавиша: S и F работают и в русской раскладке
+const KEYS = {
+  Space: () => {
+    if (DICTATING.includes(dict.state)) dict.interrupt('pause');
+    else if (PAUSED_ST.includes(dict.state)) dict.resume();
+    else if (project) dict.start();
+  },
+  ArrowRight: (e) => (e.shiftKey ? dict.skipTopic() : dict.next()),
+  ArrowLeft: (e) => (e.shiftKey ? dict.appCommand({ cmd: 'prevTopic' }) : dict.repeat()),
+  KeyS: (e) => onStop(e),
+  KeyF: () => ($('fxSheet').classList.contains('hidden') ? appCommand({ cmd: 'fx', arg: 'cur' }, fxFrom) : closeFormulas()),
+  Equal: () => dict.changeRate(0.1), NumpadAdd: () => dict.changeRate(0.1),
+  Minus: () => dict.changeRate(-0.1), NumpadSubtract: () => dict.changeRate(-0.1),
+  Digit1: () => switchTab('load'), Digit2: () => switchTab('plan'), Digit3: () => switchTab('dictate'), Digit4: () => switchTab('settings'),
+};
+const DICTATION_KEYS = ['Space', 'ArrowRight', 'ArrowLeft', 'KeyS'];
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+  if (e.target.closest?.('input, textarea, select, button, [contenteditable]') && e.code !== 'Escape') return;
+  if (e.code === 'Escape') {
+    if (!$('fxSheet').classList.contains('hidden')) closeFormulas();
+    else ['sheet', 'subjectSheet'].forEach((id) => $(id).classList.add('hidden'));
+    return;
+  }
+  const fn = KEYS[e.code];
+  if (!fn || (DICTATION_KEYS.includes(e.code) && !project)) return;
+  e.preventDefault();
+  if (DICTATION_KEYS.includes(e.code) && activeTab !== 'dictate') switchTab('dictate');
+  fn(e);
+});
 $('nextBtn').addEventListener('click', () => dict.next());
 
 // меню «ещё»
