@@ -113,6 +113,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 36px; marg
 }
 .seg input:checked + span { background: var(--accent-soft); color: var(--accent); }
 .seg.compact { margin: 14px 0 0; }
+.seg.themes { grid-template-columns: repeat(3, 1fr); }
 .listen-seg { margin: 0 0 12px; }
 
 /* переключатели Android */
