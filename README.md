@@ -15,29 +15,29 @@
 - **Учиться, а не только записывать**: самопроверка после темы и экзамен по всему предмету, повторение слабых мест с напоминаниями, шпаргалка на одну страницу, карточки для Anki, формулы — отдельным блоком, режим «Только слушаю» для транспорта, статистика занятий.
 - **Подстраивается под вас**: паузы сами становятся короче или длиннее под скорость вашего письма, а читаемое слово можно подсвечивать в тексте. На iPhone конспект можно озвучить в MP3 и слушать с погасшим экраном.
 - **Готовым конспектом можно поделиться**: одногруппник откроет файл и сразу начнёт диктовку, без своего ключа.
-- **Android, iPhone и компьютер** (с клавишами). На Android у приложения свой вид в духе Material You, на iPhone — в стиле iOS; светлый или тёмный вместе с системой. Есть и другие темы: «Классика», «Неон» и светлая «Тетрадь». Интерфейс бывает на русском и на английском, английские конспекты тоже можно диктовать.
+- **Android, iPhone и компьютер** (с клавишами). Своё оформление, не как у системных приложений: тёмная «Аврора» со светящейся кнопкой «стоп» и светлые «Чернила» с крупным книжным шрифтом — меняются вместе с темой телефона. Есть и другие: в стиле Android и iOS, «Классика», «Неон», «Тетрадь». Интерфейс бывает на русском и на английском, английские конспекты тоже можно диктовать.
 - **Данные — только на вашем устройстве**: конспекты и ключ никуда не отправляются, кроме выбранной вами нейросети.
 
 <table>
   <tr>
-    <td align="center"><img src="screenshots/demo.gif" width="300" alt="Android: диктовка обрывается по «стоп», приложение отвечает на вопрос и продолжает"></td>
-    <td align="center"><img src="screenshots/demo-iphone-ios.gif" width="300" alt="iPhone, оформление iOS: «покажи формулы», затем «стоп», вопрос и ответ"></td>
+    <td align="center"><img src="screenshots/demo-aurora.gif" width="300" alt="Оформление «Аврора»: диктовка обрывается по «стоп», приложение отвечает на вопрос и продолжает"></td>
+    <td align="center"><img src="screenshots/demo-ink.gif" width="300" alt="Оформление «Чернила»: «стоп», вопрос и ответ"></td>
   </tr>
   <tr>
-    <td align="center"><sub>Android, оформление Android: «стоп», вопрос, ответ и продолжение</sub></td>
-    <td align="center"><sub>iPhone, оформление iOS: «покажи формулы», затем «стоп» и вопрос</sub></td>
+    <td align="center"><sub>«Аврора» (тёмная тема телефона): «стоп», вопрос, ответ</sub></td>
+    <td align="center"><sub>«Чернила» (светлая тема телефона): то же самое</sub></td>
   </tr>
 </table>
 
-<sub>В роликах звук заменён субтитрами: сверху — что говорит диктор и что говорит человек.</sub>
+<sub>В роликах звук заменён субтитрами: сверху — что говорит приложение и что говорит человек.</sub>
 
 <p>
-  <img src="screenshots/dictate.png" width="190" alt="Диктовка">
-  <img src="screenshots/answer.png" width="190" alt="Ответ на вопрос">
-  <img src="screenshots/listen.png" width="190" alt="Только слушаю">
-  <img src="screenshots/voice.png" width="190" alt="Живой голос «Бая»">
-  <img src="screenshots/plan.png" width="190" alt="План">
-  <img src="screenshots/welcome-voice.png" width="190" alt="Первый запуск: звук и микрофон">
+  <img src="screenshots/dictate-aurora.png" width="190" alt="Диктовка («Аврора»)">
+  <img src="screenshots/answer-aurora.png" width="190" alt="Ответ на вопрос («Аврора»)">
+  <img src="screenshots/welcome-aurora.png" width="190" alt="Первый запуск: звук и микрофон («Аврора»)">
+  <img src="screenshots/plan-ink.png" width="190" alt="План («Чернила»)">
+  <img src="screenshots/listen-ink.png" width="190" alt="Только слушаю («Чернила»)">
+  <img src="screenshots/voice-ink.png" width="190" alt="Живой голос «Бая» («Чернила»)">
 </p>
 
 **In English:** the app also works fully in English — switch *Settings → Interface language* and *Notes language* to English (on first run both follow your browser language). Notes are dictated with an English voice, and English voice commands work: “stop”, “next”, “repeat”, “go to topic two”, “show formulas”.

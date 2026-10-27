@@ -508,3 +508,17 @@ body.ios .android-only, body:not(.ios) .ios-only { display: none !important; }
 .tickets .tq { flex: 1; overflow-wrap: anywhere; }
 .tickets .tdetail { padding: 0 12px 12px 44px; }
 .tickets .tans { white-space: pre-line; margin: 0 0 10px; font-size: 14px; line-height: 1.45; }
+
+/* ---------- «Аврора» и «Чернила»: круглый «СТОП» внизу, «повторить» и «дальше» — по бокам от него ---------- */
+/* подложка «СТОПа» уходит до низа экрана — текст под ним и под панелью вкладок плавно исчезает */
+:is([data-theme="aurora"], [data-theme="ink"]) .stopbar { display: flex; justify-content: center; bottom: 0; padding-bottom: calc(var(--nav-h) + var(--safe-b) + 8px); }
+:is([data-theme="aurora"], [data-theme="ink"]) :is(.seg, .switch) + .card-title { margin-top: 20px; }
+:is([data-theme="aurora"], [data-theme="ink"]) .chip-btn { min-width: 0; padding: 0 4px; font-size: 14px; gap: 4px; }
+:is([data-theme="aurora"], [data-theme="ink"]) .add-row { gap: 6px; }
+:is([data-theme="aurora"], [data-theme="ink"]) .stop { flex: none; margin: 0; }
+:is([data-theme="aurora"], [data-theme="ink"]) body.has-stop[data-tab="dictate"] :is(#repeatBtn, #nextBtn) {
+  position: fixed; z-index: 21; width: 56px; height: 56px;
+  bottom: calc(var(--nav-h) + var(--safe-b) + var(--stop-h) / 2 - 28px);
+}
+:is([data-theme="aurora"], [data-theme="ink"]) body.has-stop[data-tab="dictate"] #repeatBtn { left: calc(50% + var(--rail, 0px) / 2 - 136px); }
+:is([data-theme="aurora"], [data-theme="ink"]) body.has-stop[data-tab="dictate"] #nextBtn { left: calc(50% + var(--rail, 0px) / 2 + 80px); }

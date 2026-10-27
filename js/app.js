@@ -32,7 +32,7 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 
 let settings = loadSettings();
 setUiLang(settings.uiLang);
-const THEMES = { android: 'Android', ios: 'iOS', classic: 'классика', neon: 'неон', light: 'светлая', auto: 'как в системе' };
+const THEMES = { auto: 'как в системе', aurora: 'Аврора', ink: 'Чернила', android: 'Android', ios: 'iOS', classic: 'классика', neon: 'неон', light: 'Тетрадь' };
 const lightScheme = matchMedia('(prefers-color-scheme: light)');
 applyLook();
 setSpeechLang(settings.contentLang);
@@ -1070,6 +1070,7 @@ const QUIZ = ['quiz', 'quizListen', 'quizGrade', 'longListen'];
 
 function renderDictation() {
   const st = dict.state;
+  document.body.dataset.dict = st; // оформлению: «СТОП» дышит, пока голос говорит
   const seq = project ? activeSeq(project) : [];
   const topicId = dict.resumePos && st !== 'topicEnd' ? dict.resumePos.topicId : progress?.topicId;
   // во время самопроверки и повторения в шапке — проверяемая тема
@@ -1370,7 +1371,7 @@ function appCommand(c, topicId) {
       set('theme', c.arg);
       set('themePicked', true);
       applyLook();
-      return L(`Оформление: ${THEMES[c.arg]}.`, `Theme: ${{ android: 'Android', ios: 'iOS', classic: 'classic', neon: 'neon', light: 'light', auto: 'as in the system' }[c.arg]}.`);
+      return L(`Оформление: ${THEMES[c.arg]}.`, `Theme: ${{ android: 'Android', ios: 'iOS', classic: 'classic', neon: 'neon', light: 'Notebook', auto: 'as in the system', aurora: 'Aurora', ink: 'Ink' }[c.arg]}.`);
     }
     case 'export': if (project) exportFile(); return project ? '' : L('Сначала добавьте материал и составьте план.', 'First add material and make a plan.');
     case 'exam': return startExam() ? '' : L('Пока нет вопросов для экзамена: они появляются, когда темы подготовлены.', 'No exam questions yet: they appear once topics are prepared.');
@@ -1564,15 +1565,15 @@ function renderSettings() {
 
 // Оформление: тема (тот же выбор делает скрипт в <head> до первой отрисовки) и «капля» при нажатии
 function applyLook() {
-  let t = THEMES[settings.theme] ? settings.theme : 'classic';
-  if (t === 'auto') t = lightScheme.matches ? 'light' : 'classic';
+  let t = THEMES[settings.theme] ? settings.theme : 'auto';
+  if (t === 'auto') t = lightScheme.matches ? 'ink' : 'aurora'; // как в системе: светлая — «Чернила», тёмная — «Аврора»
   if (t === 'classic') delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = t;
   document.querySelector('meta[name=theme-color]').content = {
-    classic: '#0b0c10', neon: '#000000', light: '#f4eee3',
+    classic: '#0b0c10', neon: '#000000', light: '#f4eee3', aurora: '#070818', ink: '#f3f0e8',
     ios: lightScheme.matches ? '#f2f2f7' : '#000000', android: lightScheme.matches ? '#f9f9ff' : '#111318',
   }[t];
-  document.querySelector('meta[name=color-scheme]').content = t === 'ios' || t === 'android' ? 'light dark' : t === 'light' ? 'light' : 'dark';
+  document.querySelector('meta[name=color-scheme]').content = t === 'ios' || t === 'android' ? 'light dark' : t === 'light' || t === 'ink' ? 'light' : 'dark';
   setRipple(settings.ripple !== false && t !== 'ios'); // в iOS нажатие — подсветкой, без «капли»
 }
 // «как в системе», iOS и Android: телефон сам переключился на тёмную или светлую тему

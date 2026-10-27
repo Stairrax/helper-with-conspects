@@ -255,7 +255,7 @@ export const EXACT = {
     '— the list of commands. You can use your own words too (“make the pauses shorter”) — the AI will work out what to do. Commands also work as text in the question box',
 
   // оформление, поддержка, данные
-  'Оформление': 'Appearance', 'Классика': 'Classic', 'Неон': 'Neon', 'Светлая': 'Light', 'Как в системе': 'System',
+  'Оформление': 'Appearance', 'Классика': 'Classic', 'Неон': 'Neon', 'Светлая': 'Light', 'Как в системе': 'System', 'Аврора': 'Aurora', 'Чернила': 'Ink', 'Тетрадь': 'Notebook',
   'классика': 'classic', 'неон': 'neon', 'светлая': 'light', 'как в системе': 'system',
   'Капля при нажатии': 'Drop on tap', 'от пальца по кнопке расходится волна, от главных кнопок — круги, как по воде': 'a wave spreads from your finger across the button, and circles from the main buttons, like on water',
   'Поддержать автора': 'Support the author',
