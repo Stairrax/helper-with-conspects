@@ -1,0 +1,138 @@
+/* Оформление «Чернила»: спокойное, как журнал — бумажный фон, чёрные «чернила», крупный текст с засечками,
+   без карточек (разделы — тонкими линиями), «стоп» — большой чёрный круг, вкладки — словами с подчёркиванием.
+   <html data-theme="ink">; по умолчанию — когда на телефоне светлая тема (тёмная — «Аврора», css/aurora.css).
+   Шрифты: Onest (neon.css) и Literata (light.css), fonts/, SIL OFL 1.1. */
+
+:root[data-theme="ink"] {
+  color-scheme: light;
+  --bg: #f3f0e8; --surface: #f3f0e8; --surface2: #ebe6da; --surface3: #e2dccd;
+  --line: #d6cfbf; --ink: #1b1a17;
+  --text: #1b1a17; --muted: #7b766b;
+  --accent: #1b1a17; --on-accent: #f3f0e8; --accent-soft: #e6e0d1;
+  --mark: #f2c94c;
+  --ok: #2f7d5b; --on-ok: #f3f0e8; --warn: #a3630b; --danger: #b3261e; --stop: #1b1a17; --listen: #2f5f8a;
+  --ripple-ring: #1b1a17; --ripple-ring2: #8a8475;
+  --nav-h: 64px; --stop-h: 132px;
+}
+
+[data-theme="ink"] body { font-family: 'Onest', Roboto, system-ui, sans-serif; }
+
+/* ---------- заголовки — с засечками ---------- */
+[data-theme="ink"] .appbar { background: var(--bg); }
+[data-theme="ink"] body.scrolled .appbar { box-shadow: 0 1px 0 var(--line); }
+[data-theme="ink"] :is(.appbar h1, .topic h2, .plan-sum .big, .ob-step h2, .fx-title b, .stats-row b, .stepper output) {
+  font-family: 'Literata', Georgia, serif; font-weight: 400;
+}
+[data-theme="ink"] .appbar h1 { font-size: 26px; }
+[data-theme="ink"] .topic h2 { font-size: 28px; line-height: 1.15; margin: 6px 0 12px; }
+[data-theme="ink"] .plan-sum .big { font-size: 24px; line-height: 1.2; }
+[data-theme="ink"] .ob-step h2 { font-size: 30px; line-height: 1.15; }
+[data-theme="ink"] .stats-row b { font-size: 24px; }
+[data-theme="ink"] .subject-btn { color: var(--ink); font-weight: 600; }
+[data-theme="ink"] .mic.on { background: #dcebe2; }
+[data-theme="ink"] .card-title, [data-theme="ink"] .sheet-title { text-transform: uppercase; letter-spacing: .14em; font-size: 11px; font-weight: 600; color: var(--muted); }
+[data-theme="ink"] .hint a, [data-theme="ink"] details.mini summary { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+
+/* ---------- без карточек: разделы отделены тонкой линией ---------- */
+[data-theme="ink"] .card { background: none; border-radius: 0; border-top: 1.5px solid var(--ink); padding: 14px 0 18px; margin-bottom: 8px; }
+[data-theme="ink"] :is(.qa, .banner, .install, .fx-item) { background: none; border: 1px solid var(--line); border-radius: 16px; }
+[data-theme="ink"] .answer { background: #fbf9f3; border: 1px solid var(--line); }
+[data-theme="ink"] .answer .q { font-family: 'Literata', Georgia, serif; font-style: italic; }
+[data-theme="ink"] .resume { background: none; border: 1.5px solid var(--ink); border-radius: 18px; }
+[data-theme="ink"] .resume .ic { color: var(--ink); }
+
+/* ---------- кнопки — обводка чернилами ---------- */
+[data-theme="ink"] .btn { border-radius: 100px; background: none; border: 1.5px solid var(--ink); color: var(--ink); font-weight: 500; }
+[data-theme="ink"] .btn:active { background: var(--surface2); filter: none; }
+[data-theme="ink"] .btn.filled { background: var(--ink); color: var(--bg); }
+[data-theme="ink"] .btn.tonal { background: var(--accent-soft); border-color: transparent; }
+[data-theme="ink"] .btn.ok { background: var(--ok); border-color: var(--ok); color: var(--on-ok); }
+[data-theme="ink"] .btn.text { border: 0; text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1px; }
+[data-theme="ink"] .btn.outline { border-color: var(--line); }
+[data-theme="ink"] .btn.danger { color: var(--danger); }
+[data-theme="ink"] .icon-btn { background: none; border: 1.5px solid var(--ink); color: var(--ink); }
+[data-theme="ink"] .icon-btn.small, [data-theme="ink"] .icon-btn.more { border: 0; }
+[data-theme="ink"] .icon-btn.filled { background: var(--ink); color: var(--bg); }
+[data-theme="ink"] .icon-btn.play { width: 64px; height: 64px; border-radius: 50%; background: none; border: 1.5px solid var(--ink); color: var(--ink); }
+[data-theme="ink"] .icon-btn.play svg { width: 30px; height: 30px; }
+[data-theme="ink"] .chip-btn { border: 1.5px solid var(--ink); border-radius: 100px; }
+[data-theme="ink"] .chip-btn svg { color: var(--ink); }
+[data-theme="ink"] .fx-btn { background: none; border: 1px solid var(--line); border-radius: 100px; color: var(--muted); }
+[data-theme="ink"] .fx-btn.here { border-color: var(--ink); color: var(--ink); }
+
+/* ---------- поля, сегменты, переключатели ---------- */
+[data-theme="ink"] :is(input[type=text], input[type=password], input[type=date], textarea, select) {
+  background: #fbf9f3; border: 1px solid var(--line); border-radius: 12px; color: var(--ink);
+}
+[data-theme="ink"] :is(input, textarea, select):focus { border-color: var(--ink); }
+[data-theme="ink"] .ask-row textarea { border-radius: 24px; }
+[data-theme="ink"] .seg { background: none; gap: 6px; border-radius: 0; overflow: visible; }
+[data-theme="ink"] .seg span { border: 1px solid var(--line); border-radius: 100px; color: var(--ink); min-height: 42px; }
+[data-theme="ink"] .seg input:checked + span { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+[data-theme="ink"] .switch { border-top-color: var(--line); }
+[data-theme="ink"] .switch i { background: none; border: 1.5px solid var(--ink); }
+[data-theme="ink"] .switch i::after { background: var(--ink); }
+[data-theme="ink"] .switch input:checked + i { background: var(--ink); border-color: var(--ink); }
+[data-theme="ink"] .switch input:checked + i::after { background: var(--bg); }
+[data-theme="ink"] .progress, [data-theme="ink"] .bars .bar i.none { background: var(--line); }
+[data-theme="ink"] .progress > div, [data-theme="ink"] .bars .bar i { background: var(--ink); }
+[data-theme="ink"] .seek::-webkit-slider-runnable-track { height: 2px; background: linear-gradient(to right, var(--ink) var(--fill, 0%), var(--line) var(--fill, 0%)); }
+[data-theme="ink"] .seek::-webkit-slider-thumb { width: 14px; height: 14px; margin-top: -6px; background: var(--ink); }
+
+/* ---------- план: номера с засечками, темы — строками ---------- */
+[data-theme="ink"] .plan li { background: none; border-radius: 0; border-bottom: 1px solid var(--line); margin: 0; }
+[data-theme="ink"] .plan li:first-child { border-top: 1.5px solid var(--ink); }
+[data-theme="ink"] .plan .pnum { background: none; border: 1px solid var(--line); font-family: 'Literata', Georgia, serif; font-size: 15px; }
+[data-theme="ink"] .plan li.current .pnum { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+[data-theme="ink"] .plan li.done .pnum { background: none; border-color: var(--ok); color: var(--ok); }
+[data-theme="ink"] .badge { border: 1px solid currentColor; background: none !important; }
+[data-theme="ink"] .badge.due, [data-theme="ink"] .badge.fx { color: var(--ink); }
+[data-theme="ink"] .dots { color: var(--ink); }
+[data-theme="ink"] .tickets li { border-color: var(--line); }
+
+/* ---------- диктовка: текст крупно, как в книге, без подложки ---------- */
+[data-theme="ink"] .chunk { background: none; border-radius: 0; padding: 30px 0 22px; border-top: 1.5px solid var(--ink); }
+[data-theme="ink"] .chunk p { font-family: 'Literata', Georgia, serif; font-size: 25px; line-height: 1.42; }
+[data-theme="ink"] .qa-open .chunk p { font-size: 19px; }
+[data-theme="ink"] .chunk .kind { left: 0; color: var(--muted); letter-spacing: .16em; }
+[data-theme="ink"] .chunk-hint { right: 0; }
+[data-theme="ink"] .chunk .gap { height: 2px; }
+[data-theme="ink"] .chunk .gap div { background: var(--ink); }
+[data-theme="ink"] .chunk p .w.hl { background: linear-gradient(transparent 60%, var(--mark) 60%); color: inherit; box-shadow: none; border-radius: 0; }
+[data-theme="ink"] .dot.s-speaking { background: var(--ink); box-shadow: 0 0 0 4px rgba(27, 26, 23, .12); }
+[data-theme="ink"] .dot.s-gap { background: var(--ok); }
+
+/* «стоп» — чёрный круг с тонким кольцом; слушает вопрос — синие чернила */
+[data-theme="ink"] .stopbar { background: linear-gradient(to top, var(--bg) 72%, rgba(243, 240, 232, 0)); padding-top: 10px; }
+[data-theme="ink"] .stop {
+  width: 108px; height: 108px; border-radius: 50%; padding: 10px; background: var(--ink); color: var(--bg);
+  font: italic 400 17px/1.15 'Literata', Georgia, serif; letter-spacing: 0; text-transform: lowercase;
+  box-shadow: 0 0 0 6px var(--bg), 0 0 0 7px var(--ink);
+  --ripple-ring: #1b1a17; --ripple-ring2: #8a8475;
+}
+[data-theme="ink"] .stop:active { transform: scale(.96); filter: none; }
+[data-theme="ink"] .stop.listening { background: var(--listen); box-shadow: 0 0 0 6px var(--bg), 0 0 0 7px var(--listen); --ripple-ring: #2f5f8a; --ripple-ring2: #9bb7d1; }
+[data-theme="ink"] body[data-dict="speaking"] .stop { animation: ink-ring 2.4s ease-in-out infinite; }
+@keyframes ink-ring { 50% { box-shadow: 0 0 0 9px var(--bg), 0 0 0 10px var(--ink); } }
+@media (prefers-reduced-motion: reduce) { [data-theme="ink"] body[data-dict] .stop { animation: none; } }
+
+/* ---------- вкладки — словами, выбранная подчёркнута ---------- */
+@media (max-width: 899px) {
+  [data-theme="ink"] .navbar { background: var(--bg); border-top: 1px solid var(--line); padding-left: 12px; padding-right: 12px; }
+  [data-theme="ink"] .navbar .pill { display: none; }
+  [data-theme="ink"] .navbar button { font-size: 14px; color: var(--muted); }
+  [data-theme="ink"] .navbar button.active { color: var(--ink); font-weight: 600; text-decoration: underline; text-underline-offset: 7px; text-decoration-thickness: 2px; }
+}
+@media (min-width: 900px) {
+  [data-theme="ink"] .navbar { background: var(--bg); border-right-color: var(--line); }
+  [data-theme="ink"] .navbar button.active .pill { background: var(--ink); color: var(--bg); }
+}
+
+/* ---------- окна снизу, подсказки, мастер ---------- */
+[data-theme="ink"] .sheet-scrim { background: rgba(27, 26, 23, .35); }
+[data-theme="ink"] .sheet-body { background: var(--bg); border-top: 1.5px solid var(--ink); }
+[data-theme="ink"] .sheet-handle { background: var(--ink); opacity: .3; }
+[data-theme="ink"] .sheet-item:active, [data-theme="ink"] .sheet-item.active { background: var(--surface2); color: var(--ink); }
+[data-theme="ink"] .toast { background: var(--ink); color: var(--bg); border-radius: 100px; }
+[data-theme="ink"] .ob-sub, [data-theme="ink"] .lecture-text { background: #fbf9f3; border: 1px solid var(--line); }
+[data-theme="ink"] .keys kbd { background: var(--surface2); }

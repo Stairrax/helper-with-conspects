@@ -1,6 +1,6 @@
-// Оформление: «Неон», светлая, «как в системе»; шрифты — только по необходимости; «капля».
+// Оформление: «Неон», «как в системе» («Чернила» / «Аврора»), круглый «СТОП»; шрифты — только по необходимости; «капля».
 export default async ({ open, prepare, FINANCE, ok }) => {
-  const { page } = await open();
+  const { page } = await open({ settings: { theme: 'classic', themePicked: true } });
   const fonts = [];
   page.on('request', (r) => { if (r.url().includes('/fonts/')) fonts.push(r.url()); });
   await page.reload(); await page.waitForTimeout(400);
@@ -12,14 +12,15 @@ export default async ({ open, prepare, FINANCE, ok }) => {
   ok(fonts.some((u) => u.includes('unbounded')), 'шрифты «Неона» скачались');
   await page.emulateMedia({ colorScheme: 'light' });
   await theme('auto');
-  ok(await page.evaluate(() => document.documentElement.dataset.theme) === 'light', '«как в системе» при светлой системе — светлая');
+  await page.evaluate(() => document.fonts.ready); await page.waitForTimeout(200);
+  ok(await page.evaluate(() => document.documentElement.dataset.theme) === 'ink' && fonts.some((u) => u.includes('literata')), '«как в системе» при светлой системе — «Чернила»');
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.waitForTimeout(100);
-  ok(await page.evaluate(() => !document.documentElement.dataset.theme), '…переключилась система — тёмная');
+  ok(await page.evaluate(() => document.documentElement.dataset.theme === 'aurora' && document.querySelector('meta[name=theme-color]').content === '#070818'), '…переключилась система — «Аврора»');
   await page.emulateMedia({ colorScheme: 'light' });
   await page.addInitScript(() => document.addEventListener('readystatechange', () => { if (document.readyState === 'interactive') window.__early = document.documentElement.dataset.theme || ''; }));
   await page.reload(); await page.waitForTimeout(300);
-  ok(await page.evaluate(() => window.__early) === 'light', 'тема ставится до загрузки приложения — экран не мигает');
+  ok(await page.evaluate(() => window.__early) === 'ink', 'тема ставится до загрузки приложения — экран не мигает');
 
   await prepare(page, FINANCE, 'Финансы');
   await page.waitForTimeout(1100); // волны от прошлых нажатий успели исчезнуть
@@ -45,7 +46,7 @@ export default async ({ open, prepare, FINANCE, ok }) => {
   const li = await page.locator('#planList li').nth(1).locator('.phead').boundingBox();
   const x = li.x + 120, y = li.y + li.height / 2;
   await touch('touchStart', x, y); await touch('touchEnd'); await page.waitForTimeout(30);
-  ok(await page.evaluate(() => document.querySelector('.ripple')?.style.borderRadius) === '16px', 'касание — волна в форме карточки темы');
+  ok(await page.evaluate(() => { const r = document.querySelector('.ripple')?.style.borderRadius; return !!r && r === getComputedStyle(document.querySelectorAll('#planList li')[1]).borderRadius; }), 'касание — волна в форме карточки темы');
   await page.waitForTimeout(1100);
   await page.click('[data-tab=load]'); await page.click('[data-tab=plan]'); await page.waitForTimeout(1100);
   const li2 = await page.locator('#planList li').nth(0).locator('.phead').boundingBox();

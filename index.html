@@ -19,21 +19,23 @@
   <link rel="stylesheet" href="css/light.css">
   <link rel="stylesheet" href="css/ios.css">
   <link rel="stylesheet" href="css/android.css">
+  <link rel="stylesheet" href="css/aurora.css">
+  <link rel="stylesheet" href="css/ink.css">
   <script>
     // тема — до первой отрисовки, чтобы экран не мигал (то же делает applyLook в app.js)
     try {
       const s = JSON.parse(localStorage.getItem('kd.settings') || '{}');
       const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
       const android = /Android/i.test(navigator.userAgent);
-      // на iPhone по умолчанию — оформление iOS, на Android — Android
-      let t = s.themePicked ? s.theme : ios ? 'ios' : android ? 'android' : s.theme;
+      // по умолчанию — как в системе: тёмная — «Аврора», светлая — «Чернила»
+      let t = s.themePicked ? s.theme : 'auto';
       const light = matchMedia('(prefers-color-scheme: light)').matches;
-      if (t === 'auto') t = light ? 'light' : 'classic';
-      if (t === 'neon' || t === 'light' || t === 'ios' || t === 'android') {
+      if (t === 'auto') t = light ? 'ink' : 'aurora';
+      if (t !== 'classic') {
         document.documentElement.dataset.theme = t;
-        document.querySelector('meta[name=theme-color]').content = t === 'ios' ? (light ? '#f2f2f7' : '#000000')
-          : t === 'android' ? (light ? '#f9f9ff' : '#111318') : t === 'neon' ? '#000000' : '#f4eee3';
-        document.querySelector('meta[name=color-scheme]').content = t === 'ios' || t === 'android' ? 'light dark' : t === 'light' ? 'light' : 'dark';
+        document.querySelector('meta[name=theme-color]').content = { ios: light ? '#f2f2f7' : '#000000', android: light ? '#f9f9ff' : '#111318',
+          neon: '#000000', light: '#f4eee3', aurora: '#070818', ink: '#f3f0e8' }[t] || '#0b0c10';
+        document.querySelector('meta[name=color-scheme]').content = t === 'ios' || t === 'android' ? 'light dark' : t === 'light' || t === 'ink' ? 'light' : 'dark';
       }
     } catch { /* ignore */ }
     // английский интерфейс: страница видна, когда текст уже переведён (i18n.js), — без мелькания русского
@@ -478,12 +480,14 @@
       <div class="card">
         <div class="card-title">Оформление</div>
         <div class="seg themes">
+          <label><input type="radio" name="theme" value="auto"><span>Как в системе</span></label>
+          <label><input type="radio" name="theme" value="aurora"><span>Аврора</span></label>
+          <label><input type="radio" name="theme" value="ink"><span>Чернила</span></label>
           <label><input type="radio" name="theme" value="android"><span>Android</span></label>
           <label><input type="radio" name="theme" value="ios"><span>iOS</span></label>
           <label><input type="radio" name="theme" value="classic"><span>Классика</span></label>
           <label><input type="radio" name="theme" value="neon"><span>Неон</span></label>
-          <label><input type="radio" name="theme" value="light"><span>Светлая</span></label>
-          <label><input type="radio" name="theme" value="auto"><span>Как в системе</span></label>
+          <label><input type="radio" name="theme" value="light"><span>Тетрадь</span></label>
         </div>
         <label class="switch" id="rippleRow"><span>Капля при нажатии<small>от пальца по кнопке расходится волна, от главных кнопок — круги, как по воде</small></span><input id="ripple" type="checkbox"><i></i></label>
       </div>
@@ -727,31 +731,31 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/abbr.js": "./js/abbr.js?v=58",
-      "./js/ai.js": "./js/ai.js?v=58",
-      "./js/analyze.js": "./js/analyze.js?v=58",
-      "./js/anthropic.js": "./js/anthropic.js?v=58",
-      "./js/app.js": "./js/app.js?v=58",
-      "./js/commands.js": "./js/commands.js?v=58",
-      "./js/lecture.js": "./js/lecture.js?v=58",
-      "./js/config.js": "./js/config.js?v=58",
-      "./js/stats.js": "./js/stats.js?v=58",
-      "./js/cheatsheet.js": "./js/cheatsheet.js?v=58",
-      "./js/audiobook.js": "./js/audiobook.js?v=58",
-      "./js/tickets.js": "./js/tickets.js?v=58",
-      "./js/i18n.js": "./js/i18n.js?v=58",
-      "./js/i18n-en.js": "./js/i18n-en.js?v=58",
-      "./js/platform.js": "./js/platform.js?v=58",
-      "./js/dictation.js": "./js/dictation.js?v=58",
-      "./js/extract.js": "./js/extract.js?v=58",
-      "./js/gemini.js": "./js/gemini.js?v=58",
-      "./js/media.js": "./js/media.js?v=58",
-      "./js/neural.js": "./js/neural.js?v=58",
-      "./js/onboarding.js": "./js/onboarding.js?v=58",
-      "./js/openai.js": "./js/openai.js?v=58",
-      "./js/ripple.js": "./js/ripple.js?v=58",
-      "./js/speech.js": "./js/speech.js?v=58",
-      "./js/storage.js": "./js/storage.js?v=58"
+      "./js/abbr.js": "./js/abbr.js?v=59",
+      "./js/ai.js": "./js/ai.js?v=59",
+      "./js/analyze.js": "./js/analyze.js?v=59",
+      "./js/anthropic.js": "./js/anthropic.js?v=59",
+      "./js/app.js": "./js/app.js?v=59",
+      "./js/commands.js": "./js/commands.js?v=59",
+      "./js/lecture.js": "./js/lecture.js?v=59",
+      "./js/config.js": "./js/config.js?v=59",
+      "./js/stats.js": "./js/stats.js?v=59",
+      "./js/cheatsheet.js": "./js/cheatsheet.js?v=59",
+      "./js/audiobook.js": "./js/audiobook.js?v=59",
+      "./js/tickets.js": "./js/tickets.js?v=59",
+      "./js/i18n.js": "./js/i18n.js?v=59",
+      "./js/i18n-en.js": "./js/i18n-en.js?v=59",
+      "./js/platform.js": "./js/platform.js?v=59",
+      "./js/dictation.js": "./js/dictation.js?v=59",
+      "./js/extract.js": "./js/extract.js?v=59",
+      "./js/gemini.js": "./js/gemini.js?v=59",
+      "./js/media.js": "./js/media.js?v=59",
+      "./js/neural.js": "./js/neural.js?v=59",
+      "./js/onboarding.js": "./js/onboarding.js?v=59",
+      "./js/openai.js": "./js/openai.js?v=59",
+      "./js/ripple.js": "./js/ripple.js?v=59",
+      "./js/speech.js": "./js/speech.js?v=59",
+      "./js/storage.js": "./js/storage.js?v=59"
     }
   }
   </script>
@@ -785,7 +789,7 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=58"></script>
+  <script type="module" src="js/app.js?v=59"></script>
   <div id="printArea" class="cheatsheet" data-no-i18n></div>
 </body>
 </html>

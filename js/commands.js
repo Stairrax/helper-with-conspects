@@ -40,9 +40,13 @@ const R = (re, f) => STATE.push([re, f]);
 // оформление — раньше тем: «светлая тема» — это не тема конспекта
 R(/(?:^|\s)(?:андроид|android)\S*(?: тем| оформлен| стил)|(?:тем|оформлен|стил)\S* (?:андроид|android|как на андроиде)/, () => ({ cmd: 'theme', arg: 'android' }));
 R(/(?:^|\s)(?:айфон|ios|ай ос|эппл|apple)\S*(?: тем| оформлен| стил)|(?:тем|оформлен|стил)\S* (?:айфон|ios|ай ос|как на айфоне)/, () => ({ cmd: 'theme', arg: 'ios' }));
+R(/(?:^|\s)(?:аврор|северное сияние)/, (t) => (/(?:тем|включ|сделай|поставь|оформлен|давай)/.test(t) || /^аврор\S*$/.test(t) ? { cmd: 'theme', arg: 'aurora' } : null));
+R(/(?:^|\s)чернил/, (t) => (/(?:тем|включ|сделай|поставь|оформлен|давай)/.test(t) || /^чернил\S*$/.test(t) ? { cmd: 'theme', arg: 'ink' } : null));
 R(/(?:^|\s)(?:неонов|неон)/, (t) => (/(?:тем|включ|сделай|поставь|оформлен)/.test(t) ? { cmd: 'theme', arg: 'neon' } : null));
-R(/(?:^|\s)(?:светл|белая тема|дневная тема)/, (t) => (/(?:тем|включ|сделай|поставь|оформлен|режим)/.test(t) ? { cmd: 'theme', arg: 'light' } : null));
-R(/(?:^|\s)(?:темн|черн|ночн|классическ)\S* (?:тем|оформлен|режим)|(?:тем|оформлен)\S* (?:темн|классическ)/, () => ({ cmd: 'theme', arg: 'classic' }));
+R(/(?:^|\s)тетрад\S* (?:тем|оформлен)|(?:тем|оформлен)\S* тетрад/, () => ({ cmd: 'theme', arg: 'light' }));
+R(/(?:^|\s)(?:светл|белая тема|дневная тема)/, (t) => (/(?:тем|включ|сделай|поставь|оформлен|режим)/.test(t) ? { cmd: 'theme', arg: 'ink' } : null));
+R(/(?:^|\s)классическ\S* (?:тем|оформлен|режим)|(?:тем|оформлен)\S* классическ/, () => ({ cmd: 'theme', arg: 'classic' }));
+R(/(?:^|\s)(?:темн|черн|ночн)\S* (?:тем|оформлен|режим)|(?:тем|оформлен)\S* темн/, () => ({ cmd: 'theme', arg: 'aurora' }));
 // билеты и пересказ — раньше тем: «перескажу тему» — не переход к теме
 R(/(?:^|\s)билет/, (t) => {
   const after = t.replace(/^.*?билет\S*\s*/, '').replace(/^номер\s+/, '').split(' ').slice(0, 2);
@@ -92,11 +96,15 @@ R(/(?:^|\s)(?:начн\S*|запуст\S*|давай|устрой|проведи
 R(/(?:^|\s)(?:что ты умеешь|какие (?:есть )?команды|список команд|помощь|справка|что можно (?:сказать|говорить))/, () => ({ cmd: 'help' }));
 
 // English — для конспектов на английском
-R(/(?:^|\s)(?:light|white|day) (?:theme|mode)/, () => ({ cmd: 'theme', arg: 'light' }));
-R(/(?:^|\s)(?:dark|night|classic) (?:theme|mode)/, () => ({ cmd: 'theme', arg: 'classic' }));
+R(/(?:^|\s)(?:light|white|day) (?:theme|mode)/, () => ({ cmd: 'theme', arg: 'ink' }));
+R(/(?:^|\s)(?:dark|night) (?:theme|mode)/, () => ({ cmd: 'theme', arg: 'aurora' }));
+R(/(?:^|\s)classic (?:theme|mode)/, () => ({ cmd: 'theme', arg: 'classic' }));
+R(/(?:^|\s)notebook (?:theme|mode)/, () => ({ cmd: 'theme', arg: 'light' }));
 R(/(?:^|\s)(?:ios|iphone|apple) (?:theme|style|look|mode)/, () => ({ cmd: 'theme', arg: 'ios' }));
 R(/(?:^|\s)(?:android|material) (?:theme|style|look|mode)/, () => ({ cmd: 'theme', arg: 'android' }));
 R(/(?:^|\s)neon(?: theme| mode)?$/, () => ({ cmd: 'theme', arg: 'neon' }));
+R(/(?:^|\s)aurora(?: theme| mode| look)?$/, () => ({ cmd: 'theme', arg: 'aurora' }));
+R(/(?:^|\s)ink(?: theme| mode| look)$/, () => ({ cmd: 'theme', arg: 'ink' }));
 R(/(?:^|\s)previous topic|(?:^|\s)go back (?:a|one) topic|(?:^|\s)topic before/, () => ({ cmd: 'prevTopic' }));
 R(/(?:^|\s)(?:what|which) topic|(?:^|\s)where are we|(?:^|\s)how much (?:is )?left/, () => ({ cmd: 'where' }));
 R(/(?:^|\s)(?:go|jump|skip|switch|move) (?:back )?to (?:the )?(?:\S+ )?topic|(?:^|\s)(?:open|start) (?:the )?(?:\S+ )?topic|^topic (?:number )?\S+$|^(?:the )?\S+ topic$/, (t) => {
@@ -179,7 +187,7 @@ export const COMMAND_LIST = [
   ['intonation', 'живая интонация: arg — true | false'],
   ['selfCheck', 'самопроверка после темы: arg — true | false'],
   ['showText', 'показывать текст куска: arg — true | false'],
-  ['theme', 'оформление: arg — "android" | "ios" | "classic" | "neon" | "light" | "auto"'],
+  ['theme', 'оформление: arg — "aurora" (тёмное) | "ink" (светлое, «Чернила») | "auto" (как в системе) | "android" | "ios" | "classic" | "neon" | "light" («Тетрадь»)'],
   ['export', 'сохранить конспект и вопросы в файл'],
   ['exam', 'начать экзамен по всему предмету'],
   ['ticket', 'тянуть экзаменационный билет: arg — {"n": номер} или ничего (случайный)'],

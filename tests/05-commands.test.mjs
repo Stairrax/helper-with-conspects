@@ -14,7 +14,7 @@ export default async ({ open, prepare, FINANCE, ok }) => {
   ok(parsed.byName === '{"cmd":"gotoTopic","arg":{"q":"налоги"}}', '«к теме налоги» ' + parsed.byName);
   ok(parsed.prev === '{"cmd":"prevTopic"}' && parsed.where === '{"cmd":"where"}', 'предыдущая тема, какая сейчас тема');
   ok(parsed.fx === '{"cmd":"fx","arg":"cur"}' && parsed.fxNext === '{"cmd":"fx","arg":"next"}', 'формулы');
-  ok(parsed.pause === '{"cmd":"pauseLen","arg":1}' && parsed.light === '{"cmd":"theme","arg":"light"}' && parsed.dark === '{"cmd":"theme","arg":"classic"}', 'настройки и оформление');
+  ok(parsed.pause === '{"cmd":"pauseLen","arg":1}' && parsed.light === '{"cmd":"theme","arg":"ink"}' && parsed.dark === '{"cmd":"theme","arg":"aurora"}', 'настройки и оформление');
   ok(parsed.question === 'null' && parsed.whatIs === 'null' && parsed.stop === 'null', 'вопросы и короткие команды диктовки — не команды приложения');
 
   await prepare(page, FINANCE, 'Финансы');
@@ -40,7 +40,7 @@ export default async ({ open, prepare, FINANCE, ok }) => {
   await say('паузы подольше'); ok((await settings()).pause === 4, '«паузы подольше»');
   await say('только слушаю'); ok((await settings()).listenOnly === true, '«только слушаю»');
   await say('режим записи'); ok((await settings()).listenOnly === false, '«режим записи»');
-  await say('светлая тема'); ok(await page.evaluate(() => document.documentElement.dataset.theme) === 'light', '«светлая тема»');
+  await say('светлая тема'); ok(await page.evaluate(() => document.documentElement.dataset.theme) === 'ink', '«светлая тема» — «Чернила»');
   await say('сделай так чтобы паузы были короче', true, 3200);
   ok(ai.command === 1 && (await settings()).pause === 3, 'просьба своими словами — через нейросеть');
   await page.fill('#questionInput', 'открой план');
