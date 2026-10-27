@@ -9,7 +9,7 @@ const VOICE = { Бая: 'Baya', Ксения: 'Xenia', Ксюша: 'Ksyusha', А
 export const EXACT = {
   // вкладки и общее
   'Материал': 'Material', 'План': 'Plan', 'Диктовка': 'Dictation', 'Настройки': 'Settings', 'Повторение': 'Review',
-  'Предмет': 'Subject', 'Диктор конспектов': 'Notes Narrator', 'Диктор': 'Narrator',
+  'Предмет': 'Subject', 'Помощник по учёбе': 'Study Helper', 'Учёба': 'Study Helper',
   'Отмена': 'Cancel', 'Добавить': 'Add', 'Удалить': 'Delete', 'Пауза': 'Pause', 'Готово': 'Done', 'Закрыть': 'Close',
   'Подробнее': 'More', 'Продолжить': 'Continue', 'Начать': 'Start', 'Старт': 'Start', 'Ещё': 'More', 'Скрыть': 'Hide',
   'Меньше': 'Less', 'Больше': 'More', 'Выше': 'Up', 'Ниже': 'Down', 'Ошибка': 'Error', 'Конспект': 'Notes', 'конспект': 'notes',
@@ -20,7 +20,7 @@ export const EXACT = {
   'Устанавливаю… Потом открывайте приложение с иконки на экране.': 'Installing… Then open the app from its home screen icon.',
   'В Safari: кнопка «Поделиться» (квадрат со стрелкой) → «На экран „Домой“» → «Добавить».': 'In Safari: the Share button (square with an arrow) → “Add to Home Screen” → “Add”.',
   'Откройте меню Chrome ⋮ → «Установить приложение» (или «Добавить на главный экран»).': 'Open the Chrome menu ⋮ → “Install app” (or “Add to Home screen”).',
-  'Приложение установлено — открывайте его с иконки «Диктор».': 'The app is installed — open it from the “Narrator” icon.',
+  'Приложение установлено — открывайте его с иконки «Учёба».': 'The app is installed — open it from the “Учёба” (Study) icon.',
 
   // материал
   'Продолжить диктовку': 'Continue dictation', 'Конспекты': 'Notes',
@@ -179,7 +179,8 @@ export const EXACT = {
   'Бесплатный режим сейчас недоступен. Попробуйте позже или укажите свой ключ: Настройки → Настроить заново.': 'Free mode is unavailable right now. Try later or add your own key: Settings → Set up again.',
   'Бесплатный режим не настроен на сервере.': 'Free mode isn’t set up on the server.',
   'Сервер нейросети не отвечает. Попробуйте ещё раз.': 'The AI server isn’t responding. Try again.',
-  'Этот сервер работает только для приложения «Диктор конспектов».': 'This server only works for the Notes Narrator app.',
+  'Этот сервер работает только для приложения «Помощник по учёбе».': 'This server only works for the Study Helper app.',
+  'Этот сервер работает только для приложения «Диктор конспектов».': 'This server only works for the Study Helper app.',
   'Запрос слишком большой.': 'The request is too large.', 'Неверный запрос.': 'Invalid request.',
 
   // язык
@@ -266,7 +267,7 @@ export const EXACT = {
     'A backup is one file with all settings, keys and notes. Save it, for example, to Google Drive or Telegram “Saved Messages”: if the data is lost, everything comes back with one tap. The file contains your API keys — don’t send it to anyone.',
   'Сохранить копию': 'Save a backup', 'Восстановить из копии': 'Restore from a backup', 'Сбросить прогресс': 'Reset progress', 'Удалить предмет': 'Delete subject',
   'Копию ещё не сохраняли.': 'No backup saved yet.', 'Сбросить прогресс диктовки и историю вопросов?': 'Reset dictation progress and question history?', 'Прогресс сброшен': 'Progress reset',
-  'Данные восстановлены': 'Data restored', 'неизвестно когда': 'an unknown date', 'Это не резервная копия Диктора конспектов': 'This is not a Notes Narrator backup',
+  'Данные восстановлены': 'Data restored', 'неизвестно когда': 'an unknown date', 'Это не резервная копия Помощника по учёбе': 'This is not a Study Helper backup',
   'Данные хранятся только на этом устройстве и никуда не отправляются, кроме выбранной нейросети.': 'Data is stored only on this device and is sent nowhere except to the chosen AI.',
   'Позиция диктовки сохраняется автоматически.': 'The dictation position is saved automatically.',
   'Браузер не удалит их сам, даже если кончится память.': 'The browser won’t delete it by itself, even if storage runs out.',
@@ -290,7 +291,7 @@ export const EXACT = {
   'Нужна одна настройка — бесплатный ключ OpenRouter. Это займёт пару минут.': 'One setting is needed — a free OpenRouter key. It takes a couple of minutes.',
   'Настроить': 'Set up', 'Восстановить из резервной копии': 'Restore from a backup', 'Шаг 1 из 2': 'Step 1 of 2', 'Шаг 2 из 2': 'Step 2 of 2', 'Ключ OpenRouter': 'OpenRouter key',
   'Откройте сайт и войдите (можно через Google).': 'Open the site and sign in (Google works).', 'Открыть openrouter.ai/keys': 'Open openrouter.ai/keys',
-  'Нажмите': 'Press', 'и заполните:': 'and fill in:', 'Name — любое имя, например «Диктор»': 'Name — any name, e.g. “Narrator”',
+  'Нажмите': 'Press', 'и заполните:': 'and fill in:', 'Name — любое имя, например «Учёба»': 'Name — any name, e.g. “Study”',
   'и скопируйте ключ (он показывается один раз).': 'and copy the key (it’s shown only once).', 'Вернитесь сюда и вставьте ключ:': 'Come back here and paste the key:',
   'Проверить и подобрать модель': 'Check and pick a model', 'У меня другой провайдер — настрою сам': 'I use another provider — I’ll set it up myself',
   'Звук и микрофон': 'Sound and microphone',
@@ -494,7 +495,7 @@ export const PATTERNS = [
   [/^Повтор через (\d+) с…$/, 'Retrying in $1 s…'],
   [/^Лимит запросов(?: (Gemini|Claude))?, жду (\d+) с…$/, (m) => `${m[1] ? m[1] + ' rate' : 'Rate'} limit, waiting ${m[2]} s…`],
   [/^(Gemini|Claude) недоступен \((\d+)\), повтор через (\d+) с…$/, '$1 is unavailable ($2), retrying in $3 s…'],
-  [/^Сохранено (.+) из приложения «Диктор конспектов»\.$/, 'Saved $1 from the Notes Narrator app.'],
+  [/^Сохранено (.+) из приложения «Помощник по учёбе»\.$/, 'Saved $1 from the Study Helper app.'],
 ];
 
 export const WORDS = [

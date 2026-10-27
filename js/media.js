@@ -58,8 +58,8 @@ export function updateMedia(title, playing) {
   if (!mediaSupported || !handlers) return;
   try {
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: title || T('Диктор конспектов'),
-      artist: T('Диктор конспектов'),
+      title: title || T('Помощник по учёбе'),
+      artist: T('Помощник по учёбе'),
       artwork: [{ src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' }],
     });
     navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';

@@ -8,10 +8,10 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Диктор">
+  <meta name="apple-mobile-web-app-title" content="Учёба">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <meta name="description" content="Голосовой диктатор конспектов: диктует материал кусками, мгновенно останавливается по команде «стоп» и отвечает на вопросы.">
-  <title>Диктор конспектов</title>
+  <meta name="description" content="Помощник по учёбе: диктует конспекты, мгновенно останавливается по команде «стоп» и отвечает на вопросы, готовит к экзамену — билеты, самопроверка, план по дням.">
+  <title>Помощник по учёбе</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/styles.css">
@@ -673,7 +673,7 @@
     <section class="ob-step">
       <button id="obLang" class="btn text ob-lang" data-no-i18n>English</button>
       <img src="icons/icon-192.png" alt="" class="ob-logo">
-      <h2>Диктор конспектов</h2>
+      <h2>Помощник по учёбе</h2>
       <ul class="ob-list">
         <li>Читает конспект вслух короткими кусками — вы успеваете записывать.</li>
         <li>Останавливается по кнопке или слову «стоп» и отвечает на вопросы.</li>
@@ -693,7 +693,7 @@
         <li>Откройте сайт и войдите (можно через Google).
           <button id="obOpenKeys" class="btn tonal">Открыть openrouter.ai/keys</button></li>
         <li>Нажмите <b>Create API Key</b> и заполните:
-          <span class="ob-sub">Name — любое имя, например «Диктор»<br>Expiration — <b>No expiration</b><br>Credit limit — <b>No limit</b></span>
+          <span class="ob-sub">Name — любое имя, например «Учёба»<br>Expiration — <b>No expiration</b><br>Credit limit — <b>No limit</b></span>
           Нажмите <b>Create</b> и скопируйте ключ (он показывается один раз).</li>
         <li>Вернитесь сюда и вставьте ключ:
           <div class="row">
@@ -727,31 +727,31 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/abbr.js": "./js/abbr.js?v=57",
-      "./js/ai.js": "./js/ai.js?v=57",
-      "./js/analyze.js": "./js/analyze.js?v=57",
-      "./js/anthropic.js": "./js/anthropic.js?v=57",
-      "./js/app.js": "./js/app.js?v=57",
-      "./js/commands.js": "./js/commands.js?v=57",
-      "./js/lecture.js": "./js/lecture.js?v=57",
-      "./js/config.js": "./js/config.js?v=57",
-      "./js/stats.js": "./js/stats.js?v=57",
-      "./js/cheatsheet.js": "./js/cheatsheet.js?v=57",
-      "./js/audiobook.js": "./js/audiobook.js?v=57",
-      "./js/tickets.js": "./js/tickets.js?v=57",
-      "./js/i18n.js": "./js/i18n.js?v=57",
-      "./js/i18n-en.js": "./js/i18n-en.js?v=57",
-      "./js/platform.js": "./js/platform.js?v=57",
-      "./js/dictation.js": "./js/dictation.js?v=57",
-      "./js/extract.js": "./js/extract.js?v=57",
-      "./js/gemini.js": "./js/gemini.js?v=57",
-      "./js/media.js": "./js/media.js?v=57",
-      "./js/neural.js": "./js/neural.js?v=57",
-      "./js/onboarding.js": "./js/onboarding.js?v=57",
-      "./js/openai.js": "./js/openai.js?v=57",
-      "./js/ripple.js": "./js/ripple.js?v=57",
-      "./js/speech.js": "./js/speech.js?v=57",
-      "./js/storage.js": "./js/storage.js?v=57"
+      "./js/abbr.js": "./js/abbr.js?v=58",
+      "./js/ai.js": "./js/ai.js?v=58",
+      "./js/analyze.js": "./js/analyze.js?v=58",
+      "./js/anthropic.js": "./js/anthropic.js?v=58",
+      "./js/app.js": "./js/app.js?v=58",
+      "./js/commands.js": "./js/commands.js?v=58",
+      "./js/lecture.js": "./js/lecture.js?v=58",
+      "./js/config.js": "./js/config.js?v=58",
+      "./js/stats.js": "./js/stats.js?v=58",
+      "./js/cheatsheet.js": "./js/cheatsheet.js?v=58",
+      "./js/audiobook.js": "./js/audiobook.js?v=58",
+      "./js/tickets.js": "./js/tickets.js?v=58",
+      "./js/i18n.js": "./js/i18n.js?v=58",
+      "./js/i18n-en.js": "./js/i18n-en.js?v=58",
+      "./js/platform.js": "./js/platform.js?v=58",
+      "./js/dictation.js": "./js/dictation.js?v=58",
+      "./js/extract.js": "./js/extract.js?v=58",
+      "./js/gemini.js": "./js/gemini.js?v=58",
+      "./js/media.js": "./js/media.js?v=58",
+      "./js/neural.js": "./js/neural.js?v=58",
+      "./js/onboarding.js": "./js/onboarding.js?v=58",
+      "./js/openai.js": "./js/openai.js?v=58",
+      "./js/ripple.js": "./js/ripple.js?v=58",
+      "./js/speech.js": "./js/speech.js?v=58",
+      "./js/storage.js": "./js/storage.js?v=58"
     }
   }
   </script>
@@ -785,7 +785,7 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=57"></script>
+  <script type="module" src="js/app.js?v=58"></script>
   <div id="printArea" class="cheatsheet" data-no-i18n></div>
 </body>
 </html>

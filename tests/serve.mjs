@@ -2,4 +2,4 @@
 import { startServer } from './lib.mjs';
 
 const { base } = await startServer(+process.env.PORT || 8080);
-console.log(`Диктор конспектов: ${base}`);
+console.log(`Помощник по учёбе: ${base}`);

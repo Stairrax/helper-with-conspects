@@ -113,7 +113,7 @@ export default {
 
     if (req.method === 'OPTIONS') return new Response(null, { status: c.ok ? 204 : 403, headers: c.headers });
     if (path === '/' || path === '') return new Response('ok', { headers: c.headers });
-    if (!c.ok) return fail(403, 'origin', 'Этот сервер работает только для приложения «Диктор конспектов».', c.headers);
+    if (!c.ok) return fail(403, 'origin', 'Этот сервер работает только для приложения «Помощник по учёбе».', c.headers);
 
     if (req.method === 'GET' && path === '/models') {
       const list = await models(env).catch(() => []);

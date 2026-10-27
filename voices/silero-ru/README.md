@@ -1,4 +1,4 @@
-# Голос Silero для «Диктора конспектов»
+# Голос Silero для «Помощника по учёбе»
 
 Модель синтеза речи **Silero TTS v5_6_ru** (голоса aidar, baya, kseniya, eugene, xenia) от команды Silero:
 https://github.com/snakers4/silero-models
