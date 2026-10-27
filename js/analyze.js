@@ -238,6 +238,7 @@ export function pauseFor(topic, chunkText, settings) {
     const len = chunkText ? chunkText.length : AVG_CHUNK;
     p *= Math.min(1.75, Math.max(0.75, len / 160));
   }
+  if (settings.adaptivePause) p *= settings.writePace || 1; // подстроено под скорость письма
   return Math.round(p * 1000);
 }
 

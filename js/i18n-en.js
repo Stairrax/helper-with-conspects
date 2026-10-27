@@ -108,6 +108,41 @@ export const EXACT = {
   'Любой сервис с OpenAI-совместимым API (/chat/completions): укажите адрес, ключ и модель.': 'Any service with an OpenAI-compatible API (/chat/completions): enter the address, key and model.',
   'По умолчанию (русский)': 'Default',
 
+  // паузы под скорость письма, подсветка
+  'Паузы под скорость письма': 'Pauses fit your writing speed',
+  'короче, если говорите «записал» раньше; длиннее, если просите повторить или медленнее': 'shorter if you say “done” early; longer if you ask to repeat or slow down',
+  'Сейчас паузы короче обычных': 'Pauses are now shorter than usual', 'Сейчас паузы длиннее обычных': 'Pauses are now longer than usual', 'Сбросить': 'Reset',
+  'Подсвечивать читаемое слово': 'Highlight the word being read',
+  'слово, которое сейчас звучит, выделяется в тексте отрывка — проще следить глазами': 'the word being spoken is highlighted in the passage — easier to follow',
+
+  // экзамен
+  'Экзамен': 'Exam', 'Экзамен по всему предмету': 'Exam on the whole subject',
+  'Случайные вопросы самопроверки по всем подготовленным темам. Отвечайте голосом или текстом, нейросеть проверит ответ. В конце — результат и темы, которые стоит повторить.':
+    'Random self-check questions across all prepared topics. Answer by voice or text, and the AI checks your answer. At the end — your result and the topics worth reviewing.',
+  'Вопросов': 'Questions', 'Время': 'Time', 'Без ограничения': 'No limit', 'Начать экзамен': 'Start exam',
+  'Пока нет вопросов для экзамена: они появляются, когда темы подготовлены.': 'No exam questions yet: they appear once topics are prepared.',
+
+  // статистика
+  'Статистика': 'Statistics', 'сегодня': 'today', 'всего': 'total',
+  'день подряд': 'day in a row', 'дня подряд': 'days in a row', 'дней подряд': 'days in a row',
+
+  // шпаргалка
+  'Шпаргалка': 'Cheat sheet',
+  'Главное по каждой теме, термины и формулы на одной странице. Распечатайте или сохраните в PDF: в окне печати выберите «Сохранить как PDF».':
+    'The key points of every topic, terms and formulas on one page. Print it or save it as a PDF: in the print window choose “Save as PDF”.',
+  'Печать / PDF': 'Print / PDF', 'Сохранить файл': 'Save file', 'Сохранить': 'Save',
+
+  // аудиоконспект
+  'Аудиоконспект': 'Audio notes',
+  'Конспект озвучивается прямо на телефоне и сохраняется в MP3. Такой файл играет с погасшим экраном и без интернета — здесь или в любом плеере.':
+    'The notes are voiced right on the phone and saved as MP3. The file plays with the screen off and without internet — here or in any player.',
+  'Что озвучить': 'What to voice', 'Весь конспект': 'All the notes', 'Паузы на запись': 'Pauses for writing',
+  'между отрывками — паузы, как при диктовке; без них текст идёт подряд, чтобы просто слушать': 'pauses between passages, as in dictation; without them the text runs straight on, just for listening',
+  'Озвучить': 'Make audio', 'Отменить': 'Cancel', 'Сохранить MP3': 'Save MP3', 'Отменено': 'Cancelled',
+  'Темы ещё не подготовлены.': 'Topics aren’t prepared yet.', 'Темы ещё не подготовлены': 'Topics aren’t prepared yet',
+  'Если страница перезагрузится во время озвучки, выберите голос полегче — например, Ирина.': 'If the page reloads while voicing, pick a lighter voice — for example, Irina.',
+  'Не удалось загрузить кодировщик MP3 (нужен интернет)': 'Couldn’t load the MP3 encoder (internet needed)',
+
   // бесплатный режим
   'Бесплатно, без ключа': 'Free, no key',
   'Через сервер автора. Есть дневной лимит; если его не хватает, укажите свой ключ OpenRouter — «Настроить заново».': 'Through the author’s server. There is a daily limit; if it’s not enough, add your own OpenRouter key — “Set up again”.',
@@ -300,6 +335,8 @@ const VOICE_NAME = (m) => `${VOICE[m[1]] || m[1]} (${m[2] === 'мужской' ?
 
 export const PATTERNS = [
   [/^(\d+) ч (\d+) мин$/, '$1 h $2 min'],
+  [/^≈(.+) звука\.(?: (.+))?$/, (m, tr) => `≈${tr(m[1])} of audio.${m[2] ? ' ' + tr(m[2]) : ''}`],
+  [/^Сейчас паузы (короче|длиннее) обычных: ×([\d,]+)\.$/, (m) => `Pauses are now ${m[1] === 'короче' ? 'shorter' : 'longer'} than usual: ×${m[2].replace(',', '.')}.`],
   [/^≈(.+)$/, (m, tr) => '≈' + tr(m[1])],
   [/^(Бая|Ксения|Ксюша|Айдар|Евгений|Ирина|Дмитрий|Денис|Руслан|Lessac|Amy|Ryan) \((женский|мужской)(, живой)?(, английский)?\)$/, VOICE_NAME],
   [/^Тема (\d+) из (\d+)$/, 'Topic $1 of $2'],
@@ -378,6 +415,14 @@ export const PATTERNS = [
   [/^Скачиваю голос \(около (\d+) МБ\)…$/, 'Downloading the voice (about $1 MB)…'],
   [/^(Загружаю|Скачиваю) голос «(.+)» — пока говорю голосом (\S+)$/, (m) => `${m[1] === 'Загружаю' ? 'Loading' : 'Downloading'} the voice “${VOICE[m[2]] || m[2]}” — speaking with the ${m[3]} voice for now`],
   [/^Скачиваю голос: (\d+)%$/, 'Downloading the voice: $1%'],
+  [/^Пройдено тем в этом предмете: (\d+) из (\d+)\.(?: (.+))?$/, (m, tr) => `Topics done in this subject: ${m[1]} of ${m[2]}.${m[3] ? ' ' + tr(m[3]) : ''}`],
+  [/^Последний экзамен: ([\d,]+) из (\d+) \((\d+)%\), (.+)\.$/, (m) => `Last exam: ${m[1].replace(',', '.')} of ${m[2]} (${m[3]}%), ${m[4]}.`],
+  [/^Всего вопросов в конспекте: (\d+)\.$/, 'Questions in these notes: $1.'],
+  [/^Экзамен · вопрос (\d+) из (\d+)(?: · осталось (.+))?$/, (m) => `Exam · question ${m[1]} of ${m[2]}${m[3] ? ` · ${m[3]} left` : ''}`],
+  [/^Самопроверка · вопрос (\d+) из (\d+) · осталось (.+)$/, 'Self-check · question $1 of $2 · $3 left'],
+  [/^Голос скачается один раз — около (\d+) МБ, лучше по Wi-Fi\.$/, 'The voice downloads once — about $1 MB, Wi-Fi is better.'],
+  [/^Озвучиваю: (\d+) из (\d+)$/, 'Voicing: $1 of $2'],
+  [/^(\d+:\d\d(?::\d\d)?) · ([\d,]+) МБ$/, (m) => `${m[1]} · ${m[2].replace(',', '.')} MB`],
   [/^✓ Голос «(.+)» включён$/, (m) => `✓ The voice “${VOICE[m[1]] || m[1]}” is on`],
   [/^✗ Не удалось загрузить голос: (.*?)\. Пока говорю голосом (\S+) — (.*)$/, (m, tr) => `✗ Couldn’t load the voice: ${tr(m[1])}. Speaking with the ${m[2]} voice for now — ${tr(m[3])}`],
   [/^✓ Ключ работает\. Доступно моделей: (\d+)\.(.*)$/, (m, tr) => `✓ The key works. Models available: ${m[1]}.${m[2] ? ' ' + tr(m[2].trim()) : ''}`],

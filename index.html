@@ -178,13 +178,26 @@
           <div class="row wrap mt8">
             <button id="reviewDueBtn" class="btn tonal">Повторить нужное</button>
             <button id="reviewAllBtn" class="btn outline">Все пройденные</button>
+            <button id="examBtn" class="btn outline">Экзамен</button>
           </div>
           <button id="exportBtn" class="btn text">Сохранить конспект и вопросы в файл</button>
           <button id="shareBtn" class="btn text">Поделиться готовым конспектом</button>
           <button id="ankiBtn" class="btn text">Карточки для Anki</button>
+          <button id="cheatBtn" class="btn text">Шпаргалка</button>
+          <button id="audioBtn" class="btn text ios-only">Аудиоконспект</button>
         </div>
         <ol id="planList" class="plan"></ol>
         <p class="muted small center">Нажмите на тему, чтобы переставить, пропустить или начать с неё.</p>
+        <div class="card" id="statsCard">
+          <div class="card-title">Статистика</div>
+          <div class="stats-row">
+            <div><b id="statToday">0 мин</b><span>сегодня</span></div>
+            <div><b id="statStreak">0</b><span id="statStreakLabel">дней подряд</span></div>
+            <div><b id="statTotal">0 мин</b><span>всего</span></div>
+          </div>
+          <div class="bars" id="statBars"></div>
+          <p class="hint mt" id="statMore"></p>
+        </div>
       </div>
     </section>
 
@@ -390,7 +403,9 @@
           <label><input type="radio" name="pauseMode" value="wait"><span>Пока не скажу «дальше»</span></label>
         </div>
         <label class="switch"><span>Пауза дольше в сложных местах</span><input id="scalePause" type="checkbox"><i></i></label>
-        <label class="switch"><span>Подстраивать паузу<small>длиннее, если часто прошу повторить</small></span><input id="adaptivePause" type="checkbox"><i></i></label>
+        <label class="switch"><span>Паузы под скорость письма<small>короче, если говорите «записал» раньше; длиннее, если просите повторить или медленнее</small></span><input id="adaptivePause" type="checkbox"><i></i></label>
+        <p class="hint" id="paceHint"></p>
+        <label class="switch"><span>Подсвечивать читаемое слово<small>слово, которое сейчас звучит, выделяется в тексте отрывка — проще следить глазами</small></span><input id="highlightWord" type="checkbox"><i></i></label>
         <label class="switch android-only" id="remindRow"><span>Напоминать о повторении<small id="remindHint">уведомление, когда пора повторить тему — для установленного приложения на Android</small></span><input id="remind" type="checkbox"><i></i></label>
         <label class="switch"><span>Самопроверка после темы<small>2–3 вопроса, ответ голосом</small></span><input id="selfCheck" type="checkbox"><i></i></label>
         <label class="switch"><span>Формулы — отдельным блоком<small>если в теме 3 формулы и больше, голос рассказывает словами, из чего складывается величина, а сами формулы — в блоке «∑ Формулы» на экране диктовки и в плане: их удобнее учить глазами, решая задачи</small></span><input id="formulasApart" type="checkbox"><i></i></label>
@@ -530,6 +545,77 @@
     </div>
   </div>
 
+  <!-- Аудиоконспект (iPhone) -->
+  <div id="audioSheet" class="sheet hidden">
+    <div class="sheet-scrim" data-close></div>
+    <div class="sheet-body tool-body">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">Аудиоконспект</div>
+      <p class="hint">Конспект озвучивается прямо на телефоне и сохраняется в MP3. Такой файл играет с погасшим экраном и без интернета — здесь или в любом плеере.</p>
+      <label class="field">Что озвучить
+        <select id="audioWhat"></select>
+      </label>
+      <label class="field">Голос
+        <select id="audioVoice"></select>
+      </label>
+      <label class="switch"><span>Паузы на запись<small>между отрывками — паузы, как при диктовке; без них текст идёт подряд, чтобы просто слушать</small></span><input id="audioPauses" type="checkbox"><i></i></label>
+      <p class="hint mt" id="audioInfo"></p>
+      <button id="audioMake" class="btn filled wide">Озвучить</button>
+      <div id="audioWork" class="hidden">
+        <div class="progress mt"><div id="audioBar"></div></div>
+        <div id="audioStatus" class="status"></div>
+        <button id="audioCancel" class="btn text wide">Отменить</button>
+      </div>
+      <div id="audioDone" class="hidden">
+        <audio id="audioPlayer" class="audio-player" controls preload="metadata"></audio>
+        <div id="audioMeta" class="status small"></div>
+        <button id="audioSave" class="btn tonal wide">Сохранить MP3</button>
+      </div>
+      <button class="btn text wide" data-close>Закрыть</button>
+    </div>
+  </div>
+
+  <!-- Шпаргалка -->
+  <div id="cheatSheet" class="sheet hidden">
+    <div class="sheet-scrim" data-close></div>
+    <div class="sheet-body tool-body">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">Шпаргалка</div>
+      <p class="hint">Главное по каждой теме, термины и формулы на одной странице. Распечатайте или сохраните в PDF: в окне печати выберите «Сохранить как PDF».</p>
+      <div id="cheatBody" class="cheatsheet cheat-preview" data-no-i18n></div>
+      <div class="row mt">
+        <button id="cheatPrint" class="btn filled grow">Печать / PDF</button>
+        <button id="cheatSave" class="btn tonal grow">Сохранить</button>
+      </div>
+      <button class="btn text wide" data-close>Закрыть</button>
+    </div>
+  </div>
+
+  <!-- Экзамен -->
+  <div id="examSheet" class="sheet hidden">
+    <div class="sheet-scrim" data-close></div>
+    <div class="sheet-body exam-body">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">Экзамен по всему предмету</div>
+      <p class="hint">Случайные вопросы самопроверки по всем подготовленным темам. Отвечайте голосом или текстом, нейросеть проверит ответ. В конце — результат и темы, которые стоит повторить.</p>
+      <div class="field">Вопросов</div>
+      <div class="seg" id="examCountSeg">
+        <label><input type="radio" name="examCount" value="5"><span>5</span></label>
+        <label><input type="radio" name="examCount" value="10"><span>10</span></label>
+        <label><input type="radio" name="examCount" value="20"><span>20</span></label>
+      </div>
+      <div class="field mt">Время</div>
+      <div class="seg">
+        <label><input type="radio" name="examTime" value="0"><span>Без ограничения</span></label>
+        <label><input type="radio" name="examTime" value="10"><span>10 мин</span></label>
+        <label><input type="radio" name="examTime" value="20"><span>20 мин</span></label>
+      </div>
+      <p class="hint mt" id="examPoolHint"></p>
+      <button id="examStart" class="btn filled wide">Начать экзамен</button>
+      <button class="btn text wide" data-close>Отмена</button>
+    </div>
+  </div>
+
   <!-- Предметы -->
   <div id="subjectSheet" class="sheet hidden">
     <div class="sheet-scrim" data-close></div>
@@ -607,27 +693,30 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/abbr.js": "./js/abbr.js?v=55",
-      "./js/ai.js": "./js/ai.js?v=55",
-      "./js/analyze.js": "./js/analyze.js?v=55",
-      "./js/anthropic.js": "./js/anthropic.js?v=55",
-      "./js/app.js": "./js/app.js?v=55",
-      "./js/commands.js": "./js/commands.js?v=55",
-      "./js/lecture.js": "./js/lecture.js?v=55",
-      "./js/config.js": "./js/config.js?v=55",
-      "./js/i18n.js": "./js/i18n.js?v=55",
-      "./js/i18n-en.js": "./js/i18n-en.js?v=55",
-      "./js/platform.js": "./js/platform.js?v=55",
-      "./js/dictation.js": "./js/dictation.js?v=55",
-      "./js/extract.js": "./js/extract.js?v=55",
-      "./js/gemini.js": "./js/gemini.js?v=55",
-      "./js/media.js": "./js/media.js?v=55",
-      "./js/neural.js": "./js/neural.js?v=55",
-      "./js/onboarding.js": "./js/onboarding.js?v=55",
-      "./js/openai.js": "./js/openai.js?v=55",
-      "./js/ripple.js": "./js/ripple.js?v=55",
-      "./js/speech.js": "./js/speech.js?v=55",
-      "./js/storage.js": "./js/storage.js?v=55"
+      "./js/abbr.js": "./js/abbr.js?v=56",
+      "./js/ai.js": "./js/ai.js?v=56",
+      "./js/analyze.js": "./js/analyze.js?v=56",
+      "./js/anthropic.js": "./js/anthropic.js?v=56",
+      "./js/app.js": "./js/app.js?v=56",
+      "./js/commands.js": "./js/commands.js?v=56",
+      "./js/lecture.js": "./js/lecture.js?v=56",
+      "./js/config.js": "./js/config.js?v=56",
+      "./js/stats.js": "./js/stats.js?v=56",
+      "./js/cheatsheet.js": "./js/cheatsheet.js?v=56",
+      "./js/audiobook.js": "./js/audiobook.js?v=56",
+      "./js/i18n.js": "./js/i18n.js?v=56",
+      "./js/i18n-en.js": "./js/i18n-en.js?v=56",
+      "./js/platform.js": "./js/platform.js?v=56",
+      "./js/dictation.js": "./js/dictation.js?v=56",
+      "./js/extract.js": "./js/extract.js?v=56",
+      "./js/gemini.js": "./js/gemini.js?v=56",
+      "./js/media.js": "./js/media.js?v=56",
+      "./js/neural.js": "./js/neural.js?v=56",
+      "./js/onboarding.js": "./js/onboarding.js?v=56",
+      "./js/openai.js": "./js/openai.js?v=56",
+      "./js/ripple.js": "./js/ripple.js?v=56",
+      "./js/speech.js": "./js/speech.js?v=56",
+      "./js/storage.js": "./js/storage.js?v=56"
     }
   }
   </script>
@@ -661,6 +750,7 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=55"></script>
+  <script type="module" src="js/app.js?v=56"></script>
+  <div id="printArea" class="cheatsheet" data-no-i18n></div>
 </body>
 </html>

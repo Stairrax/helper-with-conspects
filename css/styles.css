@@ -455,3 +455,38 @@ body.ios .android-only, body:not(.ios) .ios-only { display: none !important; }
 @keyframes ripple-ring { from { transform: scale(.12); opacity: .85; } to { transform: scale(1); opacity: 0; } }
 .ripple-dot { width: 14px; height: 14px; background: #fff; animation: ripple-dot .25s ease-out; }
 @keyframes ripple-dot { from { opacity: .9; } to { transform: scale(0); opacity: 0; } }
+
+/* ---------- Экзамен, шпаргалка, аудиоконспект ---------- */
+.exam-body, .tool-body { padding: 8px 16px calc(16px + var(--safe-b)); max-height: 90vh; overflow-y: auto; }
+.exam-body .field, .tool-body .field { margin: 6px 0 6px; }
+
+/* подсветка читаемого слова */
+.chunk p .w { border-radius: 6px; transition: background-color .12s, color .12s; }
+.chunk p .w.hl { background: var(--accent-soft); color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+
+/* статистика */
+.stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+.stats-row b { display: block; font-size: 22px; font-weight: 600; }
+.stats-row span { color: var(--muted); font-size: 13px; }
+.bars { display: grid; grid-template-columns: repeat(14, 1fr); gap: 4px; align-items: end; height: 84px; margin-top: 14px; }
+.bars .bar { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; }
+.bars .bar i { display: block; width: 100%; max-width: 18px; min-height: 0; border-radius: 4px 4px 2px 2px; background: var(--accent); opacity: .75; }
+.bars .bar.today i { opacity: 1; }
+.bars .bar span { font-size: 10px; color: var(--muted); margin-top: 4px; line-height: 1; }
+.bars .bar i.none { background: var(--surface3); opacity: 1; }
+#statsCard .hint:empty { display: none; }
+
+/* шпаргалка: предпросмотр — белый лист; при печати видна только она */
+.cheat-preview { background: #fff; color: #111; border-radius: 12px; padding: 14px; max-height: 56vh; overflow-y: auto; }
+.cheat-preview .cs-cols { column-count: 1; }
+@media (min-width: 640px) { .cheat-preview .cs-cols { column-count: 2; } }
+#printArea { display: none; }
+@media print {
+  body > *:not(#printArea) { display: none !important; }
+  #printArea { display: block !important; }
+  html, body { background: #fff !important; padding: 0 !important; margin: 0 !important; }
+  @page { margin: 12mm; }
+}
+.btn.grow { flex: 1; min-width: 0; }
+.audio-player { width: 100%; margin-top: 12px; }
+.row.wrap { flex-wrap: wrap; }

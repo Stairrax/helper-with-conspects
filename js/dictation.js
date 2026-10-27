@@ -81,6 +81,12 @@ function pickTerms(text) {
   return uniq.sort((a, b) => b.length - a.length).slice(0, 2);
 }
 
+/** «1 вопрос», «2 вопроса», «5 вопросов». */
+function plural(n, forms) {
+  const a = n % 100, b = n % 10;
+  return a >= 11 && a <= 14 ? forms[2] : b === 1 ? forms[0] : b >= 2 && b <= 4 ? forms[1] : forms[2];
+}
+
 export class Dictation {
   /**
    * hooks: getProject(), getSettings(), saveSettings(), progress (объект), saveProgress(),
@@ -129,6 +135,8 @@ export class Dictation {
       p.elapsedMs = (p.elapsedMs || 0) + 1000;
       if (DICTATING.includes(this.state) || this.state === 'reviewing') p.sinceBreakMs = (p.sinceBreakMs || 0) + 1000;
       if (p.elapsedMs % 5000 === 0) this.h.saveProgress();
+      // статистика занятий: время диктовки, вопросов и самопроверки, без пауз и перерывов
+      if (!['paused', 'break', 'listening'].includes(this.state)) this.h.onStudy?.();
     }, 1000);
   }
 
@@ -496,8 +504,6 @@ export class Dictation {
       this.lastSpoken = { topicId: topic.id, chunk: idx };
       this.pos.chunk = idx + 1;
       this.pos.spoken = (this.pos.spoken || 0) + 1;
-      // кусок прошёл без «повтори» — пауза понемногу возвращается к обычной
-      this.pos.pauseBoost = Math.max(1, (this.pos.pauseBoost || 1) * 0.97);
       this.save();
       if (!(await this.doGap(my, topic, this.chunkText(chunk)))) return;
     }
@@ -514,15 +520,15 @@ export class Dictation {
       return my === this.token;
     }
     if (this.settings.pauseMode === 'wait') {
-      this.gap = { wait: true };
+      // ждём «дальше», но всё равно замечаем, сколько ушло на запись, — пригодится паузе по времени
+      this.gap = { wait: true, start: Date.now(), planned: pauseFor(topic, text, this.settings) };
       this.set('gap', 'Скажите «дальше» или нажмите ⏭, когда запишете');
       while (my === this.token && !this.listenOnly) await sleep(150);
       this.gap = null;
       return my === this.token; // false — продолжит next(); true — включили «Только слушать»
     }
-    const boost = this.settings.adaptivePause ? (this.pos.pauseBoost || 1) : 1;
-    const ms = Math.round(pauseFor(topic, text, this.settings) * boost);
-    this.gap = { start: Date.now(), ms };
+    const ms = Math.max(800, pauseFor(topic, text, this.settings));
+    this.gap = { start: Date.now(), ms, planned: ms };
     this.set('gap');
     const end = Date.now() + ms;
     // микрофон выключаем чуть раньше конца паузы — к следующему куску звук уже обычный, без «режима звонка»
@@ -637,35 +643,12 @@ export class Dictation {
       `Self-check on “${topic.title}”. ${qs.length === 1 ? 'One question' : `${qs.length} questions`}. Answer aloud or in text. You can say “I don’t know” or “skip”.`));
     for (let i = 0; i < qs.length; i++) {
       if (my !== this.token) return;
-      const q = qs[i];
       this.quiz.i = i;
-      this.feedback = null;
-      this.set('quiz');
-      await this.say(this.L(`Вопрос ${i + 1}. ${q.q}`, `Question ${i + 1}. ${q.q}`), true);
-      if (my !== this.token) return;
-      const ans = await this.waitAnswer(my);
-      if (!ans || my !== this.token) return;
-      if (ans.type === 'repeat') { i--; continue; }
-      if (ans.type === 'end') break;
-      if (ans.type === 'skip') { this.quiz.results.push(null); continue; }
-      let score;
-      if (ans.type === 'dontknow') {
-        score = 0;
-        const correct = this.L(`Правильный ответ: ${q.a}`, `The correct answer: ${q.a}`);
-        this.feedback = { q: q.q, answer: this.L('не знаю', 'I don’t know'), entry: { a: correct } };
-        this.set('quiz');
-        await this.say(correct);
-      } else {
-        score = await this.grade(my, topic, q, ans.text);
-      }
-      if (my !== this.token) return;
+      const score = await this.askQuiz(my, topic, qs[i], i);
+      if (my !== this.token || score === undefined) return;
+      if (score === 'end') break;
       this.quiz.results.push(score);
-      if (score !== null) {
-        const st = this.stat(topic.id);
-        st.total += 1;
-        st.right += score;
-        this.schedule(topic.id);
-      }
+      if (score !== null) this.scoreTopic(topic.id, score);
     }
     const done = this.quiz.results.filter((x) => x !== null);
     const right = done.reduce((s, x) => s + x, 0);
@@ -677,6 +660,115 @@ export class Dictation {
       await this.say(this.L(`Результат: ${r} из ${done.length}.${weak ? ' Эту тему стоит повторить — я отмечу её в плане.' : ` Отлично${this.a}!`}`,
         `Result: ${String(r).replace(',', '.')} out of ${done.length}.${weak ? ' This topic is worth reviewing — I’ll mark it in the plan.' : ` Well done${this.a}!`}`));
     }
+  }
+
+  /**
+   * Один вопрос самопроверки или экзамена: задать, выслушать, проверить.
+   * -> 1 | 0.5 | 0 — балл; null — пропустили или не удалось проверить; 'end' — закончить; undefined — прервали.
+   */
+  async askQuiz(my, topic, q, i) {
+    for (;;) {
+      if (this.quiz?.endsAt && Date.now() >= this.quiz.endsAt) return 'end';
+      this.feedback = null;
+      this.set('quiz');
+      await this.say(this.L(`Вопрос ${i + 1}. ${q.q}`, `Question ${i + 1}. ${q.q}`), true);
+      if (my !== this.token) return undefined;
+      const ans = await this.waitAnswer(my);
+      if (!ans || my !== this.token) return undefined;
+      if (ans.type === 'repeat') continue;
+      if (ans.type === 'end') return 'end';
+      if (ans.type === 'skip') return null;
+      if (ans.type === 'dontknow') {
+        const correct = this.L(`Правильный ответ: ${q.a}`, `The correct answer: ${q.a}`);
+        this.feedback = { q: q.q, answer: this.L('не знаю', 'I don’t know'), entry: { a: correct } };
+        this.set('quiz');
+        await this.say(correct);
+        return my === this.token ? 0 : undefined;
+      }
+      const score = await this.grade(my, topic, q, ans.text);
+      return my === this.token ? score : undefined;
+    }
+  }
+
+  /** Записывает балл в статистику темы и назначает повторение. */
+  scoreTopic(id, score) {
+    const st = this.stat(id);
+    st.total += 1;
+    st.right += score;
+    this.schedule(id);
+  }
+
+  // ---------- Экзамен ----------
+
+  /** Вопросы для экзамена: самопроверки всех подготовленных тем. */
+  examPool() {
+    return this.seq().filter((t) => t.status === 'ready').flatMap((t) => (t.quiz || []).map((q) => ({ ...q, topic: t })));
+  }
+
+  /** Экзамен по всему предмету: count случайных вопросов, minutes — ограничение по времени (0 — без него). */
+  startExam({ count = 10, minutes = 0 } = {}) {
+    const pool = this.examPool();
+    if (!pool.length) return false;
+    for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+    const st = this.state;
+    stopSpeaking();
+    this.abortAnswer();
+    this.clearQuestion();
+    this.resolveWaiter(null);
+    this.cancelAutoResume();
+    // диктовку прервали экзаменом — после него «Продолжить» вернёт к тому же месту
+    if (DICTATING.includes(st)) this.resumePos = { topicId: this.pos.topicId, chunk: this.pos.chunk, partial: st === 'speaking' };
+    if (this.mode === 'review') { this.mode = 'dictate'; this.review = null; delete this.pos.review; }
+    this.runExam(pool.slice(0, count), minutes);
+    return true;
+  }
+
+  async runExam(qs, minutes) {
+    const my = ++this.token;
+    keepAwake(true);
+    const endsAt = minutes ? Date.now() + minutes * 60000 : 0;
+    this.quiz = { exam: true, qs, i: 0, results: [], endsAt, topic: qs[0].topic };
+    // время вышло, пока ждём ответ, — заканчиваем
+    clearTimeout(this.examTimer);
+    if (endsAt) this.examTimer = setTimeout(() => { if (this.quiz?.exam && this.waiter) this.resolveWaiter({ type: 'end' }); }, endsAt - Date.now());
+    this.set('quiz');
+    const n = qs.length;
+    await this.say(this.L(
+      `Экзамен по всему предмету: ${n} ${plural(n, ['вопрос', 'вопроса', 'вопросов'])}${minutes ? `, на ${minutes} минут` : ''}. Отвечайте вслух или текстом. Можно сказать «не знаю» или «пропусти».`,
+      `Exam on the whole subject: ${n} ${n === 1 ? 'question' : 'questions'}${minutes ? `, ${minutes} minutes` : ''}. Answer aloud or in text. You can say “I don’t know” or “skip”.`));
+    let timeUp = false;
+    for (let i = 0; i < n; i++) {
+      if (my !== this.token) return;
+      if (endsAt && Date.now() >= endsAt) { timeUp = true; break; }
+      const q = qs[i];
+      Object.assign(this.quiz, { i, topic: q.topic });
+      const score = await this.askQuiz(my, q.topic, q, i);
+      if (my !== this.token || score === undefined) return;
+      if (score === 'end') { timeUp = !!endsAt && Date.now() >= endsAt; break; }
+      this.quiz.results.push({ topicId: q.topic.id, score });
+      if (score !== null) this.scoreTopic(q.topic.id, score);
+    }
+    clearTimeout(this.examTimer);
+    const done = this.quiz.results.filter((x) => x.score !== null);
+    const right = done.reduce((a, x) => a + x.score, 0);
+    // слабые темы — где в среднем меньше 70 %
+    const by = new Map();
+    for (const x of done) { const v = by.get(x.topicId) || [0, 0]; by.set(x.topicId, [v[0] + x.score, v[1] + 1]); }
+    const weak = [...by].filter(([, [r, k]]) => r / k < 0.7).map(([id]) => this.topicById(id)?.title).filter(Boolean);
+    const result = { at: Date.now(), right, n: done.length, asked: n, minutes };
+    (this.pos.exams ||= []).push(result);
+    this.pos.exams = this.pos.exams.slice(-20);
+    this.h.saveProgress();
+    this.h.onExam?.(result);
+    this.quiz = null;
+    this.set('quiz');
+    const r = Number.isInteger(right) ? String(right) : right.toFixed(1);
+    const pct = done.length ? Math.round((right / done.length) * 100) : 0;
+    await this.say(this.L(
+      `${timeUp ? 'Время вышло. ' : ''}${done.length ? `Результат экзамена: ${r.replace('.', ',')} из ${done.length}, это ${pct} процентов.` : 'Ответов не было.'}${weak.length ? ` Стоит повторить: ${weak.slice(0, 3).join(', ')}.` : done.length ? ` Отлично${this.a}!` : ''}`,
+      `${timeUp ? 'Time is up. ' : ''}${done.length ? `Exam result: ${r} out of ${done.length}, that’s ${pct} percent.` : 'No answers.'}${weak.length ? ` Worth reviewing: ${weak.slice(0, 3).join(', ')}.` : done.length ? ` Well done${this.a}!` : ''}`));
+    if (my !== this.token) return;
+    this.set(this.resumePos ? 'paused' : 'idle');
   }
 
   waitAnswer(my) {
@@ -877,8 +969,10 @@ export class Dictation {
       this.resumeNote = false;
       this.cur = null;
       this.run();
-    } else if (st === 'gap' || st === 'waiting') { this.run(); }
-    else if (st === 'idle') this.start();
+    } else if (st === 'gap' || st === 'waiting') {
+      if (st === 'gap') this.notePace();
+      this.run();
+    } else if (st === 'idle') this.start();
     else this.resume();
   }
 
@@ -889,8 +983,8 @@ export class Dictation {
     this.abortAnswer();
     this.clearQuestion();
     if (st === 'reviewing') return this.runReview();
-    // просят повторить — значит, не успевают: пауза немного длиннее
-    this.pos.pauseBoost = Math.min(2, (this.pos.pauseBoost || 1) * 1.15);
+    // просят повторить — значит, не успевают: паузы немного длиннее
+    this.adjustPace(1.12);
     this.cancelAutoResume();
     if (st === 'speaking') { /* та же позиция */ }
     else if (st === 'gap') this.pos.chunk = Math.max(0, this.pos.chunk - 1);
@@ -938,11 +1032,35 @@ export class Dictation {
   changeRate(delta) {
     const s = this.settings;
     s.rate = Math.round(Math.min(2, Math.max(0.5, s.rate + delta)) * 10) / 10;
-    if (delta < 0) this.pos.pauseBoost = Math.min(2, (this.pos.pauseBoost || 1) * 1.1);
+    if (delta < 0) this.adjustPace(1.05);
     this.h.saveSettings();
     this.h.toast(`Скорость речи: ${s.rate.toFixed(1)}`);
     if (this.state === 'speaking') { stopSpeaking(); this.run(); }
     else this.h.emit();
+  }
+
+  // ---------- Паузы под скорость письма ----------
+  // settings.writePace — во сколько раз паузы длиннее или короче обычных. Учится сам:
+  // сказали «записал» раньше конца паузы — паузы короче; просят повторить или медленнее — длиннее.
+
+  adjustPace(k) {
+    const s = this.settings;
+    if (!s.adaptivePause) return;
+    s.writePace = Math.round(Math.min(2.5, Math.max(0.4, (s.writePace || 1) * k)) * 100) / 100;
+    this.h.saveSettings();
+  }
+
+  /** «Записал» / «дальше» в паузе: сколько на самом деле ушло на запись. */
+  notePace() {
+    const g = this.gap;
+    const s = this.settings;
+    if (!g?.start || !g.planned || !s.adaptivePause || this.listenOnly) return;
+    const took = Date.now() - g.start;
+    if (took < 700) return; // случайное двойное нажатие
+    if (!g.wait && took > g.planned * 0.9) return; // успели к концу паузы — она и так впору
+    // с небольшим запасом: пауза должна заканчиваться чуть позже, чем человек дописывает
+    const ratio = Math.min(2, (took * 1.15) / g.planned);
+    this.adjustPace(1 + (ratio - 1) * 0.35); // плавно, по одному замеру резко не меняем
   }
 
   /** Кнопка наушников / «пуск-пауза»: остановить или продолжить. */

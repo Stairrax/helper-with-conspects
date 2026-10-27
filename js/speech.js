@@ -83,6 +83,19 @@ export function prefetch(texts, { rate = 1 } = {}) {
   if (engine === 'neural') for (const t of texts) if (t) neural.synth(t, { voice: neuralVoice, rate: neuralRate(rate), expressive: intonation }).catch(() => {});
 }
 
+// Сколько уже прозвучало из текущей фразы — для подсветки читаемого слова.
+// Нейроголос: точно, по времени звука. Голос телефона: по событиям синтезатора о словах, а если их нет — по оценке времени.
+let now = null; // { text, at, dur, char } — dur в мс (оценка или длина звука), char — позиция последнего слова от синтезатора
+
+/** -> { text, fraction 0…1 } или null, если сейчас ничего не звучит. */
+export function speechProgress() {
+  if (!now) return null;
+  let f;
+  if (now.char != null) f = now.char / Math.max(1, now.text.length);
+  else f = (performance.now() - now.at) / Math.max(1, now.dur);
+  return { text: now.text, fraction: Math.max(0, Math.min(1, f)) };
+}
+
 /** Произносит текст. Promise -> 'end' | 'cancel' | 'error'. */
 export function speak(text, opts = {}) {
   if (engine === 'neural') return speakNeural(text, opts);
@@ -108,6 +121,7 @@ function speakNeural(text, opts) {
       done = true;
       clearTimeout(wd);
       rec.end = Date.now();
+      if (now?.text === text) now = null;
       if (current?.fin === fin) current = null;
       try { src?.stop(); } catch { /* уже остановлен */ }
       if (r === 'cancel') neural.cutTail();
@@ -127,6 +141,7 @@ function speakNeural(text, opts) {
       src.onended = () => fin('end');
       onStart?.();
       src.start();
+      now = { text, at: performance.now(), dur: (buf.duration / pitch) * 1000, char: null };
       // если звук не пошёл (контекст заблокирован) — сообщаем об ошибке, а не висим
       wd = setTimeout(() => fin(ac.state === 'running' ? 'end' : 'error'), (buf.duration / pitch) * 1000 + 4000);
     }).catch((err) => {
@@ -163,10 +178,17 @@ function speakSystem(text, { rate = 1, voiceURI = '', onStart, echoTail = 900 } 
         done = true;
         clearInterval(wd);
         rec.end = Date.now();
+        if (now?.text === text) now = null;
         if (current?.fin === fin) current = null;
         resolve(r === 'end' && !seen ? 'error' : r);
       };
-      u.onstart = () => { seen = true; onStart?.(); };
+      u.onstart = () => {
+        seen = true;
+        onStart?.();
+        // примерно 14 знаков в секунду на обычной скорости — пока синтезатор не сообщит о словах сам
+        now = { text, at: performance.now(), dur: (text.length / (14 * rate)) * 1000, char: null };
+      };
+      u.onboundary = (e) => { if (now?.text === text && e.name !== 'sentence') now.char = e.charIndex; };
       u.onend = () => { seen = true; fin('end'); };
       u.onerror = (e) => fin(e.error === 'interrupted' || e.error === 'canceled' ? 'cancel' : 'error');
       current = { fin, text };
@@ -190,6 +212,7 @@ export function stopSpeaking() {
   epoch++;
   const c = current;
   current = null;
+  now = null;
   if (ttsSupported) synth.cancel();
   lastCancelAt = Date.now();
   if (c) c.fin('cancel');
