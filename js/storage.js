@@ -186,7 +186,7 @@ export async function makeBackup() {
 /** Заменяет все данные приложения содержимым копии. */
 export async function restoreBackup(data) {
   if (data?.app !== BACKUP_APP || !data.localStorage || typeof data.localStorage !== 'object') {
-    throw new Error('Это не резервная копия Диктора конспектов');
+    throw new Error('Это не резервная копия Помощника по учёбе');
   }
   try { await tx('readwrite', (s) => s.clear()); } catch { /* ignore */ }
   for (const k of Object.keys(localStorage)) if (k.startsWith('kd.') && k !== 'kd.backupAt') localStorage.removeItem(k);

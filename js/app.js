@@ -220,7 +220,7 @@ const dict = new Dictation({
   onExam: (r) => addExam({ subject: curSubject()?.title || '', right: r.right, n: r.n }),
   onTicket: () => renderTickets(),
 });
-const dictTitle = () => (dict.mode === 'review' ? T('Повторение') : project?.topics.find((t) => t.id === progress?.topicId)?.title) || T('Диктор конспектов');
+const dictTitle = () => (dict.mode === 'review' ? T('Повторение') : project?.topics.find((t) => t.id === progress?.topicId)?.title) || T('Помощник по учёбе');
 
 function resetDictation() {
   stopSpeaking();
@@ -950,7 +950,7 @@ function buildExport() {
   const subj = curSubject()?.title || E('Конспект', 'Notes');
   const stats = progress?.stats || {};
   const qa = progress?.qa || [];
-  const lines = [`# ${subj}`, '', E(`Сохранено ${new Date().toLocaleString('ru-RU')} из приложения «Диктор конспектов».`, `Saved ${new Date().toLocaleString('en-GB')} from the Notes Narrator app.`), ''];
+  const lines = [`# ${subj}`, '', E(`Сохранено ${new Date().toLocaleString('ru-RU')} из приложения «Помощник по учёбе».`, `Saved ${new Date().toLocaleString('en-GB')} from the Study Helper app.`), ''];
   for (const t of activeSeq(project)) {
     lines.push(`## ${t.title}`, '');
     if (t.chunks?.length) {
@@ -2095,7 +2095,7 @@ $('audioMake').addEventListener('click', async () => {
   }
 });
 $('audioPlayer').addEventListener('play', () => {
-  try { navigator.mediaSession.metadata = new MediaMetadata({ title: audio.name, artist: T('Диктор конспектов') }); } catch { /* нет Media Session */ }
+  try { navigator.mediaSession.metadata = new MediaMetadata({ title: audio.name, artist: T('Помощник по учёбе') }); } catch { /* нет Media Session */ }
 });
 $('audioSave').addEventListener('click', () => {
   if (audio.blob) shareOrDownload(new File([audio.blob], `${audio.name || 'конспект'}.mp3`, { type: 'audio/mpeg' }));
@@ -2415,7 +2415,7 @@ window.addEventListener('beforeinstallprompt', (e) => {
 });
 window.addEventListener('appinstalled', () => {
   installPrompt = null;
-  toast('Приложение установлено — открывайте его с иконки «Диктор».', 5000);
+  toast('Приложение установлено — открывайте его с иконки «Учёба».', 5000);
 });
 $('installBtn').addEventListener('click', installApp);
 $('obInstall').addEventListener('click', installApp);

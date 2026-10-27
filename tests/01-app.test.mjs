@@ -12,6 +12,6 @@ export default async ({ open, ok }) => {
   await ctx.setOffline(true);
   await page.reload();
   await page.waitForTimeout(500);
-  ok((await page.title()) === 'Диктор конспектов' && await page.isVisible('#tab-load'), 'без интернета приложение открывается из кэша');
+  ok((await page.title()) === 'Помощник по учёбе' && await page.isVisible('#tab-load'), 'без интернета приложение открывается из кэша');
   await ctx.setOffline(false);
 };
