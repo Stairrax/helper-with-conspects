@@ -1,7 +1,11 @@
 /* Оформление «Аврора»: тёмное, с цветными размытыми пятнами на фоне, полупрозрачные «стеклянные» карточки,
    «СТОП» — светящийся шар внизу, по бокам от него — «повторить» и «дальше»; панель вкладок плавает над экраном.
    <html data-theme="aurora">; по умолчанию — когда на телефоне тёмная тема (светлая — «Чернила», css/ink.css).
-   Шрифты Onest и Unbounded описаны в neon.css (fonts/, SIL OFL 1.1). */
+   Текст — Nunito (скруглённые концы букв), заголовки — Unbounded (описан в neon.css); fonts/, SIL OFL 1.1.
+   Nunito нужен и «Чернилам» (css/ink.css) — он описан здесь. */
+
+@font-face { font-family: 'Nunito'; font-weight: 200 1000; font-display: swap; src: url(../fonts/nunito-cyrillic.woff2) format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: 'Nunito'; font-weight: 200 1000; font-display: swap; src: url(../fonts/nunito-latin.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 
 :root[data-theme="aurora"] {
   color-scheme: dark;
@@ -20,7 +24,7 @@
     #070818;
 }
 
-[data-theme="aurora"] body { font-family: 'Onest', Roboto, system-ui, sans-serif; background: transparent; }
+[data-theme="aurora"] body { font-family: 'Nunito', Roboto, system-ui, sans-serif; background: transparent; }
 /* фон: цветные пятна, как северное сияние; неподвижны при прокрутке */
 [data-theme="aurora"] body::before {
   content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: var(--aurora);
@@ -30,7 +34,7 @@
 [data-theme="aurora"] .appbar { background: transparent; transition: background .25s; }
 [data-theme="aurora"] body.scrolled .appbar { background: rgba(10, 11, 32, .9); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
 [data-theme="aurora"] :is(.appbar h1, .topic h2, .plan-sum .big, .ob-step h2, .fx-title b, .stats-row b) {
-  font-family: 'Unbounded', 'Onest', sans-serif; font-weight: 600; letter-spacing: -.01em;
+  font-family: 'Unbounded', 'Nunito', sans-serif; font-weight: 600; letter-spacing: -.01em;
 }
 [data-theme="aurora"] .appbar h1 { font-size: 22px; }
 [data-theme="aurora"] .topic h2 { font-size: 21px; line-height: 1.25; margin: 6px 0 10px; }
@@ -113,7 +117,7 @@
 [data-theme="aurora"] .stopbar { background: linear-gradient(to top, rgba(7, 8, 24, .95) 62%, rgba(7, 8, 24, 0)); padding-top: 8px; }
 [data-theme="aurora"] .stop {
   width: 104px; height: 104px; border-radius: 50%; padding: 12px;
-  font: 600 12px/1.25 'Unbounded', 'Onest', sans-serif; letter-spacing: .06em; color: #fff; text-shadow: 0 1px 8px rgba(0, 0, 0, .35);
+  font: 600 12px/1.25 'Unbounded', 'Nunito', sans-serif; letter-spacing: .06em; color: #fff; text-shadow: 0 1px 8px rgba(0, 0, 0, .35);
   background: radial-gradient(circle at 35% 30%, #ffd1f0 0, #ff5fae 24%, #7b4dff 60%, #2b1a8a 100%);
   box-shadow: 0 0 0 6px rgba(139, 123, 255, .1), 0 10px 26px rgba(255, 79, 163, .22);
   --ripple-ring: #ff9ad0; --ripple-ring2: #c9bdff;

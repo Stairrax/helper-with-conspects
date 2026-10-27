@@ -31,7 +31,7 @@ css/aurora.css        «Аврора» — тёмное оформление п�
 css/ink.css           «Чернила» — светлое оформление по умолчанию (светлая тема телефона)
 css/ios.css           оформление iOS
 css/android.css       оформление Android в духе Material You
-fonts/                шрифты тем: Onest, Unbounded, Literata (SIL OFL 1.1)
+fonts/                шрифты тем: Nunito, Onest, Unbounded, Literata (SIL OFL 1.1)
 js/ripple.js          «капля» при нажатии на кнопки
 js/app.js             интерфейс, план, фоновая подготовка кусков
 js/dictation.js       движок диктовки: прерывание, вопросы, возврат к куску

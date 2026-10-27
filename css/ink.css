@@ -1,7 +1,7 @@
 /* Оформление «Чернила»: спокойное, как журнал — бумажный фон, чёрные «чернила», крупный текст с засечками,
    без карточек (разделы — тонкими линиями), «стоп» — большой чёрный круг, вкладки — словами с подчёркиванием.
    <html data-theme="ink">; по умолчанию — когда на телефоне светлая тема (тёмная — «Аврора», css/aurora.css).
-   Шрифты: Onest (neon.css) и Literata (light.css), fonts/, SIL OFL 1.1. */
+   Шрифты: Nunito — кнопки и подписи (описан в aurora.css), Literata — заголовки и текст отрывка (light.css); fonts/, SIL OFL 1.1. */
 
 :root[data-theme="ink"] {
   color-scheme: light;
@@ -15,7 +15,7 @@
   --nav-h: 64px; --stop-h: 132px;
 }
 
-[data-theme="ink"] body { font-family: 'Onest', Roboto, system-ui, sans-serif; }
+[data-theme="ink"] body { font-family: 'Nunito', Roboto, system-ui, sans-serif; }
 
 /* ---------- заголовки — с засечками ---------- */
 [data-theme="ink"] .appbar { background: var(--bg); }
