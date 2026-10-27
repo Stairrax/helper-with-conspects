@@ -44,6 +44,9 @@ js/i18n.js            язык интерфейса: перевод экрана
 js/i18n-en.js         английский словарь интерфейса
 js/platform.js        iPhone или Android
 js/config.js          адрес сервера бесплатного режима (без своего ключа)
+js/stats.js           статистика занятий: минуты по дням, серия дней, экзамены
+js/cheatsheet.js      шпаргалка: главное, термины («Х — это …»), формулы; печать и HTML-файл
+js/audiobook.js       аудиоконспект для iPhone: озвучка нейроголосом и MP3 (lamejs)
 server/               сервер бесплатного режима для Cloudflare Workers — как поставить, в server/README.md
 voices/silero-ru/     файлы модели Silero (CC BY-NC-SA 4.0)
 js/analyze.js         темы, план, оценка времени, генерация кусков и проверка полноты

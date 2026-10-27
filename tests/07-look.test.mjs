@@ -40,6 +40,8 @@ export default async ({ open, prepare, FINANCE, ok }) => {
   await page.waitForTimeout(1100);
   const cdp = await page.context().newCDPSession(page);
   const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] });
+  await page.evaluate(() => { document.querySelectorAll('#planList li')[1].scrollIntoView({ block: 'center' }); });
+  await page.waitForTimeout(100);
   const li = await page.locator('#planList li').nth(1).locator('.phead').boundingBox();
   const x = li.x + 120, y = li.y + li.height / 2;
   await touch('touchStart', x, y); await touch('touchEnd'); await page.waitForTimeout(30);

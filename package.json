@@ -9,6 +9,7 @@
     "test": "node tests/run.mjs"
   },
   "devDependencies": {
+    "lamejs": "^1.2.1",
     "playwright": "1.56.1"
   }
 }

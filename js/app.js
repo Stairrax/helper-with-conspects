@@ -7,10 +7,11 @@ import {
 import { fileToSource } from './extract.js';
 import {
   analyze, generateTopicChunks, generateExtras, extractFormulas, FX_MIN, orderTopics, activeSeq, estimateTopicSec, allocateBudget, fitPause,
+  pauseFor, CHARS_PER_SEC,
 } from './analyze.js';
 import { listModels, conn, PROVIDERS, providerName, hasAI } from './ai.js';
 import {
-  loadVoices, getVoices, speak, stopSpeaking, setEngine, setStyle, setIntonation, setSpeechLang, srSupported, ttsSupported, hasBtHeadset, onBtChange,
+  loadVoices, getVoices, speak, stopSpeaking, speechProgress, setEngine, setStyle, setIntonation, setSpeechLang, srSupported, ttsSupported, hasBtHeadset, onBtChange,
 } from './speech.js';
 import { prepare as prepareNeural, missingMB, NEURAL_VOICES, VOICE_STYLES, audioContext, isSilero, voiceLang } from './neural.js';
 import { enableMedia, disableMedia, updateMedia, mediaSupported } from './media.js';
@@ -19,7 +20,10 @@ import { initOnboarding, onboardingDone } from './onboarding.js';
 import { setRipple } from './ripple.js';
 import { IOS, SYS } from './platform.js';
 import { LectureRecorder, lectureSupported, tidyTranscript, roughParagraphs, fmtClock as lectureClock } from './lecture.js';
-import { setUiLang, T } from './i18n.js';
+import { setUiLang, T, uiLang } from './i18n.js';
+import { addStudy, addExam, flushStats, statsSummary } from './stats.js';
+import { buildCheatsheet, cheatsheetFile, CHEATSHEET_CSS } from './cheatsheet.js';
+import { audioPieces, renderMp3 } from './audiobook.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -211,6 +215,8 @@ const dict = new Dictation({
   appCommand,
   kickGenerator: () => gen.loop(),
   onActivity: (playing) => updateMedia(dictTitle(), playing),
+  onStudy: () => addStudy(1),
+  onExam: (r) => addExam({ subject: curSubject()?.title || '', right: r.right, n: r.n }),
 });
 const dictTitle = () => (dict.mode === 'review' ? T('Повторение') : project?.topics.find((t) => t.id === progress?.topicId)?.title) || T('Диктор конспектов');
 
@@ -443,8 +449,35 @@ let fxPaused = false; // диктовку остановило окно форм
 let openPoints = new Set();
 const dots = (d) => '●'.repeat(d) + '○'.repeat(5 - d);
 
+// ---------- Статистика ----------
+
+function renderStats() {
+  const s = statsSummary();
+  $('statToday').textContent = s.today >= 60 ? fmtDur(s.today) : '0 мин';
+  $('statStreak').textContent = String(s.streak);
+  $('statStreakLabel').textContent = plural(s.streak, ['день подряд', 'дня подряд', 'дней подряд']);
+  // всего — коротко, чтобы влезло в одну строку: «45 мин», «5,4 ч»
+  $('statTotal').textContent = s.total >= 3600 ? `${String(Math.round(s.total / 360) / 10).replace('.', ',')} ч` : `${Math.round(s.total / 60)} мин`;
+  const max = Math.max(1800, ...s.last14.map((d) => d.sec)); // шкала — не меньше получаса
+  const loc = uiLang() === 'en' ? 'en-GB' : 'ru-RU';
+  $('statBars').innerHTML = s.last14.map((d, i) => {
+    const h = d.sec ? Math.max(5, Math.round((d.sec / max) * 64)) : 3;
+    const day = new Date(d.t).toLocaleDateString(loc, { weekday: 'narrow' });
+    return `<div class="bar${i === 13 ? ' today' : ''}" title="${esc(new Date(d.t).toLocaleDateString(loc, { day: 'numeric', month: 'short' }))}: ${Math.round(d.sec / 60)}"><i class="${d.sec ? '' : 'none'}" style="height:${h}px"></i><span>${esc(day)}</span></div>`;
+  }).join('');
+  const seq = project ? activeSeq(project) : [];
+  const done = seq.filter((t) => progress?.done?.[t.id]).length;
+  const ex = s.lastExam;
+  const pct = ex?.n ? Math.round((ex.right / ex.n) * 100) : 0;
+  $('statMore').textContent = [
+    seq.length ? `Пройдено тем в этом предмете: ${done} из ${seq.length}.` : '',
+    ex ? `Последний экзамен: ${String(Math.round(ex.right * 10) / 10).replace('.', ',')} из ${ex.n} (${pct}%), ${new Date(ex.at).toLocaleDateString(loc, { day: 'numeric', month: 'long' })}.` : '',
+  ].filter(Boolean).join(' ');
+}
+
 function renderPlan() {
   const has = !!project;
+  renderStats();
   $('planEmpty').classList.toggle('hidden', has);
   $('planBody').classList.toggle('hidden', !has);
   if (!has) return;
@@ -648,6 +681,30 @@ function reviewSets() {
 $('reviewDueBtn').addEventListener('click', () => { const ids = reviewSets().due.map((t) => t.id); if (ids.length) { switchTab('dictate'); dict.startReview(ids); } });
 $('reviewAllBtn').addEventListener('click', () => { const ids = reviewSets().studied.map((t) => t.id); if (ids.length) { switchTab('dictate'); dict.startReview(ids); } });
 
+// ---------- Экзамен ----------
+
+/** Экзамен с выбранными в окне настройками. false — вопросов пока нет. */
+function startExam() {
+  if (!project || !dict.examPool().length) return false;
+  switchTab('dictate');
+  return dict.startExam({ count: +settings.examCount || 10, minutes: +settings.examMinutes || 0 });
+}
+$('examBtn').addEventListener('click', () => {
+  const n = project ? dict.examPool().length : 0;
+  if (!n) return toast('Пока нет вопросов для экзамена: они появляются, когда темы подготовлены.', 5000);
+  document.querySelectorAll('input[name=examCount]').forEach((r) => { r.checked = +r.value === (+settings.examCount || 10); });
+  document.querySelectorAll('input[name=examTime]').forEach((r) => { r.checked = +r.value === (+settings.examMinutes || 0); });
+  $('examPoolHint').textContent = `Всего вопросов в конспекте: ${n}.`;
+  $('examSheet').classList.remove('hidden');
+});
+$('examSheet').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) $('examSheet').classList.add('hidden'); });
+document.querySelectorAll('input[name=examCount]').forEach((r) => r.addEventListener('change', () => { settings.examCount = +r.value; saveSettings(settings); }));
+document.querySelectorAll('input[name=examTime]').forEach((r) => r.addEventListener('change', () => { settings.examMinutes = +r.value; saveSettings(settings); }));
+$('examStart').addEventListener('click', () => {
+  $('examSheet').classList.add('hidden');
+  startExam();
+});
+
 // ---------- Экспорт ----------
 
 const TR = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya' };
@@ -738,6 +795,40 @@ function displayedChunk() {
   return { t, chunk: t.chunks[Math.max(0, idx)], idx: Math.max(0, idx) };
 }
 
+// ---------- Подсветка читаемого слова ----------
+// Текст отрывка разбит на слова; раз в 80 мс подсвечивается то, что сейчас звучит
+// (по доле прозвучавшего — js/speech.js speechProgress).
+
+function setChunkText(text, words) {
+  const el = $('chunkText');
+  if (!words) {
+    if (el.dataset.words !== undefined || el.textContent !== text) { delete el.dataset.words; el.textContent = text; }
+    return;
+  }
+  if (el.dataset.words === text) return;
+  const parts = text.split(/(\s+)/);
+  el.innerHTML = parts.map((p) => (/\S/.test(p) ? `<span class="w">${esc(p)}</span>` : p)).join('');
+  el.dataset.words = text;
+  // где начинается каждое слово
+  let pos = 0;
+  el.wordStarts = [];
+  for (const p of parts) { if (/\S/.test(p)) el.wordStarts.push(pos); pos += p.length; }
+}
+
+setInterval(() => {
+  const el = $('chunkText');
+  if (el.dataset.words === undefined) return;
+  const spans = el.querySelectorAll('.w');
+  const old = el.querySelector('.w.hl');
+  const p = dict.state === 'speaking' && dict.cur && activeTab === 'dictate' ? speechProgress() : null;
+  const { chunk } = p && project ? displayedChunk() : {};
+  if (!p || !chunk || p.text !== dict.spokenText(chunk)) { old?.classList.remove('hl'); return; }
+  const at = p.fraction * el.dataset.words.length;
+  let i = 0;
+  while (i + 1 < el.wordStarts.length && el.wordStarts[i + 1] <= at) i++;
+  if (spans[i] !== old) { old?.classList.remove('hl'); spans[i]?.classList.add('hl'); }
+}, 80);
+
 const PAUSED = ['paused', 'listening', 'confirm', 'topicEnd', 'break'];
 const DICTATING = ['speaking', 'gap', 'waiting', 'reviewing', 'spelling'];
 const QUIZ = ['quiz', 'quizListen', 'quizGrade'];
@@ -775,7 +866,9 @@ function renderDictation() {
   // самопроверка: на карточке — текущий вопрос
   if (QUIZ.includes(st) && dict.quiz) {
     const q = dict.quiz.qs[dict.quiz.i];
-    $('chunkKind').textContent = `Самопроверка · вопрос ${dict.quiz.i + 1} из ${dict.quiz.qs.length}`;
+    const left = dict.quiz.endsAt ? Math.max(0, dict.quiz.endsAt - Date.now()) : 0;
+    $('chunkKind').textContent = `${dict.quiz.exam ? 'Экзамен' : 'Самопроверка'} · вопрос ${dict.quiz.i + 1} из ${dict.quiz.qs.length}` +
+      (dict.quiz.endsAt ? ` · осталось ${Math.floor(left / 60000)}:${String(Math.floor((left % 60000) / 1000)).padStart(2, '0')}` : '');
     text = q?.q || '';
   } else if (st === 'reviewing' && dict.review) {
     const rt = project?.topics.find((x) => x.id === dict.review.ids[dict.review.i]);
@@ -787,7 +880,7 @@ function renderDictation() {
     else if (st === 'waiting' || t?.status === 'generating' || t?.status === 'pending') text = 'Готовлю эту тему…';
     else if (st === 'idle') text = 'Нажмите ▶, чтобы начать.';
   }
-  $('chunkText').textContent = text;
+  setChunkText(text, settings.highlightWord && !!chunk && !QUIZ.includes(st) && st !== 'reviewing');
   $('chunkBox').classList.toggle('hidden-text', !settings.showText && !!chunk && !QUIZ.includes(st) && st !== 'reviewing');
   $('toggleText').textContent = settings.showText ? 'Скрыть текст' : 'Показать текст';
 
@@ -901,8 +994,9 @@ $('quizDontKnow').addEventListener('click', () => dict.submitText('не знаю
 $('quizSkip').addEventListener('click', () => dict.next());
 $('stopReviewBtn').addEventListener('click', () => dict.stopReview());
 $('breakSkip').addEventListener('click', () => dict.resume());
-// обратный отсчёт перерыва
+// обратный отсчёт перерыва и экзамена на время
 setInterval(() => {
+  if (dict.quiz?.endsAt && QUIZ.includes(dict.state) && activeTab === 'dictate') renderDictation();
   if (dict.state !== 'break' || !dict.breakUntil) return;
   const left = Math.max(0, dict.breakUntil - Date.now());
   $('breakText').textContent = `Перерыв: осталось ${Math.floor(left / 60000)}:${String(Math.floor((left % 60000) / 1000)).padStart(2, '0')}`;
@@ -1029,6 +1123,7 @@ function appCommand(c, topicId) {
       return L(`Оформление: ${THEMES[c.arg]}.`, `Theme: ${{ android: 'Android', ios: 'iOS', classic: 'classic', neon: 'neon', light: 'light', auto: 'as in the system' }[c.arg]}.`);
     }
     case 'export': if (project) exportFile(); return project ? '' : L('Сначала добавьте материал и составьте план.', 'First add material and make a plan.');
+    case 'exam': return startExam() ? '' : L('Пока нет вопросов для экзамена: они появляются, когда темы подготовлены.', 'No exam questions yet: they appear once topics are prepared.');
   }
   return '';
 }
@@ -1151,6 +1246,11 @@ function renderSettings() {
   $('pauseVal').textContent = `${settings.pause} с`;
   $('scalePause').checked = settings.scalePause;
   $('adaptivePause').checked = settings.adaptivePause;
+  $('highlightWord').checked = !!settings.highlightWord;
+  const pace = settings.writePace || 1;
+  $('paceHint').innerHTML = settings.adaptivePause && Math.abs(pace - 1) >= 0.05
+    ? `<span>${pace < 1 ? 'Сейчас паузы короче обычных' : 'Сейчас паузы длиннее обычных'}: ×${String(pace).replace('.', ',')}.</span> <a href="#" id="paceReset">Сбросить</a>`
+    : '';
   $('selfCheck').checked = settings.selfCheck;
   $('abbreviate').checked = !!settings.abbreviate;
   $('headsetButtons').checked = settings.headsetButtons;
@@ -1262,6 +1362,14 @@ bind('rate', 'rate', Number, 'input');
 bind('pause', 'pause', Number, 'input');
 bind('scalePause', 'scalePause');
 bind('adaptivePause', 'adaptivePause');
+bind('highlightWord', 'highlightWord');
+$('paceHint').addEventListener('click', (e) => {
+  if (e.target.id !== 'paceReset') return;
+  e.preventDefault();
+  settings.writePace = 1;
+  saveSettings(settings);
+  renderSettings();
+});
 bind('selfCheck', 'selfCheck');
 bind('abbreviate', 'abbreviate');
 bind('formulasApart', 'formulasApart');
@@ -1622,6 +1730,126 @@ function buildAnki() {
   return { rows: rows.length, text: [...head, ...rows.map((r) => r.map(cell).join('\t'))].join('\n') + '\n', title };
 }
 
+// ---------- Аудиоконспект (iPhone) ----------
+
+const audio = { ctrl: null, url: '', blob: null, name: '' };
+
+function audioTopics() {
+  const seq = activeSeq(project);
+  const v = $('audioWhat').value;
+  return v === 'all' ? seq : seq.filter((t) => t.id === v);
+}
+function audioPiecesNow() {
+  const pauses = $('audioPauses').checked;
+  return audioPieces(audioTopics(), {
+    en: settings.contentLang === 'en',
+    spoken: (c) => dict.spokenText(c),
+    gap: (t, c) => (pauses ? pauseFor(t, c.t, { ...settings, listenOnly: false }) / 1000 : 0.7),
+  });
+}
+async function renderAudioInfo() {
+  const pieces = audioPiecesNow();
+  const chars = pieces.reduce((a, p) => a + p.text.length, 0);
+  const sec = chars / (CHARS_PER_SEC * (settings.rate || 1)) + pieces.reduce((a, p) => a + p.pause, 0);
+  const voice = $('audioVoice').value;
+  const mb = await missingMB(voice);
+  $('audioInfo').textContent = [
+    pieces.length ? `≈${fmtDur(sec)} звука.` : 'Темы ещё не подготовлены.',
+    mb ? `Голос скачается один раз — около ${mb} МБ, лучше по Wi-Fi.` : '',
+    isSilero(voice) ? 'Если страница перезагрузится во время озвучки, выберите голос полегче — например, Ирина.' : '',
+  ].filter(Boolean).join(' ');
+}
+$('audioBtn').addEventListener('click', () => {
+  if (!project) return toast('Сначала составьте план');
+  const seq = activeSeq(project).filter((t) => t.status === 'ready');
+  const cur = progress?.topicId;
+  $('audioWhat').innerHTML = '<option value="all">Весь конспект</option>' +
+    seq.map((t, i) => `<option value="${t.id}" data-no-i18n>${i + 1}. ${esc(t.title)}</option>`).join('');
+  if (cur && seq.some((t) => t.id === cur) && !audio.url) $('audioWhat').value = cur;
+  const lang = settings.contentLang === 'en' ? 'en' : 'ru';
+  const voices = Object.entries(NEURAL_VOICES).filter(([id]) => voiceLang(id) === lang);
+  $('audioVoice').innerHTML = voices.map(([id, name]) => `<option value="${id}">${esc(name)}</option>`).join('');
+  $('audioVoice').value = voiceLang(settings.neuralVoice) === lang ? settings.neuralVoice : voices[0][0];
+  renderAudioInfo();
+  $('audioSheet').classList.remove('hidden');
+});
+['audioWhat', 'audioVoice', 'audioPauses'].forEach((id) => $(id).addEventListener('change', renderAudioInfo));
+$('audioSheet').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) $('audioSheet').classList.add('hidden'); });
+$('audioCancel').addEventListener('click', () => audio.ctrl?.abort());
+$('audioMake').addEventListener('click', async () => {
+  const pieces = audioPiecesNow();
+  if (!pieces.length) return toast('Темы ещё не подготовлены');
+  if (DICTATING.includes(dict.state)) dict.interrupt('pause'); // озвучка и диктовка вместе — слишком тяжело для телефона
+  const voice = $('audioVoice').value;
+  const what = $('audioWhat').selectedOptions[0]?.textContent.replace(/^\d+\.\s*/, '') || '';
+  const status = (t) => { $('audioStatus').textContent = t; };
+  audio.ctrl = new AbortController();
+  $('audioMake').disabled = true;
+  $('audioWork').classList.remove('hidden');
+  $('audioCancel').classList.remove('hidden');
+  $('audioDone').classList.add('hidden');
+  $('audioBar').style.width = '0%';
+  status('Загружаю голос…');
+  try {
+    audioContext();
+    await prepareNeural(voice, (p) => {
+      if (p.stage === 'model' && p.total) status(`Скачиваю голос: ${Math.round((p.loaded / p.total) * 100)}%`);
+      else if (p.stage === 'session') status('Подготавливаю голос…');
+    });
+    const { blob, seconds } = await renderMp3(pieces, {
+      voice, rate: settings.rate || 1, expressive: settings.intonation !== false, signal: audio.ctrl.signal,
+      onProgress: (d, n) => { $('audioBar').style.width = `${Math.round((d / n) * 100)}%`; status(`Озвучиваю: ${d} из ${n}`); },
+    });
+    if (audio.url) URL.revokeObjectURL(audio.url);
+    audio.blob = blob;
+    audio.url = URL.createObjectURL(blob);
+    const subj = curSubject()?.title || T('Конспект');
+    audio.name = ($('audioWhat').value === 'all' ? subj : `${subj} — ${what}`).replace(/[\\/:*?"<>|]+/g, ' ').trim();
+    $('audioPlayer').src = audio.url;
+    $('audioMeta').textContent = `${lectureClock(seconds * 1000)} · ${(blob.size / 1e6).toFixed(1).replace('.', ',')} МБ`;
+    $('audioDone').classList.remove('hidden');
+    status('');
+  } catch (e) {
+    status(e.name === 'AbortError' ? 'Отменено' : '✗ ' + (e.message || e));
+  } finally {
+    audio.ctrl = null;
+    $('audioMake').disabled = false;
+    $('audioCancel').classList.add('hidden');
+    if (!$('audioStatus').textContent) $('audioWork').classList.add('hidden'); // готово — остаётся только плеер
+  }
+});
+$('audioPlayer').addEventListener('play', () => {
+  try { navigator.mediaSession.metadata = new MediaMetadata({ title: audio.name, artist: T('Диктор конспектов') }); } catch { /* нет Media Session */ }
+});
+$('audioSave').addEventListener('click', () => {
+  if (audio.blob) shareOrDownload(new File([audio.blob], `${audio.name || 'конспект'}.mp3`, { type: 'audio/mpeg' }));
+});
+
+// ---------- Шпаргалка ----------
+
+let cheatHtml = '';
+{
+  const st = document.createElement('style');
+  st.textContent = CHEATSHEET_CSS;
+  document.head.append(st);
+}
+$('cheatBtn').addEventListener('click', () => {
+  if (!project) return toast('Сначала составьте план');
+  cheatHtml = buildCheatsheet(curSubject()?.title || T('Конспект'), activeSeq(project), settings.contentLang === 'en');
+  $('cheatBody').innerHTML = cheatHtml;
+  $('cheatSheet').classList.remove('hidden');
+});
+$('cheatSheet').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) $('cheatSheet').classList.add('hidden'); });
+$('cheatPrint').addEventListener('click', () => {
+  $('printArea').innerHTML = cheatHtml;
+  window.print();
+});
+$('cheatSave').addEventListener('click', async () => {
+  const title = curSubject()?.title || T('Конспект');
+  const name = `${title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'конспект'} — ${settings.contentLang === 'en' ? 'cheat sheet' : 'шпаргалка'}.html`;
+  await shareOrDownload(new File([cheatsheetFile(title, cheatHtml, settings.contentLang === 'en' ? 'en' : 'ru')], name, { type: 'text/html' }));
+});
+
 $('ankiBtn').addEventListener('click', async () => {
   if (!project) return toast('Сначала составьте план');
   const { rows, text, title } = buildAnki();
@@ -1948,6 +2176,7 @@ async function init() {
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   window.addEventListener('pagehide', persistProgress);
+  window.addEventListener('pagehide', flushStats);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') persistProgress(); });
 }
 

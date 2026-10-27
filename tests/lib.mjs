@@ -73,6 +73,8 @@ const between = (text) => text.split('<<<')[1].split('>>>')[0].trim();
 
 /** Заглушка нейросети (OpenRouter, Gemini, Anthropic). ai — счётчики и запросы, чтобы тест мог их проверить. */
 export async function mockAI(page, ai) {
+  // кодировщик MP3 для аудиоконспекта — локальная копия вместо CDN
+  await page.route(/lamejs@1\.2\.1\/lame\.min\.js/, (route) => route.fulfill({ path: path.join(ROOT, 'node_modules/lamejs/lame.min.js'), contentType: 'text/javascript' }));
   await page.route(/generativelanguage\.googleapis|openrouter\.ai\/api|api\.anthropic\.com|free-proxy\.test/, async (route) => {
     const url = route.request().url();
     const body = JSON.parse(route.request().postData() || '{}');
@@ -92,7 +94,9 @@ export async function mockAI(page, ai) {
     };
     if (isStream) {
       ai.answer++;
-      const parts = ['Потому что проценты начисляются и на уже начисленные проценты. ', 'Поэтому сумма растёт всё быстрее.'];
+      // проверка ответа на самопроверке или экзамене — «Верно», иначе ответ на вопрос
+      const parts = text.includes('Ответ студента') ? ['Верно. ', 'Всё правильно.']
+        : ['Потому что проценты начисляются и на уже начисленные проценты. ', 'Поэтому сумма растёт всё быстрее.'];
       const sse = isA ? 'event: message_start\ndata: {"type":"message_start","message":{}}\n\n' + parts.map((t) => 'event: content_block_delta\ndata: ' + JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: t } }) + '\n\n').join('') + 'event: message_stop\ndata: {"type":"message_stop"}\n\n'
         : isO ? parts.map((t) => 'data: ' + JSON.stringify({ choices: [{ delta: { content: t } }] }) + '\n\n').join('') + 'data: [DONE]\n\n'
           : parts.map((t) => 'data: ' + JSON.stringify({ candidates: [{ content: { parts: [{ text: t }] } }] }) + '\n\n').join('');
