@@ -172,6 +172,12 @@
           <button id="startBtn" class="btn filled wide">Начать диктовку</button>
           <div id="genStatus" class="status small"></div>
         </div>
+        <div class="card" id="prepCard">
+          <div class="card-title">Подготовка к экзамену</div>
+          <div class="prep-date"><label for="examDate">Дата экзамена</label><input id="examDate" type="date"><button id="prepClear" class="btn text hidden">Убрать</button></div>
+          <div id="prepBody" class="small"></div>
+          <button id="prepStart" class="btn tonal wide hidden">Начать сегодняшнее</button>
+        </div>
         <div class="card" id="reviewCard">
           <div class="card-title">Повторение</div>
           <div id="reviewSummary" class="small muted"></div>
@@ -179,6 +185,7 @@
             <button id="reviewDueBtn" class="btn tonal">Повторить нужное</button>
             <button id="reviewAllBtn" class="btn outline">Все пройденные</button>
             <button id="examBtn" class="btn outline">Экзамен</button>
+            <button id="ticketBtn" class="btn outline">Билеты</button>
           </div>
           <button id="exportBtn" class="btn text">Сохранить конспект и вопросы в файл</button>
           <button id="shareBtn" class="btn text">Поделиться готовым конспектом</button>
@@ -253,6 +260,7 @@
           <button id="askBtn" class="icon-btn filled" aria-label="Спросить"><svg><use href="#i-send"/></svg></button>
         </div>
         <div id="quizBtns" class="row hidden mt8">
+          <button id="longDone" class="btn filled hidden">Готово</button>
           <button id="quizDontKnow" class="btn outline">Не знаю</button>
           <button id="quizSkip" class="btn outline">Пропустить вопрос</button>
         </div>
@@ -408,6 +416,7 @@
         <label class="switch"><span>Подсвечивать читаемое слово<small>слово, которое сейчас звучит, выделяется в тексте отрывка — проще следить глазами</small></span><input id="highlightWord" type="checkbox"><i></i></label>
         <label class="switch android-only" id="remindRow"><span>Напоминать о повторении<small id="remindHint">уведомление, когда пора повторить тему — для установленного приложения на Android</small></span><input id="remind" type="checkbox"><i></i></label>
         <label class="switch"><span>Самопроверка после темы<small>2–3 вопроса, ответ голосом</small></span><input id="selfCheck" type="checkbox"><i></i></label>
+        <label class="switch"><span>Пересказ после темы<small>расскажите тему своими словами — нейросеть скажет, что упущено или перепутано; без этой настройки — кнопкой «Пересказать» в плане или голосом «перескажу тему»</small></span><input id="retellAfter" type="checkbox"><i></i></label>
         <label class="switch"><span>Формулы — отдельным блоком<small>если в теме 3 формулы и больше, голос рассказывает словами, из чего складывается величина, а сами формулы — в блоке «∑ Формулы» на экране диктовки и в плане: их удобнее учить глазами, решая задачи</small></span><input id="formulasApart" type="checkbox"><i></i></label>
         <label class="switch"><span>Пауза, пока открыты формулы<small>диктовка останавливается, когда открываете «∑ Формулы», и продолжается, когда закрываете</small></span><input id="fxPause" type="checkbox"><i></i></label>
         <label class="switch"><span>Диктовать сокращениями<small>как преподаватель: «физ. лиц», «юр. лица», «НДФЛ», «РФ», «ЦБ», «ИП», «госбюджет», «т. е.» — записывать быстрее; на экране тоже сокращения</small></span><input id="abbreviate" type="checkbox"><i></i></label>
@@ -616,6 +625,31 @@
     </div>
   </div>
 
+  <!-- Билеты -->
+  <div id="ticketSheet" class="sheet hidden">
+    <div class="sheet-scrim" data-close></div>
+    <div class="sheet-body tool-body">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">Билеты к экзамену</div>
+      <div id="ticketEdit">
+        <p class="hint">Вставьте вопросы к экзамену — по одному на строку, номера можно не убирать. Приложение подготовит по конспекту ответ на каждый, а потом будет «тянуть билет» и слушать ваш ответ, как на экзамене.</p>
+        <textarea id="ticketText" rows="8" placeholder="1. Понятие бюджета&#10;2. Доходы и расходы бюджета&#10;…"></textarea>
+        <button id="ticketSave" class="btn filled wide mt">Подготовить ответы</button>
+        <button id="ticketCancel" class="btn text wide hidden">Отмена</button>
+      </div>
+      <div id="ticketView" class="hidden">
+        <p class="hint" id="ticketSummary"></p>
+        <p class="status small" id="ticketStatus"></p>
+        <button id="ticketRetry" class="btn text hidden">Подготовить оставшиеся ответы</button>
+        <button id="ticketDraw" class="btn filled wide">Тянуть билет</button>
+        <p class="hint">Отвечайте вслух, как на экзамене; закончите — скажите «всё». Нейросеть поставит оценку и скажет, что упущено.</p>
+        <ol id="ticketList" class="tickets"></ol>
+        <button id="ticketEditBtn" class="btn text wide">Изменить список</button>
+      </div>
+      <button class="btn text wide" data-close>Закрыть</button>
+    </div>
+  </div>
+
   <!-- Предметы -->
   <div id="subjectSheet" class="sheet hidden">
     <div class="sheet-scrim" data-close></div>
@@ -693,30 +727,31 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/abbr.js": "./js/abbr.js?v=56",
-      "./js/ai.js": "./js/ai.js?v=56",
-      "./js/analyze.js": "./js/analyze.js?v=56",
-      "./js/anthropic.js": "./js/anthropic.js?v=56",
-      "./js/app.js": "./js/app.js?v=56",
-      "./js/commands.js": "./js/commands.js?v=56",
-      "./js/lecture.js": "./js/lecture.js?v=56",
-      "./js/config.js": "./js/config.js?v=56",
-      "./js/stats.js": "./js/stats.js?v=56",
-      "./js/cheatsheet.js": "./js/cheatsheet.js?v=56",
-      "./js/audiobook.js": "./js/audiobook.js?v=56",
-      "./js/i18n.js": "./js/i18n.js?v=56",
-      "./js/i18n-en.js": "./js/i18n-en.js?v=56",
-      "./js/platform.js": "./js/platform.js?v=56",
-      "./js/dictation.js": "./js/dictation.js?v=56",
-      "./js/extract.js": "./js/extract.js?v=56",
-      "./js/gemini.js": "./js/gemini.js?v=56",
-      "./js/media.js": "./js/media.js?v=56",
-      "./js/neural.js": "./js/neural.js?v=56",
-      "./js/onboarding.js": "./js/onboarding.js?v=56",
-      "./js/openai.js": "./js/openai.js?v=56",
-      "./js/ripple.js": "./js/ripple.js?v=56",
-      "./js/speech.js": "./js/speech.js?v=56",
-      "./js/storage.js": "./js/storage.js?v=56"
+      "./js/abbr.js": "./js/abbr.js?v=57",
+      "./js/ai.js": "./js/ai.js?v=57",
+      "./js/analyze.js": "./js/analyze.js?v=57",
+      "./js/anthropic.js": "./js/anthropic.js?v=57",
+      "./js/app.js": "./js/app.js?v=57",
+      "./js/commands.js": "./js/commands.js?v=57",
+      "./js/lecture.js": "./js/lecture.js?v=57",
+      "./js/config.js": "./js/config.js?v=57",
+      "./js/stats.js": "./js/stats.js?v=57",
+      "./js/cheatsheet.js": "./js/cheatsheet.js?v=57",
+      "./js/audiobook.js": "./js/audiobook.js?v=57",
+      "./js/tickets.js": "./js/tickets.js?v=57",
+      "./js/i18n.js": "./js/i18n.js?v=57",
+      "./js/i18n-en.js": "./js/i18n-en.js?v=57",
+      "./js/platform.js": "./js/platform.js?v=57",
+      "./js/dictation.js": "./js/dictation.js?v=57",
+      "./js/extract.js": "./js/extract.js?v=57",
+      "./js/gemini.js": "./js/gemini.js?v=57",
+      "./js/media.js": "./js/media.js?v=57",
+      "./js/neural.js": "./js/neural.js?v=57",
+      "./js/onboarding.js": "./js/onboarding.js?v=57",
+      "./js/openai.js": "./js/openai.js?v=57",
+      "./js/ripple.js": "./js/ripple.js?v=57",
+      "./js/speech.js": "./js/speech.js?v=57",
+      "./js/storage.js": "./js/storage.js?v=57"
     }
   }
   </script>
@@ -750,7 +785,7 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=56"></script>
+  <script type="module" src="js/app.js?v=57"></script>
   <div id="printArea" class="cheatsheet" data-no-i18n></div>
 </body>
 </html>

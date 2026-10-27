@@ -49,6 +49,42 @@
           "type": "image/png"
         }
       ]
+    },
+    {
+      "name": "План на сегодня и повторение",
+      "short_name": "На сегодня",
+      "url": "./?go=today",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Тянуть билет",
+      "short_name": "Билет",
+      "url": "./?go=ticket",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Экзамен по всему предмету",
+      "short_name": "Экзамен",
+      "url": "./?go=exam",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
     }
   ],
   "screenshots": [

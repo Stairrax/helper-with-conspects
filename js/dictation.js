@@ -1,5 +1,5 @@
 // Движок диктовки: озвучка кусков, паузы, мгновенное прерывание, вопросы и возврат к прерванному куску,
-// самопроверка после темы, быстрое повторение, «по буквам», перерывы.
+// самопроверка после темы, экзамен, билеты, пересказ темы, быстрое повторение, «по буквам», перерывы.
 
 import {
   speak, stopSpeaking, prefetch, isEcho, matchCommand, isYes, isNo, looksLikeQuestion, stripCue, norm, mergeText,
@@ -9,10 +9,11 @@ import { stream, conn } from './ai.js';
 import { activeSeq, pauseFor, LISTEN_GAP_MS } from './analyze.js';
 import { abbreviate } from './abbr.js';
 import { matchAppCommand, findTopic, looksLikeRequest, aiCommand, HELP_TEXT, HELP_TEXT_EN } from './commands.js';
+import { drawTicket, gradeOf, gradeScore, endOfAnswer } from './tickets.js';
 
 const DICTATING = ['speaking', 'gap', 'waiting'];
 const QA_STATES = ['thinking', 'answering'];
-const PAUSED = ['paused', 'listening', 'confirm', 'topicEnd', 'break'];
+const PAUSED = ['paused', 'listening', 'confirm', 'topicEnd', 'break', 'ticketEnd'];
 const MAX_CONTEXT = 400000;
 const DAY = 24 * 3600 * 1000;
 const BREAK_MS = 5 * 60 * 1000;
@@ -38,6 +39,8 @@ export const STATE_TEXT = {
   quiz: 'Самопроверка',
   quizListen: 'Ваш ответ? Можно сказать «не знаю» или «пропусти»',
   quizGrade: 'Проверяю ответ…',
+  longListen: 'Слушаю ответ. Закончите — скажите «всё» или нажмите «Готово»',
+  ticketEnd: 'Ещё билет? Скажите «да» или «хватит»',
   spelling: 'Диктую по буквам',
   reviewing: 'Быстрое повторение',
   break: 'Перерыв',
@@ -111,6 +114,7 @@ export class Dictation {
     this.micForced = false;
     this.quiz = null;
     this.waiter = null;
+    this.longBuf = '';          // длинный устный ответ (билет, пересказ), пока его говорят
     this.review = null;
     this.breakUntil = 0;
     this.cur = null;            // кусок, который сейчас звучит: { topicId, chunk }
@@ -357,7 +361,7 @@ export class Dictation {
     if (this.holdDepth) return;
     clearTimeout(this.holdTimer);
     // ждём ответа (после «СТОП», «Продолжаем?») — слушаем сразу
-    if (PAUSED.includes(this.state) || this.state === 'quizListen') after = 0;
+    if (PAUSED.includes(this.state) || this.state === 'quizListen' || this.state === 'longListen') after = 0;
     // между фразами подряд микрофон не дёргаем — включаем, только если голос действительно замолчал
     this.holdTimer = setTimeout(() => { if (!this.holdDepth) this.rec.hold(false); }, after);
   }
@@ -585,6 +589,10 @@ export class Dictation {
       await this.runQuiz(my, topic);
       if (my !== this.token) return;
     }
+    if (this.settings.retellAfter) {
+      await this.runRetell(my, topic);
+      if (my !== this.token) return;
+    }
     if (!nextId) return this.finish(my);
     this.set('topicEnd');
     await this.say(this.L(`Тема «${topic.title}» завершена${this.a}. Есть вопросы?`, `That’s the end of “${topic.title}”${this.a}. Any questions?`), true);
@@ -710,17 +718,21 @@ export class Dictation {
     const pool = this.examPool();
     if (!pool.length) return false;
     for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+    this.takeOver();
+    this.runExam(pool.slice(0, count), minutes);
+    return true;
+  }
+
+  /** Отвлекаемся от диктовки на экзамен, билет или пересказ: после них «Продолжить» вернёт к тому же месту. */
+  takeOver() {
     const st = this.state;
     stopSpeaking();
     this.abortAnswer();
     this.clearQuestion();
     this.resolveWaiter(null);
     this.cancelAutoResume();
-    // диктовку прервали экзаменом — после него «Продолжить» вернёт к тому же месту
     if (DICTATING.includes(st)) this.resumePos = { topicId: this.pos.topicId, chunk: this.pos.chunk, partial: st === 'speaking' };
     if (this.mode === 'review') { this.mode = 'dictate'; this.review = null; delete this.pos.review; }
-    this.runExam(pool.slice(0, count), minutes);
-    return true;
   }
 
   async runExam(qs, minutes) {
@@ -769,6 +781,196 @@ export class Dictation {
       `${timeUp ? 'Time is up. ' : ''}${done.length ? `Exam result: ${r} out of ${done.length}, that’s ${pct} percent.` : 'No answers.'}${weak.length ? ` Worth reviewing: ${weak.slice(0, 3).join(', ')}.` : done.length ? ` Well done${this.a}!` : ''}`));
     if (my !== this.token) return;
     this.set(this.resumePos ? 'paused' : 'idle');
+  }
+
+  // ---------- Длинный устный ответ: билет, пересказ ----------
+
+  /** Слушаем, пока не скажут «всё» или не нажмут «Готово». -> { type: 'answer', text } | repeat | skip | dontknow */
+  waitLong(my) {
+    this.heard = '';
+    this.longBuf = '';
+    this.set('longListen');
+    this.mic(true);
+    return new Promise((resolve) => { this.waiter = { my, resolve }; });
+  }
+
+  /** «Готово»: ответ закончен. */
+  finishLong() {
+    if (this.state !== 'longListen' || !this.waiter) return;
+    const text = this.longBuf.trim();
+    this.longBuf = '';
+    this.heard = '';
+    this.resolveWaiter(text ? { type: 'answer', text } : { type: 'skip' });
+  }
+
+  onLongSpeech(r, text) {
+    if (this.consumed.has(r.id)) return;
+    if (!r.final) { this.heard = mergeText(this.longBuf, text); this.h.emit(); return; }
+    this.consumed.add(r.id);
+    const cmd = matchCommand(text);
+    if (!this.longBuf) {
+      if (cmd === 'stop' || cmd === 'pause') return this.interrupt(cmd === 'stop' ? 'question' : 'pause');
+      if (cmd === 'repeat') return this.resolveWaiter({ type: 'repeat' });
+      if (cmd === 'next' || cmd === 'skipTopic') return this.resolveWaiter({ type: 'skip' });
+      if (isDontKnow(text)) return this.resolveWaiter({ type: 'dontknow' });
+    } else if (cmd === 'stop') return this.finishLong(); // «стоп» посреди ответа — ответ закончен
+    const end = endOfAnswer(text);
+    if (end !== null) {
+      if (end) this.longBuf = mergeText(this.longBuf, end);
+      return this.finishLong();
+    }
+    this.longBuf = mergeText(this.longBuf, text);
+    this.heard = this.longBuf;
+    this.h.emit();
+  }
+
+  /** Проверка длинного ответа нейросетью с озвучкой. -> текст отзыва или null (не удалось). */
+  async gradeLong(my, q, answer, system, text) {
+    this.set('quizGrade');
+    const entry = { a: '' };
+    this.feedback = { q, answer, entry };
+    let failed = false;
+    await this.streamSpeak(my, { system: system + ' Без markdown, формулы словами.' + this.manner, parts: [{ text }] }, entry, () => { failed = true; });
+    if (my !== this.token) return null;
+    if (failed) {
+      await this.say(this.L('Не получилось проверить ответ.', 'Couldn’t check the answer.'));
+      return null;
+    }
+    return entry.a;
+  }
+
+  /** Итог билета или пересказа — в историю вопросов: его видно на экране и после проверки. */
+  note(q, a, topicId) {
+    this.qa.push({ q, a, t: Date.now(), topicId: topicId || null });
+    if (this.qa.length > 50) this.qa.splice(0, this.qa.length - 50);
+    this.h.saveProgress();
+  }
+
+  // ---------- Билеты ----------
+
+  get tickets() { return this.project?.tickets || []; }
+  get ticketResults() { return (this.pos.tickets ||= {}); }
+
+  /** Тянуть билет (или ответить на выбранный). false — билетов нет. */
+  startTicket(ticket = null) {
+    ticket ||= drawTicket(this.tickets, this.ticketResults);
+    if (!ticket) return false;
+    this.takeOver();
+    this.runTicket(ticket);
+    return true;
+  }
+
+  async runTicket(ticket) {
+    const my = ++this.token;
+    keepAwake(true);
+    const n = this.tickets.indexOf(ticket) + 1;
+    this.lastTicket = { n, q: ticket.q };
+    this.quiz = { kind: 'ticket', ticket, n, qs: [{ q: ticket.q, a: ticket.a }], i: 0, topic: this.topicById(ticket.topics?.[0]) };
+    this.feedback = null;
+    let first = true;
+    let ans;
+    for (;;) {
+      this.set('quiz');
+      await this.say(this.L(`Билет номер ${n}. ${ticket.q}${first ? '. Подумайте и отвечайте, когда будете готовы. Закончите — скажите «всё».' : ''}`,
+        `Ticket ${n}. ${ticket.q}${first ? '. Take a moment and answer when you’re ready. When you finish, say “that’s all”.' : ''}`), true);
+      if (my !== this.token) return;
+      ans = await this.waitLong(my);
+      if (!ans || my !== this.token) return;
+      if (ans.type !== 'repeat') break;
+      first = false;
+    }
+    let grade = 0, fb = '';
+    if (ans.type === 'dontknow') {
+      fb = ticket.a ? this.L(`Ответ на билет: ${ticket.a}`, `The answer: ${ticket.a}`) : this.L('Ответ на этот билет ещё не подготовлен.', 'The answer to this ticket isn’t ready yet.');
+      this.feedback = { q: ticket.q, answer: this.L('не знаю', 'I don’t know'), entry: { a: fb } };
+      this.set('quizGrade');
+      await this.say(fb.replace(/\n+/g, ' '));
+      if (my !== this.token) return;
+      grade = 2;
+    } else if (ans.type === 'answer') {
+      const ctx = (ticket.topics || []).map((id) => this.topicById(id)).filter(Boolean)
+        .map((t) => `${t.title}\n${(t.text || '').slice(0, 5000)}`).join('\n\n').slice(0, 12000);
+      fb = await this.gradeLong(my, ticket.q, ans.text,
+        'Ты — экзаменатор на устном экзамене: строгий, но доброжелательный. Оцени ответ студента на билет по смыслу и полноте; ответ распознан с голоса, ошибки распознавания не учитывай. ' +
+        (this.en ? 'Start with exactly one word — the grade: “Excellent.”, “Good.”, “Satisfactory.” or “Fail.”' : 'Начни строго с одного слова — оценки: «Отлично.», «Хорошо.», «Удовлетворительно.» или «Неудовлетворительно.»') +
+        ' Затем 2–4 коротких предложения: что получилось, что из главного упущено, что сказано неверно.',
+        `Билет: ${ticket.q}\n${ticket.a ? `Образцовый ответ:\n${ticket.a}\n` : ''}${ctx ? `Конспект по теме:\n<<<\n${ctx}\n>>>\n` : ''}Ответ студента: ${ans.text}`);
+      if (my !== this.token) return;
+      grade = fb ? gradeOf(fb) : 0;
+    }
+    if (grade) {
+      const prev = this.ticketResults[ticket.id];
+      this.ticketResults[ticket.id] = { grade, at: Date.now(), tries: (prev?.tries || 0) + 1 };
+      const sc = gradeScore(grade);
+      for (const id of ticket.topics || []) if (this.topicById(id)) this.scoreTopic(id, sc);
+    }
+    if (fb) this.note(this.L(`Билет ${n}: ${ticket.q}`, `Ticket ${n}: ${ticket.q}`), fb, ticket.topics?.[0]);
+    this.quiz = null;
+    this.h.saveProgress();
+    this.h.onTicket?.();
+    this.set('ticketEnd');
+    const skipped = !['answer', 'dontknow'].includes(ans.type);
+    await this.say(this.L(`${skipped ? 'Билет пропущен. ' : ''}Тянем следующий билет?`, `${skipped ? 'Ticket skipped. ' : ''}Shall we draw another ticket?`), true);
+  }
+
+  // ---------- Пересказ темы ----------
+
+  /** Пересказ темы своими словами (по кнопке или голосом). false — тема не готова. */
+  startRetell(topicId) {
+    const t = this.topicById(topicId || this.hereTopicId());
+    if (!t || t.status !== 'ready') return false;
+    this.takeOver();
+    const my = ++this.token;
+    keepAwake(true);
+    this.runRetell(my, t).then((r) => { if (my === this.token && r !== undefined) this.set('paused'); });
+    return true;
+  }
+
+  /** -> балл (1, 0.75, 0.25, 0) | null — пропустили или не удалось проверить | undefined — прервали. */
+  async runRetell(my, topic) {
+    this.quiz = { kind: 'retell', topic, qs: [{ q: this.L(`Перескажите тему «${topic.title}» своими словами.`, `Retell the topic “${topic.title}” in your own words.`) }], i: 0 };
+    this.feedback = null;
+    let first = true;
+    let ans;
+    for (;;) {
+      this.set('quiz');
+      await this.say(first
+        ? this.L(`Перескажите тему «${topic.title}» своими словами: главное, определения, формулы. Закончите — скажите «всё».`, `Retell the topic “${topic.title}” in your own words: the main ideas, definitions, formulas. When you finish, say “that’s all”.`)
+        : this.L(`Перескажите тему «${topic.title}».`, `Retell the topic “${topic.title}”.`), true);
+      if (my !== this.token) return undefined;
+      ans = await this.waitLong(my);
+      if (!ans || my !== this.token) return undefined;
+      if (ans.type !== 'repeat') break;
+      first = false;
+    }
+    let score = null;
+    if (ans.type === 'dontknow') {
+      const main = topic.recap || topic.chunks?.filter((c) => !c.k || c.k === 'content').slice(0, 3).map((c) => c.t).join(' ') || '';
+      if (main) {
+        const fb = this.L(`Главное в теме: ${main}`, `The main points: ${main}`);
+        this.feedback = { q: topic.title, answer: this.L('не знаю', 'I don’t know'), entry: { a: fb } };
+        this.set('quizGrade');
+        await this.say(fb);
+        if (my !== this.token) return undefined;
+      }
+      score = 0;
+    } else if (ans.type === 'answer') {
+      const points = (topic.points || []).map((p, i) => `${i + 1}. ${p.p}`).join('\n');
+      const fb = await this.gradeLong(my, topic.title, ans.text,
+        'Ты — преподаватель. Студент устно пересказывает тему своими словами; текст распознан с голоса, ошибки распознавания не учитывай. Сравни пересказ с конспектом темы. ' +
+        (this.en ? 'Start with exactly one word: “Excellent.”, “Good.” or “Weak.”' : 'Начни строго с одного слова: «Отлично.», «Хорошо.» или «Слабо.»') +
+        ' Затем коротко: что из главного упущено (2–4 пункта одним-двумя предложениями) и что перепутано, если есть. Тему заново не пересказывай.',
+        `Тема: ${topic.title}\n${points ? `Ключевые пункты темы:\n${points}\n` : ''}Конспект темы:\n<<<\n${(topic.text || '').slice(0, 8000)}\n>>>\nПересказ студента: ${ans.text}`);
+      if (my !== this.token) return undefined;
+      if (fb) {
+        const first = norm(fb).split(' ')[0];
+        score = { отлично: 1, excellent: 1, хорошо: 0.75, good: 0.75, слабо: 0.25, weak: 0.25 }[first] ?? null;
+        this.note(this.L(`Пересказ темы «${topic.title}»`, `Retelling “${topic.title}”`), fb, topic.id);
+      }
+    }
+    if (score !== null) this.scoreTopic(topic.id, score);
+    this.quiz = null;
+    return score;
   }
 
   waitAnswer(my) {
@@ -905,6 +1107,8 @@ export class Dictation {
    */
   interrupt(kind = 'question', guess = false) {
     const st = this.state;
+    // «СТОП» посреди длинного ответа — ответ закончен, проверяем сказанное
+    if (st === 'longListen' && kind === 'question' && this.longBuf.trim()) return this.finishLong();
     stopSpeaking();
     this.token++;
     this.gap = null;
@@ -913,7 +1117,7 @@ export class Dictation {
     // кусок прервали на середине (или ещё до него — на «Тема: …») — после вопроса и на «повтори» он прозвучит с начала
     if (DICTATING.includes(st)) this.resumePos = { topicId: this.pos.topicId, chunk: this.pos.chunk, partial: st === 'speaking' };
     this.cur = null;
-    if (['quiz', 'quizListen', 'quizGrade'].includes(st)) this.quiz = null; // самопроверку не продолжаем
+    if (['quiz', 'quizListen', 'quizGrade', 'longListen'].includes(st)) this.quiz = null; // самопроверку не продолжаем
     if (QA_STATES.includes(st) || st === 'quizGrade') this.abortAnswer();
     if (st === 'idle' || st === 'finished') {
       if (kind === 'question') { this.mic(true); this.set(st, 'Задайте вопрос голосом или текстом'); }
@@ -952,7 +1156,7 @@ export class Dictation {
 
   next() {
     const st = this.state;
-    if (st === 'quizListen') return this.resolveWaiter({ type: 'skip' });
+    if (st === 'quizListen' || st === 'longListen') return this.resolveWaiter({ type: 'skip' });
     if (st === 'reviewing') {
       stopSpeaking();
       this.review.i++;
@@ -978,7 +1182,8 @@ export class Dictation {
 
   repeat() {
     const st = this.state;
-    if (st === 'quizListen') return this.resolveWaiter({ type: 'repeat' });
+    if (st === 'quizListen' || (st === 'longListen' && !this.longBuf)) return this.resolveWaiter({ type: 'repeat' });
+    if (st === 'longListen') return;
     stopSpeaking();
     this.abortAnswer();
     this.clearQuestion();
@@ -1010,7 +1215,7 @@ export class Dictation {
   }
 
   skipTopic() {
-    if (this.state === 'quizListen') return this.resolveWaiter({ type: 'end' });
+    if (this.state === 'quizListen' || this.state === 'longListen') return this.resolveWaiter({ type: 'end' });
     stopSpeaking();
     this.abortAnswer();
     this.clearQuestion();
@@ -1100,6 +1305,7 @@ export class Dictation {
     const dictating = DICTATING.includes(st) || st === 'reviewing' || st === 'spelling';
     // эхо синтезатора; во время диктовки — и запоздавшее эхо, и повтор продиктованного вслух, пока пишут
     if (isEcho(text, dictating || st === 'topicEnd', r.since)) return;
+    if (st === 'longListen') return this.onLongSpeech(r, text);
     // пока человек договаривает вопрос — показываем всё сказанное целиком, а не только последний кусок
     this.heard = this.qBuf && !dictating ? mergeText(this.qBuf, text) : text;
     this.h.emit();
@@ -1176,6 +1382,12 @@ export class Dictation {
       }
       return this.addQuestionPart(text);
     }
+    if (st === 'ticketEnd') {
+      if (isYes(text) || cmd === 'next' || cmd === 'continue' || cmd === 'written') return this.startTicket();
+      if (isNo(text) || cmd === 'stop' || cmd === 'pause') return this.set('paused');
+      if (words.length >= 2) return this.addQuestionPart(stripCue(text));
+      return;
+    }
     if (st === 'confirm') {
       if (isYes(text)) return this.resume();
       if (isNo(text)) return this.set('paused');
@@ -1243,6 +1455,12 @@ export class Dictation {
       this.clearQuestion();
       this.heard = '';
       return this.resolveWaiter(isDontKnow(text) ? { type: 'dontknow' } : { type: 'answer', text });
+    }
+    // длинный ответ текстом: дописывает сказанное голосом и сразу уходит на проверку
+    if (this.state === 'longListen' && this.waiter) {
+      if (!this.longBuf && isDontKnow(text)) return this.resolveWaiter({ type: 'dontknow' });
+      this.longBuf = mergeText(this.longBuf, text);
+      return this.finishLong();
     }
     return this.ask(text);
   }

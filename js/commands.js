@@ -43,6 +43,19 @@ R(/(?:^|\s)(?:айфон|ios|ай ос|эппл|apple)\S*(?: тем| оформ�
 R(/(?:^|\s)(?:неонов|неон)/, (t) => (/(?:тем|включ|сделай|поставь|оформлен)/.test(t) ? { cmd: 'theme', arg: 'neon' } : null));
 R(/(?:^|\s)(?:светл|белая тема|дневная тема)/, (t) => (/(?:тем|включ|сделай|поставь|оформлен|режим)/.test(t) ? { cmd: 'theme', arg: 'light' } : null));
 R(/(?:^|\s)(?:темн|черн|ночн|классическ)\S* (?:тем|оформлен|режим)|(?:тем|оформлен)\S* (?:темн|классическ)/, () => ({ cmd: 'theme', arg: 'classic' }));
+// билеты и пересказ — раньше тем: «перескажу тему» — не переход к теме
+R(/(?:^|\s)билет/, (t) => {
+  const after = t.replace(/^.*?билет\S*\s*/, '').replace(/^номер\s+/, '').split(' ').slice(0, 2);
+  const before = t.replace(/\s*билет.*$/, '').split(' ').slice(-1);
+  const n = topicNumber([...after, ...before]);
+  if (n > 0) return { cmd: 'ticket', arg: { n } };
+  return /(?:^|\s)(?:тян|вытян|дай|выбер|давай|случайн|хочу|еще|ещё|следующ|другой)|^билет$/.test(t) ? { cmd: 'ticket' } : null;
+});
+R(/(?:^|\s)(?:перескажу|перескажем|пересказать|пересказ|пересказом|пересказу)(?:\s|$)/, (t) => {
+  if (!/(?:^|\s)тем/.test(t)) return { cmd: 'retell' };
+  const n = topicNumber([...t.replace(/^.*?(?:^|\s)тем\S*\s*/, '').replace(/^номер\s+/, '').split(' ').slice(0, 2), ...t.replace(/\s*тем\S*(?:\s.*)?$/, '').split(' ').slice(-1)]);
+  return n ? { cmd: 'retell', arg: { n } } : { cmd: 'retell' };
+});
 // темы
 R(new RegExp(`(?:^|\\s)(?:предыдущ|прошл|прежн)\\S* ${TOPIC}|(?:^|\\s)(?:назад|вернись|верни) (?:к |на )?(?:предыдущ|прошл)\\S* ${TOPIC}|${TOPIC} назад`), () => ({ cmd: 'prevTopic' }));
 R(/(?:^|\s)(?:какая|какую|где мы|на какой|что за) (?:сейчас )?тем|(?:^|\s)сколько (?:еще |ещё )?(?:осталось|тем)|(?:^|\s)где мы$|(?:^|\s)на чем мы/, () => ({ cmd: 'where' }));
@@ -95,6 +108,9 @@ R(/(?:^|\s)(?:go|jump|skip|switch|move) (?:back )?to (?:the )?(?:\S+ )?topic|(?:
   if (rest.split(' ').filter((x) => x.length > 2).length) return { cmd: 'gotoTopic', arg: { q: rest } };
   return null;
 });
+R(/(?:^|\s)(?:draw|pick|give me|random|another|next) (?:a |an |the |me a )?(?:\S+ )?ticket|^ticket$/, () => ({ cmd: 'ticket' }));
+R(/(?:^|\s)ticket (?:number )?\S+$/, (t) => { const n = topicNumber(t.replace(/^.*ticket\s+(?:number\s+)?/, '').split(' ')); return n > 0 ? { cmd: 'ticket', arg: { n } } : null; });
+R(/(?:^|\s)(?:let me )?(?:retell|recap|summari[sz]e)(?: (?:the|this) topic)?$|(?:^|\s)retell (?:the |this )?topic/, () => ({ cmd: 'retell' }));
 R(/(?:^|\s)close (?:the )?formulas|^close$/, () => ({ cmd: 'fxClose' }));
 R(/(?:^|\s)formulas (?:for|of) (?:the )?next|(?:^|\s)next formulas/, () => ({ cmd: 'fx', arg: 'next' }));
 R(/(?:^|\s)formulas (?:for|of) (?:the )?previous|(?:^|\s)previous formulas/, () => ({ cmd: 'fx', arg: 'prev' }));
@@ -166,6 +182,8 @@ export const COMMAND_LIST = [
   ['theme', 'оформление: arg — "android" | "ios" | "classic" | "neon" | "light" | "auto"'],
   ['export', 'сохранить конспект и вопросы в файл'],
   ['exam', 'начать экзамен по всему предмету'],
+  ['ticket', 'тянуть экзаменационный билет: arg — {"n": номер} или ничего (случайный)'],
+  ['retell', 'пересказать тему своими словами (нейросеть проверит)'],
   ['help', 'рассказать, какие есть команды'],
 ];
 
@@ -188,9 +206,9 @@ ${COMMAND_LIST.map(([c, d]) => `- ${c}: ${d}`).join('\n')}
 
 export const HELP_TEXT = 'Можно сказать: «перейди к третьей теме» или «к теме налоги», «предыдущая тема», «следующая тема», «тему сначала», ' +
   '«какая сейчас тема», «покажи формулы», «формулы следующей темы», «закрой формулы», «открой план», «только слушаю», «режим записи», ' +
-  '«паузы подольше», «быстрее», «медленнее», «включи сокращения», «светлая тема», «скрой текст», «сохрани конспект». ' +
+  '«паузы подольше», «быстрее», «медленнее», «включи сокращения», «светлая тема», «скрой текст», «сохрани конспект», «начни экзамен», «тяни билет», «перескажу тему». ' +
   'А если сказать своими словами — я постараюсь понять.';
 
 export const HELP_TEXT_EN = 'You can say: “go to topic three” or “go to the topic taxes”, “previous topic”, “next topic”, “repeat topic”, ' +
   '“what topic is this”, “show formulas”, “formulas for the next topic”, “close formulas”, “open the plan”, “listen only”, “writing mode”, ' +
-  '“longer pauses”, “faster”, “slower”, “light theme”, “hide text”, “save the notes”. You can also just say what you want — I’ll try to understand.';
+  '“longer pauses”, “faster”, “slower”, “light theme”, “hide text”, “save the notes”, “start the exam”, “draw a ticket”, “let me retell the topic”. You can also just say what you want — I’ll try to understand.';
