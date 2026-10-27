@@ -24,6 +24,7 @@ import { setUiLang, T, uiLang } from './i18n.js';
 import { addStudy, addExam, flushStats, statsSummary } from './stats.js';
 import { buildCheatsheet, cheatsheetFile, CHEATSHEET_CSS } from './cheatsheet.js';
 import { audioPieces, renderMp3 } from './audiobook.js';
+import { parseTickets, mergeTickets, prepareNextBatch, ticketSummary } from './tickets.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -217,6 +218,7 @@ const dict = new Dictation({
   onActivity: (playing) => updateMedia(dictTitle(), playing),
   onStudy: () => addStudy(1),
   onExam: (r) => addExam({ subject: curSubject()?.title || '', right: r.right, n: r.n }),
+  onTicket: () => renderTickets(),
 });
 const dictTitle = () => (dict.mode === 'review' ? T('Повторение') : project?.topics.find((t) => t.id === progress?.topicId)?.title) || T('Диктор конспектов');
 
@@ -419,6 +421,9 @@ $('analyzeBtn').addEventListener('click', async () => {
     });
     saveSources(); // распознанный текст фото сохраняется, повторно не распознаём
     resetDictation();
+    // новый план: список билетов и дата экзамена остаются, ответы на билеты подготовятся заново — по новым темам
+    if (project?.tickets?.length) p.tickets = project.tickets.map((t) => ({ id: t.id, q: t.q, a: '', topics: [], status: 'pending' }));
+    if (project?.examDate) p.examDate = project.examDate;
     project = p;
     progress = freshProgress(p.id);
     persistProgress();
@@ -478,6 +483,7 @@ function renderStats() {
 function renderPlan() {
   const has = !!project;
   renderStats();
+  renderPrep();
   $('planEmpty').classList.toggle('hidden', has);
   $('planBody').classList.toggle('hidden', !has);
   if (!has) return;
@@ -505,6 +511,7 @@ function renderPlan() {
   $('reviewDueBtn').disabled = !rv.due.length;
   $('reviewDueBtn').textContent = rv.due.length ? `Повторить нужное (${rv.due.length})` : 'Повторить нужное';
   $('reviewAllBtn').disabled = !rv.studied.length;
+  $('ticketBtn').textContent = project.tickets?.length ? `Билеты (${project.tickets.length})` : 'Билеты';
 
   const pos = new Map(project.plan.order.map((id, i) => [id, i]));
   let n = 0;
@@ -558,7 +565,7 @@ function renderPlan() {
           <button class="icon-btn" data-act="down" aria-label="Ниже"><svg><use href="#i-down"/></svg></button>
           <button class="btn" data-act="skip">${skipped ? 'Вернуть' : 'Пропустить'}</button>
           ${skipped ? '' : startButtons(t, done)}
-          ${t.status === 'ready' && !skipped ? '<button class="btn" data-act="review">Повторить</button>' : ''}
+          ${t.status === 'ready' && !skipped ? '<button class="btn" data-act="review">Повторить</button><button class="btn" data-act="retell">Пересказать</button>' : ''}
           ${hasFx(t) ? '<button class="btn" data-act="fx">∑ Формулы</button>' : ''}
           ${t.points?.length ? `<button class="btn" data-act="points">${openPoints.has(id) ? 'Скрыть пункты' : 'Пункты'}</button>` : ''}
           ${t.status === 'error' ? '<button class="btn" data-act="retry">Повторить</button>' : ''}
@@ -625,6 +632,10 @@ $('planList').addEventListener('click', (e) => {
     case 'review':
       switchTab('dictate');
       dict.startReview([id]);
+      break;
+    case 'retell':
+      switchTab('dictate');
+      dict.startRetell(id);
       break;
     case 'retry': {
       const t = project.topics.find((x) => x.id === id);
@@ -703,6 +714,230 @@ document.querySelectorAll('input[name=examTime]').forEach((r) => r.addEventListe
 $('examStart').addEventListener('click', () => {
   $('examSheet').classList.add('hidden');
   startExam();
+});
+
+// ---------- Билеты к экзамену ----------
+// Список вопросов вставляет студент; ответы готовятся в фоне пачками (js/tickets.js), оценки — в progress.tickets.
+
+const tk = {
+  running: false,
+  status: '',
+  /** Готовит ответы, пока есть неготовые билеты. */
+  async loop() {
+    if (this.running || !project?.tickets?.some((t) => t.status !== 'ready' && (t.errors || 0) < 3) || !hasAI(settings)) return;
+    this.running = true;
+    const p = project;
+    try {
+      while (p === project && (await prepareNextBatch(p, settings, (m) => { this.status = m; renderTickets(); }))) {
+        saveProject();
+        this.status = '';
+        renderTickets();
+      }
+      this.status = '';
+    } catch (e) {
+      this.status = 'Не удалось подготовить часть ответов: ' + (e.message || e);
+    } finally {
+      this.running = false;
+      if (p === project) saveProject();
+      renderTickets();
+    }
+  },
+};
+
+let ticketOpen = null; // билет, у которого раскрыт ответ
+let ticketEditing = false;
+
+function closeSheets() { ['ticketSheet', 'examSheet'].forEach((id) => $(id).classList.add('hidden')); }
+
+function openTickets() {
+  if (!project) return toast('Сначала составьте план');
+  ticketEditing = !project.tickets?.length;
+  $('ticketText').value = (project.tickets || []).map((t, i) => `${i + 1}. ${t.q}`).join('\n');
+  $('ticketSheet').classList.remove('hidden');
+  renderTickets();
+  tk.loop();
+}
+
+function renderTickets() {
+  renderPrep();
+  if (!project || $('ticketSheet').classList.contains('hidden')) return;
+  const list = project.tickets || [];
+  const res = progress?.tickets || {};
+  $('ticketEdit').classList.toggle('hidden', !ticketEditing);
+  $('ticketView').classList.toggle('hidden', ticketEditing);
+  $('ticketCancel').classList.toggle('hidden', !list.length);
+  if (ticketEditing) return;
+  const sum = ticketSummary(list, res);
+  $('ticketSummary').textContent = `${sum.total} ${plural(sum.total, ['билет', 'билета', 'билетов'])} · ответы готовы: ${sum.ready} из ${sum.total}` +
+    (sum.answered ? ` · отвечено: ${sum.answered}, средняя оценка ${String(Math.round(sum.avg * 10) / 10).replace('.', ',')}` : '');
+  const failed = list.filter((t) => t.status !== 'ready' && (t.errors || 0) >= 3).length;
+  $('ticketStatus').textContent = tk.status || (tk.running ? 'Готовлю ответы…' : !hasAI(settings) && sum.ready < sum.total ? 'Для ответов нужна нейросеть: Настройки → нейросеть.' : '');
+  $('ticketStatus').classList.toggle('hidden', !$('ticketStatus').textContent);
+  $('ticketRetry').classList.toggle('hidden', !failed || tk.running);
+  $('ticketList').innerHTML = list.map((t, i) => {
+    const r = res[t.id];
+    const badge = r ? `<span class="badge ${r.grade >= 5 ? 'good' : r.grade >= 4 ? 'fx' : 'weak'}">${r.grade}</span>`
+      : t.status === 'ready' ? '' : '<span class="badge">⏳</span>';
+    const open = ticketOpen === t.id;
+    return `<li data-id="${t.id}" class="${open ? 'open' : ''}">
+      <button class="thead" data-act="open"><span class="tnum">${i + 1}</span><span class="tq" data-no-i18n>${esc(t.q)}</span>${badge}</button>
+      ${open ? `<div class="tdetail">
+        ${t.status === 'ready' ? `<p class="tans" data-no-i18n>${esc(t.a)}</p>` : `<p class="hint">${t.status === 'error' ? 'Ответ подготовить не удалось.' : 'Ответ готовится…'}</p>`}
+        <button class="btn tonal" data-act="answer">Ответить на этот билет</button>
+      </div>` : ''}
+    </li>`;
+  }).join('');
+}
+
+$('ticketBtn').addEventListener('click', openTickets);
+$('ticketSheet').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) { ticketEditing = false; $('ticketSheet').classList.add('hidden'); } });
+$('ticketSave').addEventListener('click', () => {
+  const qs = parseTickets($('ticketText').value);
+  if (!qs.length) return toast('Не нашёл вопросов: вставьте их по одному на строку.', 4000);
+  project.tickets = mergeTickets(project.tickets, qs);
+  ticketEditing = false;
+  ticketOpen = null;
+  saveProject();
+  toast(`Билетов: ${qs.length}. Готовлю ответы по конспекту.`, 3500);
+  renderTickets();
+  renderPrep();
+  tk.loop();
+});
+$('ticketCancel').addEventListener('click', () => { ticketEditing = false; renderTickets(); });
+$('ticketEditBtn').addEventListener('click', () => {
+  ticketEditing = true;
+  $('ticketText').value = (project.tickets || []).map((t, i) => `${i + 1}. ${t.q}`).join('\n');
+  renderTickets();
+});
+$('ticketRetry').addEventListener('click', () => {
+  (project.tickets || []).forEach((t) => { if (t.status !== 'ready') t.errors = 0; });
+  tk.loop();
+});
+$('ticketDraw').addEventListener('click', () => {
+  if (!project?.tickets?.length) return;
+  closeSheets();
+  switchTab('dictate');
+  dict.startTicket();
+});
+$('ticketList').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-act]');
+  const li = e.target.closest('li[data-id]');
+  if (!btn || !li) return;
+  const t = project.tickets.find((x) => x.id === li.dataset.id);
+  if (!t) return;
+  if (btn.dataset.act === 'open') { ticketOpen = ticketOpen === t.id ? null : t.id; renderTickets(); return; }
+  if (btn.dataset.act === 'answer') {
+    closeSheets();
+    switchTab('dictate');
+    dict.startTicket(t);
+  }
+});
+
+// ---------- Подготовка к экзамену по дням ----------
+// Дата экзамена -> сколько новых тем в день; список на сегодня запоминается утром (project.prep),
+// чтобы пройденные за день темы не подменялись завтрашними.
+
+const DAY_MS = 86400000;
+/** 'ГГГГ-ММ-ДД' по местному времени. */
+const dayStr = (t = Date.now()) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+/** Сколько календарных дней от сегодня до даты ('ГГГГ-ММ-ДД'). */
+function daysUntil(date, now = Date.now()) {
+  const [y, m, d] = date.split('-').map(Number);
+  const a = new Date(now); a.setHours(12, 0, 0, 0);
+  return Math.round((new Date(y, m - 1, d, 12).getTime() - a.getTime()) / DAY_MS);
+}
+
+/** План на сегодня: { days, today: [темы], left, perDay, review: [темы], tickets: { todo, done } } или null. */
+function prepToday() {
+  if (!project?.examDate) return null;
+  const days = daysUntil(project.examDate);
+  const seq = activeSeq(project);
+  const undone = seq.filter((t) => !progress?.done?.[t.id]);
+  const today = dayStr();
+  let prep = project.prep;
+  if (!prep || prep.day !== today || prep.date !== project.examDate) {
+    // последний день перед экзаменом — на повторение; новые темы — до него
+    const newDays = days >= 2 ? days - 1 : 1;
+    const perDay = days > 0 ? Math.ceil(undone.length / newDays) : 0;
+    prep = project.prep = { day: today, date: project.examDate, ids: undone.slice(0, perDay).map((t) => t.id) };
+    saveProject();
+  }
+  const todayTopics = prep.ids.map((id) => seq.find((t) => t.id === id)).filter(Boolean);
+  const tickets = project.tickets || [];
+  const res = progress?.tickets || {};
+  const doneToday = tickets.filter((t) => res[t.id] && dayStr(res[t.id].at) === today).length;
+  const fresh = tickets.filter((t) => !res[t.id] || dayStr(res[t.id].at) === today).length;
+  const todo = tickets.length ? Math.max(2, Math.ceil(fresh / Math.max(1, days))) : 0;
+  return { days, today: todayTopics, left: undone.length, review: reviewSets().due, tickets: { todo: Math.min(todo, tickets.length), done: doneToday } };
+}
+
+function renderPrep() {
+  if (!project) return;
+  $('examDate').value = project.examDate || '';
+  $('examDate').min = dayStr();
+  const p = prepToday();
+  $('prepStart').classList.toggle('hidden', !p || p.days < 0);
+  $('prepClear').classList.toggle('hidden', !project.examDate);
+  if (!p) {
+    $('prepBody').innerHTML = '<p class="hint">Укажите дату экзамена — разложу темы по дням и подскажу, что сделать сегодня.</p>';
+    return;
+  }
+  const loc = uiLang() === 'en' ? 'en-GB' : 'ru-RU';
+  const when = new Date(project.examDate + 'T12:00').toLocaleDateString(loc, { day: 'numeric', month: 'long' });
+  if (p.days < 0) {
+    $('prepBody').innerHTML = `<p class="hint">Экзамен был ${esc(when)}. Укажите новую дату, если впереди ещё один.</p>`;
+    return;
+  }
+  const head = p.days === 0 ? `Экзамен сегодня, ${esc(when)}. Удачи!` : p.days === 1 ? `Экзамен завтра, ${esc(when)}.` : `До экзамена ${p.days} ${plural(p.days, ['день', 'дня', 'дней'])} (${esc(when)}).`;
+  const rows = [];
+  const doneN = p.today.filter((t) => progress?.done?.[t.id]).length;
+  if (p.today.length) {
+    const mins = p.today.filter((t) => !progress?.done?.[t.id]).reduce((n, t) => n + estimateTopicSec(t, settings), 0);
+    rows.push(`<li class="${doneN === p.today.length ? 'ok' : ''}"><b>Новые темы: ${doneN} из ${p.today.length}${mins ? ` · ≈${fmtDur(mins)}` : ''}</b><br><span data-no-i18n>${p.today.map((t) => `${progress?.done?.[t.id] ? '✓ ' : ''}«${esc(t.title)}»`).join(', ')}</span></li>`);
+  } else if (!p.left) rows.push('<li class="ok"><b>Все темы пройдены.</b> Повторяйте слабые места и отвечайте на билеты.</li>');
+  else if (p.days === 0) rows.push('<li>Сегодня лучше не браться за новое: повторите слабые места.</li>');
+  rows.push(p.review.length ? `<li><b>Повторить: ${p.review.length} ${plural(p.review.length, ['тема', 'темы', 'тем'])}</b></li>` : '<li class="ok">Повторять сегодня нечего.</li>');
+  if (p.tickets.todo) rows.push(`<li class="${p.tickets.done >= p.tickets.todo ? 'ok' : ''}"><b>Билеты: ${Math.min(p.tickets.done, p.tickets.todo)} из ${p.tickets.todo}</b></li>`);
+  if (p.days === 1 && p.left) rows.push(`<li class="warn">Осталось непройденных тем: ${p.left} — сегодня главное успеть их.</li>`);
+  $('prepBody').innerHTML = `<p>${head}</p><ul class="prep-list">${rows.join('')}</ul>`;
+  const allDone = (!p.today.length || doneN === p.today.length) && !p.review.length && p.tickets.done >= p.tickets.todo;
+  $('prepStart').textContent = allDone ? 'На сегодня всё сделано' : 'Начать сегодняшнее';
+  $('prepStart').disabled = allDone;
+}
+
+$('examDate').addEventListener('change', (e) => {
+  if (!project) return;
+  project.examDate = e.target.value || '';
+  if (!project.examDate) delete project.examDate;
+  delete project.prep;
+  saveProject();
+  renderPrep();
+  syncDueSoon();
+});
+$('prepClear').addEventListener('click', () => {
+  delete project.examDate;
+  delete project.prep;
+  saveProject();
+  renderPrep();
+  syncDueSoon();
+});
+/** «Начать сегодняшнее»: сначала новые темы, потом повторение, потом билеты. */
+$('prepStart').addEventListener('click', () => {
+  const p = prepToday();
+  if (!p) return;
+  const next = p.today.find((t) => !progress?.done?.[t.id]);
+  if (next) {
+    if (progress.topicId !== next.id || dict.state === 'finished') {
+      resetDictation();
+      progress.topicId = next.id;
+      progress.chunk = savedChunk(next);
+      persistProgress();
+    }
+    switchTab('dictate');
+    return dict.start();
+  }
+  if (p.review.length) { switchTab('dictate'); return dict.startReview(p.review.map((t) => t.id)); }
+  if (p.tickets.done < p.tickets.todo) { switchTab('dictate'); return dict.startTicket(); }
 });
 
 // ---------- Экспорт ----------
@@ -829,9 +1064,9 @@ setInterval(() => {
   if (spans[i] !== old) { old?.classList.remove('hl'); spans[i]?.classList.add('hl'); }
 }, 80);
 
-const PAUSED = ['paused', 'listening', 'confirm', 'topicEnd', 'break'];
+const PAUSED = ['paused', 'listening', 'confirm', 'topicEnd', 'break', 'ticketEnd'];
 const DICTATING = ['speaking', 'gap', 'waiting', 'reviewing', 'spelling'];
-const QUIZ = ['quiz', 'quizListen', 'quizGrade'];
+const QUIZ = ['quiz', 'quizListen', 'quizGrade', 'longListen'];
 
 function renderDictation() {
   const st = dict.state;
@@ -864,7 +1099,17 @@ function renderDictation() {
   $('chunkKind').textContent = chunk ? kinds[chunk.k] || '' : '';
   let text = dict.chunkText(chunk);
   // самопроверка: на карточке — текущий вопрос
-  if (QUIZ.includes(st) && dict.quiz) {
+  if (QUIZ.includes(st) && dict.quiz?.kind === 'ticket') {
+    const r = progress?.tickets?.[dict.quiz.ticket.id];
+    $('chunkKind').textContent = `Билет ${dict.quiz.n} из ${project?.tickets?.length || dict.quiz.n}` + (r ? ` · ${T('прошлый раз')}: ${r.grade}` : '');
+    text = dict.quiz.ticket.q;
+  } else if (st === 'ticketEnd' && dict.lastTicket) {
+    $('chunkKind').textContent = `Билет ${dict.lastTicket.n} из ${project?.tickets?.length || dict.lastTicket.n}`;
+    text = dict.lastTicket.q;
+  } else if (QUIZ.includes(st) && dict.quiz?.kind === 'retell') {
+    $('chunkKind').textContent = 'Пересказ темы';
+    text = 'Расскажите тему своими словами: главное, определения, формулы. Закончите — скажите «всё» или нажмите «Готово».';
+  } else if (QUIZ.includes(st) && dict.quiz) {
     const q = dict.quiz.qs[dict.quiz.i];
     const left = dict.quiz.endsAt ? Math.max(0, dict.quiz.endsAt - Date.now()) : 0;
     $('chunkKind').textContent = `${dict.quiz.exam ? 'Экзамен' : 'Самопроверка'} · вопрос ${dict.quiz.i + 1} из ${dict.quiz.qs.length}` +
@@ -880,8 +1125,9 @@ function renderDictation() {
     else if (st === 'waiting' || t?.status === 'generating' || t?.status === 'pending') text = 'Готовлю эту тему…';
     else if (st === 'idle') text = 'Нажмите ▶, чтобы начать.';
   }
-  setChunkText(text, settings.highlightWord && !!chunk && !QUIZ.includes(st) && st !== 'reviewing');
-  $('chunkBox').classList.toggle('hidden-text', !settings.showText && !!chunk && !QUIZ.includes(st) && st !== 'reviewing');
+  const own = QUIZ.includes(st) || st === 'reviewing' || st === 'ticketEnd'; // на карточке не отрывок конспекта
+  setChunkText(text, settings.highlightWord && !!chunk && !own);
+  $('chunkBox').classList.toggle('hidden-text', !settings.showText && !!chunk && !own);
   $('toggleText').textContent = settings.showText ? 'Скрыть текст' : 'Показать текст';
 
   $('dictState').textContent = st === 'idle' && progress?.review?.ids?.length ? `Нажмите ▶ — продолжу повторение (${progress.review.i + 1} из ${progress.review.ids.length})`
@@ -903,15 +1149,18 @@ function renderDictation() {
   $('retryTopicBtn').classList.toggle('hidden', !(st === 'waiting' && t?.status === 'error'));
 
   // панель вопроса — только когда диктовка остановлена
-  const qaOpen = pausedLike || ['thinking', 'answering', 'quiz', 'quizListen', 'quizGrade'].includes(st) || (st === 'finished' && progress?.qa?.length);
-  $('quizBtns').classList.toggle('hidden', st !== 'quizListen');
-  $('questionInput').placeholder = st === 'quizListen' ? 'Ваш ответ — голосом или текстом' : 'Спросите голосом или напишите';
+  const qaOpen = pausedLike || ['thinking', 'answering', 'quiz', 'quizListen', 'quizGrade', 'longListen'].includes(st) || (st === 'finished' && progress?.qa?.length);
+  $('quizBtns').classList.toggle('hidden', st !== 'quizListen' && st !== 'longListen');
+  $('longDone').classList.toggle('hidden', st !== 'longListen');
+  $('quizSkip').textContent = st === 'longListen' ? 'Пропустить' : 'Пропустить вопрос';
+  $('quizDontKnow').classList.toggle('hidden', st === 'longListen' && dict.quiz?.kind === 'retell' && !dict.quiz.topic?.recap);
+  $('questionInput').placeholder = st === 'quizListen' || st === 'longListen' ? 'Ваш ответ — голосом или текстом' : 'Спросите голосом или напишите';
   $('stopReviewBtn').classList.toggle('hidden', dict.mode !== 'review' && !(st === 'idle' && progress?.review?.ids?.length));
   $('breakCard').classList.toggle('hidden', st !== 'break');
   $('qaPanel').classList.toggle('hidden', !qaOpen);
   $('tab-dictate').classList.toggle('qa-open', !!qaOpen);
   $('continueBtn').classList.toggle('hidden', (!pausedLike && !['thinking', 'answering'].includes(st)) || st === 'break');
-  $('continueBtn').textContent = st === 'topicEnd' ? 'Следующая тема' : dict.mode === 'review' ? 'Продолжить повторение' : 'Продолжить диктовку';
+  $('continueBtn').textContent = st === 'topicEnd' ? 'Следующая тема' : st === 'ticketEnd' ? 'Ещё билет' : dict.mode === 'review' ? 'Продолжить повторение' : 'Продолжить диктовку';
   const qa = progress?.qa || [];
   const last = qa[qa.length - 1];
   const showAnswer = last && (['thinking', 'answering', 'confirm'].includes(st) || (pausedLike && Date.now() - last.t < 10 * 60000));
@@ -989,7 +1238,8 @@ $('playBtn').addEventListener('click', () => {
   if (DICTATING.includes(dict.state)) dict.interrupt('pause');
   else dict.start();
 });
-$('continueBtn').addEventListener('click', () => dict.resume());
+$('continueBtn').addEventListener('click', () => (dict.state === 'ticketEnd' ? dict.startTicket() : dict.resume()));
+$('longDone').addEventListener('click', () => dict.finishLong());
 $('quizDontKnow').addEventListener('click', () => dict.submitText('не знаю'));
 $('quizSkip').addEventListener('click', () => dict.next());
 $('stopReviewBtn').addEventListener('click', () => dict.stopReview());
@@ -1124,6 +1374,22 @@ function appCommand(c, topicId) {
     }
     case 'export': if (project) exportFile(); return project ? '' : L('Сначала добавьте материал и составьте план.', 'First add material and make a plan.');
     case 'exam': return startExam() ? '' : L('Пока нет вопросов для экзамена: они появляются, когда темы подготовлены.', 'No exam questions yet: they appear once topics are prepared.');
+    case 'ticket': {
+      if (!project?.tickets?.length) { openTickets(); return L('Сначала добавьте список билетов: План → Билеты.', 'First add the list of exam tickets: Plan → Tickets.'); }
+      const t = c.arg?.n ? project.tickets[c.arg.n - 1] : null;
+      if (c.arg?.n && !t) return L(`Билета номер ${c.arg.n} нет.`, `There is no ticket ${c.arg.n}.`);
+      closeSheets();
+      switchTab('dictate');
+      dict.startTicket(t);
+      return '';
+    }
+    case 'retell': {
+      const seq = project ? activeSeq(project) : [];
+      const t = c.arg?.n ? (c.arg.n === -1 ? seq[seq.length - 1] : seq[c.arg.n - 1]) : null;
+      if (c.arg?.n && !t) return L(`Темы номер ${c.arg.n} нет.`, `There is no topic ${c.arg.n}.`);
+      switchTab('dictate');
+      return dict.startRetell(t?.id || topicId) ? '' : L('Эта тема ещё не подготовлена.', 'This topic isn’t prepared yet.');
+    }
   }
   return '';
 }
@@ -1252,6 +1518,7 @@ function renderSettings() {
     ? `<span>${pace < 1 ? 'Сейчас паузы короче обычных' : 'Сейчас паузы длиннее обычных'}: ×${String(pace).replace('.', ',')}.</span> <a href="#" id="paceReset">Сбросить</a>`
     : '';
   $('selfCheck').checked = settings.selfCheck;
+  $('retellAfter').checked = !!settings.retellAfter;
   $('abbreviate').checked = !!settings.abbreviate;
   $('headsetButtons').checked = settings.headsetButtons;
   $('headsetButtons').disabled = !mediaSupported;
@@ -1371,6 +1638,7 @@ $('paceHint').addEventListener('click', (e) => {
   renderSettings();
 });
 bind('selfCheck', 'selfCheck');
+bind('retellAfter', 'retellAfter');
 bind('abbreviate', 'abbreviate');
 bind('formulasApart', 'formulasApart');
 bind('fxPause', 'fxPause');
@@ -1668,6 +1936,8 @@ function buildShare() {
     project: {
       budgetMin: project.budgetMin, priority: project.priority, sources: project.sources, fullText: project.fullText,
       topics, plan: { order: project.plan.order.filter((id) => project.topics.some((t) => t.id === id)), skipped: {} },
+      // билеты с готовыми ответами — у одногруппников тот же список
+      tickets: (project.tickets || []).map((t) => ({ id: t.id, q: t.q, a: t.status === 'ready' ? t.a : '', topics: t.topics || [], status: t.status === 'ready' ? 'ready' : 'pending' })),
     },
   };
 }
@@ -1699,6 +1969,12 @@ async function importKonspekt(data) {
     id: 'p' + uid(), createdAt: Date.now(), budgetMin: +p.budgetMin || 120, priority: ['hard', 'easy', 'original'].includes(p.priority) ? p.priority : 'original',
     sources: Array.isArray(p.sources) ? p.sources : [], fullText: String(p.fullText || ''), topics, plan: { order, skipped: {} },
   };
+  if (Array.isArray(p.tickets) && p.tickets.length) {
+    proj.tickets = p.tickets.filter((t) => t && t.q).slice(0, 150).map((t) => ({
+      id: String(t.id || 't' + uid()), q: String(t.q), a: String(t.a || ''), topics: (t.topics || []).filter((x) => ids.has(x)),
+      status: t.a && t.status === 'ready' ? 'ready' : 'pending',
+    }));
+  }
   let title = String(data.title || 'Конспект').slice(0, 40);
   if (subjects.list.some((x) => x.title === title)) title = `${title.slice(0, 36)} (2)`;
   const id = 's' + uid();
@@ -1872,7 +2148,16 @@ function syncDue() {
   }
   for (const k of Object.keys(all)) if (!subjects?.list.some((x) => x.id === k)) delete all[k];
   try { localStorage.setItem('kd.due', JSON.stringify(all)); } catch { /* ignore */ }
-  const body = JSON.stringify({ on: !!settings.remind, lang: settings.uiLang, items: Object.values(all).flat() });
+  // подготовка к экзамену: дата и сколько тем осталось — service worker напомнит, что сегодня по плану
+  let exams = {};
+  try { exams = JSON.parse(localStorage.getItem('kd.exams') || '{}'); } catch { /* ignore */ }
+  if (project && progress) {
+    if (project.examDate) exams[cur()] = { s: curSubject()?.title || '', date: project.examDate, left: activeSeq(project).filter((t) => !progress.done?.[t.id]).length };
+    else delete exams[cur()];
+  }
+  for (const k of Object.keys(exams)) if (!subjects?.list.some((x) => x.id === k)) delete exams[k];
+  try { localStorage.setItem('kd.exams', JSON.stringify(exams)); } catch { /* ignore */ }
+  const body = JSON.stringify({ on: !!settings.remind, lang: settings.uiLang, items: Object.values(all).flat(), exams: Object.values(exams) });
   caches.open('kd-meta').then((c) => c.put('due.json', new Response(body, { headers: { 'content-type': 'application/json' } }))).catch(() => {});
 }
 
@@ -2170,7 +2455,9 @@ async function init() {
   // быстрое действие на иконке: «Продолжить диктовку»
   const go = new URLSearchParams(location.search).get('go');
   if (go === 'dictate' && project) switchTab('dictate');
-  if (go === 'review' && project) switchTab('plan'); // из уведомления «пора повторить»
+  if ((go === 'review' || go === 'today') && project) switchTab('plan'); // из уведомления «пора повторить» и «план на сегодня»
+  if (go === 'ticket' && project) { switchTab('plan'); openTickets(); }
+  if (go === 'exam' && project) { switchTab('plan'); $('examBtn').click(); }
   try { if (sessionStorage.getItem('kd.tab')) { switchTab(sessionStorage.getItem('kd.tab')); sessionStorage.removeItem('kd.tab'); } } catch { /* ignore */ }
   syncDue();
 

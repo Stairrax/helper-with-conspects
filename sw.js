@@ -2,7 +2,7 @@
 // Запросы к API нейросетей никогда не кэшируются.
 
 // При выпуске новой версии поднимайте VERSION и ?v= в index.html (importmap и app.js) — одно и то же число.
-const VERSION = 'kd-v56';
+const VERSION = 'kd-v57';
 const SHELL = [
   './',
   'index.html',
@@ -19,6 +19,7 @@ const SHELL = [
   'js/stats.js',
   'js/cheatsheet.js',
   'js/audiobook.js',
+  'js/tickets.js',
   'js/i18n.js',
   'js/i18n-en.js',
   'js/platform.js',
@@ -120,17 +121,31 @@ async function remindDue() {
   const c = await caches.open('kd-meta');
   const r = await c.match(META('due.json'));
   if (!r) return;
-  const { on, lang, items } = await r.json();
+  const { on, lang, items, exams } = await r.json();
   const now = Date.now();
   const due = (items || []).filter((x) => x.due <= now).sort((a, b) => a.due - b.due);
-  if (!on || !due.length) return;
+  // ближайший экзамен, до которого ещё есть непройденные темы
+  const day0 = new Date(now); day0.setHours(12, 0, 0, 0);
+  const daysTo = (d) => { const [y, m, dd] = d.split('-').map(Number); return Math.round((new Date(y, m - 1, dd, 12) - day0) / DAY); };
+  const exam = (exams || []).map((x) => ({ ...x, days: daysTo(x.date) })).filter((x) => x.days > 0).sort((a, b) => a.days - b.days)[0];
+  if (!on || (!due.length && !exam)) return;
   const last = await c.match(META('reminded.json'));
   if (last && now - (await last.json()).at < 0.8 * DAY) return; // не чаще раза в сутки
   const en = lang === 'en';
-  await self.registration.showNotification(en ? 'Time to review' : 'Пора повторить', {
-    body: due.length === 1 ? `«${due[0].t}»` : en ? `“${due[0].t}” and ${due.length - 1} more` : `«${due[0].t}» и ещё ${due.length - 1}`,
-    icon: 'icons/icon-192.png', tag: 'kd-review', data: { url: './?go=review' },
-  });
+  if (exam) {
+    const per = exam.left ? Math.ceil(exam.left / Math.max(1, exam.days - 1)) : 0;
+    const when = en ? (exam.days === 1 ? 'tomorrow' : `in ${exam.days} days`) : exam.days === 1 ? 'завтра' : `через ${exam.days} ${exam.days % 10 === 1 && exam.days % 100 !== 11 ? 'день' : [2, 3, 4].includes(exam.days % 10) && ![12, 13, 14].includes(exam.days % 100) ? 'дня' : 'дней'}`;
+    const plan = per ? (en ? `today: ${per} new ${per === 1 ? 'topic' : 'topics'}` : `сегодня по плану новых тем: ${per}`) : (en ? 'today: review and tickets' : 'сегодня — повторение и билеты');
+    await self.registration.showNotification(en ? `Exam ${when}` : `Экзамен ${when}`, {
+      body: `${exam.s ? `${exam.s}: ` : ''}${plan}${due.length ? (en ? `, ${due.length} to review` : `, повторить: ${due.length}`) : ''}`,
+      icon: 'icons/icon-192.png', tag: 'kd-review', data: { url: './?go=today' },
+    });
+  } else {
+    await self.registration.showNotification(en ? 'Time to review' : 'Пора повторить', {
+      body: due.length === 1 ? `«${due[0].t}»` : en ? `“${due[0].t}” and ${due.length - 1} more` : `«${due[0].t}» и ещё ${due.length - 1}`,
+      icon: 'icons/icon-192.png', tag: 'kd-review', data: { url: './?go=review' },
+    });
+  }
   await c.put(META('reminded.json'), new Response(JSON.stringify({ at: now })));
 }
 

@@ -490,3 +490,21 @@ body.ios .android-only, body:not(.ios) .ios-only { display: none !important; }
 .btn.grow { flex: 1; min-width: 0; }
 .audio-player { width: 100%; margin-top: 12px; }
 .row.wrap { flex-wrap: wrap; }
+
+/* ---------- Подготовка к экзамену и билеты ---------- */
+.prep-date { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 8px; }
+.prep-date label { color: var(--muted); font-size: 14px; }
+.prep-date input[type=date] { flex: 1; min-width: 150px; font: inherit; color: var(--text); background: var(--surface2, transparent); border: 1px solid var(--line, rgba(127, 127, 127, .35)); border-radius: 10px; padding: 8px 10px; color-scheme: light dark; }
+.prep-list { list-style: none; padding: 0; margin: 6px 0 8px; display: grid; gap: 6px; }
+.prep-list li { padding-left: 20px; position: relative; overflow-wrap: anywhere; }
+.prep-list li::before { content: '○'; position: absolute; left: 0; color: var(--muted); }
+.prep-list li.ok::before { content: '✓'; color: var(--ok, #4caf50); }
+.prep-list li.warn { color: var(--warn, #e0a800); }
+#ticketText { width: 100%; min-height: 160px; }
+.tickets { list-style: none; padding: 0; margin: 10px 0; display: grid; gap: 6px; }
+.tickets li { border: 1px solid var(--line, rgba(127, 127, 127, .25)); border-radius: 12px; overflow: hidden; }
+.tickets .thead { display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left; background: none; border: 0; color: inherit; font: inherit; padding: 10px 12px; cursor: pointer; }
+.tickets .tnum { min-width: 22px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tickets .tq { flex: 1; overflow-wrap: anywhere; }
+.tickets .tdetail { padding: 0 12px 12px 44px; }
+.tickets .tans { white-space: pre-line; margin: 0 0 10px; font-size: 14px; line-height: 1.45; }

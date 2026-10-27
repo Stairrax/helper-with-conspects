@@ -95,7 +95,9 @@ export async function mockAI(page, ai) {
     if (isStream) {
       ai.answer++;
       // проверка ответа на самопроверке или экзамене — «Верно», иначе ответ на вопрос
-      const parts = text.includes('Ответ студента') ? ['Верно. ', 'Всё правильно.']
+      const parts = text.includes('Пересказ студента') ? ['Отлично. ', 'Главное сказано, упущена только формула.']
+        : text.includes('Билет:') && text.includes('Ответ студента') ? ['Хорошо. ', 'Суть верна, но не хватает примера.']
+        : text.includes('Ответ студента') ? ['Верно. ', 'Всё правильно.']
         : ['Потому что проценты начисляются и на уже начисленные проценты. ', 'Поэтому сумма растёт всё быстрее.'];
       const sse = isA ? 'event: message_start\ndata: {"type":"message_start","message":{}}\n\n' + parts.map((t) => 'event: content_block_delta\ndata: ' + JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: t } }) + '\n\n').join('') + 'event: message_stop\ndata: {"type":"message_stop"}\n\n'
         : isO ? parts.map((t) => 'data: ' + JSON.stringify({ choices: [{ delta: { content: t } }] }) + '\n\n').join('') + 'data: [DONE]\n\n'
@@ -117,6 +119,11 @@ export async function mockAI(page, ai) {
     if (text.includes('Проверь полноту')) {
       const n = (text.match(/^\(\d+\)/gm) || []).length;
       return reply({ checks: Array.from({ length: n }, (_, i) => ({ i, c: [0] })), missing: [] });
+    }
+    if (text.includes('Вопросы экзаменационных билетов')) {
+      ai.tickets = (ai.tickets || 0) + 1;
+      const qs = text.split('Вопросы экзаменационных билетов:')[1].split('\n\n')[0].trim().split('\n');
+      return reply({ answers: qs.map((q, i) => ({ n: i + 1, a: `Ответ: ${q.replace(/^\d+\. /, '')}.\nБюджет — это план доходов и расходов.`, t: [1] })) });
     }
     if (text.includes('Пользователь приложения для диктовки конспектов сказал')) {
       ai.command++;
