@@ -60,6 +60,6 @@
 
 - **Код приложения** (`index.html`, `css/`, `js/`, `sw.js`, `icons/` и остальное, кроме перечисленного ниже) — [GNU GPL v3](LICENSE) ([кратко по-русски](LICENSE.ru.md)): свободное ПО, его можно использовать, изменять, распространять и продавать, но любая распространяемая версия должна оставаться открытой под той же лицензией. Copyright © 2026 Stairrax.
 - **Модель Silero** в [`voices/silero-ru/`](voices/silero-ru/) — © [Silero Team](https://github.com/snakers4/silero-models), [CC BY-NC-SA 4.0](voices/silero-ru/LICENSE): **только некоммерческое использование**, с указанием авторов, производные — на тех же условиях. Коммерческому проекту нужно убрать эту папку или договориться с авторами.
-- **Шрифты** Onest, Unbounded и Literata в [`fonts/`](fonts/) — [SIL Open Font License 1.1](fonts/OFL.txt).
+- **Шрифты** Nunito, Onest, Unbounded и Literata в [`fonts/`](fonts/) — [SIL Open Font License 1.1](fonts/OFL.txt).
 - **Голоса Piper** скачиваются по ссылке с Hugging Face (`rhasspy/piper-voices`) и в репозиторий не входят; у каждого голоса своя лицензия — в его карточке модели.
 - Библиотеки, которые загружаются с CDN (onnxruntime-web, piper-wasm, pdf.js, mammoth.js, lamejs), — по их собственным лицензиям.
