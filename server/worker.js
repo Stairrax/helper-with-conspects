@@ -137,8 +137,11 @@ async function models(env) {
 
 // ---------- запасной ИИ: Cloudflare Workers AI ----------
 
-// Небольшие модели — чтобы бесплатного дневного запаса хватало на больше запросов; первая, что ответит, и берётся
-const AI_MODELS = ['@cf/google/gemma-3-12b-it', '@cf/meta/llama-3.1-8b-instruct', '@cf/meta/llama-3.3-70b-instruct-fp8-fast'];
+// Сначала модели подешевле (бесплатного дневного запаса хватает на больше запросов), потом тяжёлая; первая, что ответит, и берётся.
+// Каталог Cloudflare меняется: модель, к которой нет доступа или которую сняли с обслуживания, сервер на час пропускает
+// и не тратит на неё время (список для проверки печатает выкладка, см. server.yml).
+const AI_MODELS = ['@cf/mistralai/mistral-small-3.1-24b-instruct', '@cf/meta/llama-3.3-70b-instruct-fp8-fast', '@cf/google/gemma-3-12b-it', '@cf/meta/llama-3.1-8b-instruct'];
+const aiBad = new Map(); // модель -> до какого времени пропускать
 const aiModels = (env) => {
   const v = String(opt(env, 'FALLBACK_AI_MODELS', AI_MODELS.join(','))).trim();
   return v === 'off' ? [] : v.split(',').map((s) => s.trim()).filter(Boolean);
@@ -208,6 +211,9 @@ async function viaAI(env, body, maxTokens, headers) {
   if (!messages) return null;
   const stream = body.stream === true;
   aiTried = [];
+  const nowMs = Date.now();
+  const skip = models.filter((m) => (aiBad.get(m) || 0) > nowMs);
+  if (skip.length < models.length) models.splice(0, models.length, ...models.filter((m) => !skip.includes(m)));
   // у моделей свой потолок длины ответа: если отказались из-за него — пробуем покороче
   const budgets = [...new Set([maxTokens, Math.min(maxTokens, 4096)])];
   for (const model of models) {
@@ -223,7 +229,10 @@ async function viaAI(env, body, maxTokens, headers) {
         const msg = String(e?.message || e);
         aiLast = (model + ': ' + msg).slice(0, 200);
         aiTried.push({ model, budget, error: msg.slice(0, 160) });
-        if (!/token|length|context|exceed|large|too long/i.test(msg)) break;
+        if (!/token|length|context|exceed|large|too long/i.test(msg)) {
+          if (/not allowed|deprecated|not found|no such|unknown model|5018|5028|5007/i.test(msg)) aiBad.set(model, Date.now() + 3600e3); // насовсем: час не трогаем
+          break;
+        }
       }
     }
   }
@@ -262,6 +271,8 @@ async function health(req, env) {
   }
   // запасной ИИ; ?test=1 — один крошечный запрос ему (тратит немного бесплатного запаса)
   const fallback = { binding: !!env.AI, models: env.AI ? aiModels(env) : [] };
+  const skipped = [...aiBad].filter(([, until]) => until > Date.now()).map(([m]) => m);
+  if (skipped.length) fallback.skippedForAnHour = skipped;
   if (new URL(req.url).searchParams.get('test') === '1' && env.AI) {
     const r = await viaAI(env, { messages: [{ role: 'user', content: 'Ответь одним словом: работает' }] }, 30, {});
     fallback.test = r ? { ok: true, answeredBy: aiLast.replace(/^ok /, ''), text: String((await r.json()).choices?.[0]?.message?.content || '').slice(0, 40) } : { ok: false, error: aiLast || 'нет ответа' };
