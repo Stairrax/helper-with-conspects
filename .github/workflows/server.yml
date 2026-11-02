@@ -70,6 +70,8 @@ jobs:
           [ "$body" = "ok" ] || { echo "::error::$URL не отвечает «ok»"; exit 1; }
           models=$(curl -s -m 20 -H 'Origin: https://stairrax.github.io' "$URL/v1/models")
           echo "$models"
+          # какие модели есть у запасного ИИ Cloudflare (нужно, чтобы выбрать подходящие и не ждать отказов)
+          (cd server && npx -y "$WRANGLER" ai models 2>&1 | grep -o '@cf/[A-Za-z0-9._/-]*' | sort -u | tr '\n' ' ' | head -c 6000; echo) || true
           # что сервер видит сам: ключ на месте, принимает ли его OpenRouter, какие модели
           health=$(curl -s -m 60 "$URL/health?test=1" || true)
           echo "Health: $health"
