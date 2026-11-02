@@ -7,6 +7,10 @@ compatibility_date = "2025-09-01"
 # адрес вида https://konspekt-free.<имя>.workers.dev
 workers_dev = true
 
+# запасной бесплатный ИИ Cloudflare (Workers AI): отвечает, когда у OpenRouter кончился дневной лимит; карта не нужна
+[ai]
+binding = "AI"
+
 [vars]
 # сайт приложения; несколько — через запятую
 ALLOWED_ORIGINS = "https://stairrax.github.io"

@@ -110,6 +110,65 @@ export default async ({ open, prepare, FINANCE, ok }) => {
     Date.now = realNow;
     ok(r.status === 200 && sent.body.model.endsWith(':free'), 'не удалось обновить список моделей — работаем со старым');
 
+    // ---- запасной ИИ (Cloudflare Workers AI): когда у OpenRouter кончился лимит, ключ отозван или он не отвечает
+    const enc = new TextEncoder();
+    const aiCalls = [];
+    const makeAI = (impl) => ({ run: async (model, input) => { aiCalls.push({ model, input }); return impl(model, input); } });
+    const sseOf = (...tokens) => new ReadableStream({ start(c) { for (const t of tokens) c.enqueue(enc.encode('data: ' + JSON.stringify({ response: t }) + '\n\n')); c.enqueue(enc.encode('data: [DONE]\n\n')); c.close(); } });
+    const dailyLimit = () => new Response(JSON.stringify({ error: { code: 429, message: 'Rate limit exceeded: free-models-per-day' } }), { status: 429 });
+    const withAI = async (impl, over = {}, bodyOver = {}) => {
+      const w = (await import('../server/worker.js?ai=' + ++inst)).default;
+      return w.fetch(new Request('https://w.test/v1/chat/completions', {
+        method: 'POST', headers: { Origin: APP, Authorization: 'Bearer kd-ai' + inst, 'Content-Type': 'application/json' }, body: JSON.stringify({ ...msg, ...bodyOver }),
+      }), { OPENROUTER_KEY: 'k', MODELS: 'gpt-x', MAX_TOKENS: '1000', AI: makeAI(impl), ...over });
+    };
+    globalThis.fetch = async () => dailyLimit();
+    r = await withAI(() => ({ response: 'Привет из запасного' }), {}, { stream: false });
+    let d = await r.json();
+    ok(r.status === 200 && d.choices[0].message.content === 'Привет из запасного' && r.headers.get('X-Answered-By') === 'workers-ai', 'лимит OpenRouter кончился — отвечает запасной ИИ, формат как у OpenAI');
+    ok(aiCalls.at(-1).model === '@cf/google/gemma-3-12b-it' && aiCalls.at(-1).input.messages[0].content === 'привет' && aiCalls.at(-1).input.max_tokens === 1000, 'запасному уходят те же сообщения, длина ответа ограничена сервером');
+    r = await withAI(() => sseOf('При', 'вет'), {}, { stream: true });
+    const sse = await r.text();
+    ok(r.headers.get('Content-Type') === 'text/event-stream' && /"content":"При"/.test(sse) && /"content":"вет"/.test(sse) && /\[DONE\]\s*$/.test(sse), 'потоковый ответ запасного — в формате OpenAI');
+    globalThis.fetch = async () => new Response('{}', { status: 401 });
+    r = await withAI(() => ({ response: 'запасной' }), {}, { stream: false });
+    ok(r.status === 200 && (await r.json()).choices[0].message.content === 'запасной', 'ключ отозван (401) — отвечает запасной');
+    globalThis.fetch = async () => { throw new Error('network'); };
+    r = await withAI(() => ({ response: 'запасной' }), {}, { stream: false });
+    ok(r.status === 200, 'OpenRouter не отвечает — отвечает запасной');
+    globalThis.fetch = async () => new Response('oops', { status: 503 });
+    r = await withAI(() => ({ response: 'запасной' }), {}, { stream: false });
+    ok(r.status === 200, 'сбой 5xx у OpenRouter — отвечает запасной');
+    globalThis.fetch = async () => dailyLimit();
+    // не получилось у запасного: первая модель отказала — берётся следующая; все отказали — прежняя ошибка про лимит
+    r = await withAI((model) => { if (model.includes('gemma')) throw new Error('model not found'); return { response: 'со второй' }; }, {}, { stream: false });
+    ok(r.status === 200 && (await r.json()).choices[0].message.content === 'со второй', 'первая запасная модель отказала — берётся следующая');
+    r = await withAI(() => { throw new Error('4006: daily free allocation exceeded'); }, {}, { stream: false });
+    const e3 = (await r.json()).error;
+    ok(r.status === 429 && e3.code === 'daily_limit', 'запасной тоже исчерпан — прежнее «на сегодня закончились»');
+    r = await withAI(() => ({ response: 'не должен' }), {}, { stream: false, messages: [{ role: 'user', content: [{ type: 'text', text: 'что тут?' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,AA' } }] }] });
+    ok(r.status === 429, 'запрос с фото запасному не отдаётся — он их не читает');
+    r = await withAI(() => ({ response: 'не должен' }), { FALLBACK_AI_MODELS: 'off' }, { stream: false });
+    ok(r.status === 429, 'FALLBACK_AI_MODELS=off выключает запасной');
+    // обрезанный по длине ответ запасного приложение делит пополам, как у обычной модели
+    r = await withAI(() => ({ response: 'длинный ответ', usage: { completion_tokens: 1000 } }), {}, { stream: false });
+    ok((await r.json()).choices[0].finish_reason === 'length', 'ответ запасного упёрся в лимит длины — finish_reason: length');
+    // у модели потолок ниже: «слишком много токенов» — повтор покороче
+    const budgets = [];
+    r = await withAI((model, input) => { budgets.push(input.max_tokens); if (input.max_tokens > 5000) throw new Error('max_tokens exceeds the model limit'); return { response: 'коротко' }; }, { MAX_TOKENS: '16000' }, { stream: false, max_tokens: 16000 });
+    ok(r.status === 200 && budgets.join() === '16000,4096', 'у модели ниже потолок длины ответа — повтор с меньшим: ' + budgets.join());
+    // без привязки AI всё как раньше
+    globalThis.fetch = async () => dailyLimit();
+    r = await (await cold())({ OPENROUTER_KEY: 'k', MODELS: 'gpt-x' }, 'kd-noai');
+    ok(r.status === 429, 'без запасного ИИ — как раньше');
+    // /health показывает запасной; ?test=1 проверяет его
+    const hw = (await import('../server/worker.js?ai=h' + ++inst)).default;
+    globalThis.fetch = async (url) => new Response(JSON.stringify(String(url).endsWith('/key') ? { data: { is_free_tier: true } } : catalog));
+    let hh = await (await hw.fetch(new Request('https://w.test/health?test=1', { headers: { 'CF-Connecting-IP': '8.8.8.8' } }), { OPENROUTER_KEY: 'k', MODELS: 'free', AI: makeAI(() => ({ response: 'работает' })) })).json();
+    ok(hh.fallback.binding === true && hh.fallback.test.ok === true && hh.fallback.test.text === 'работает', '/health?test=1: запасной ИИ отвечает');
+    hh = await (await hw.fetch(new Request('https://w.test/health?test=1', { headers: { 'CF-Connecting-IP': '8.8.8.9' } }), { OPENROUTER_KEY: 'k', MODELS: 'free', AI: makeAI(() => { throw new Error('no access'); }) })).json();
+    ok(hh.fallback.test.ok === false && /no access/.test(hh.fallback.test.error), '/health?test=1: если запасной не работает — видна причина');
+
     // /health: открывается без «Origin» (прямо в браузере), ключ не раскрывает
     globalThis.fetch = async (url) => {
       if (String(url).endsWith('/key')) return new Response(JSON.stringify({ data: { label: 'sk-or-v1-abc...xyz', is_free_tier: true, usage: 1.5 } }));

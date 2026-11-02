@@ -3,6 +3,20 @@
 import { generate, generateJSON, conn, AIError as GeminiError } from './ai.js';
 
 const PART_CHARS = 12000;     // размер части для разбиения на темы
+
+/** Сколько запросов к нейросети уйдёт на «Составить план»: по запросу на часть текста (~12 тыс. знаков), оценка сложности, фото — по запросу на снимок. */
+export function estimatePlanRequests(sources) {
+  let n = 1;
+  for (const s of sources) {
+    if (s.kind === 'images' && !s.text) n += s.images?.length || 0;
+    else n += Math.max(1, Math.ceil((s.text || '').length / PART_CHARS));
+  }
+  return n;
+}
+
+// Разбитые на темы части текста запоминаем: если лимит кончился на середине, повторное «Составить план» продолжит с того же места
+const segCache = new Map();
+const hash = (str) => { let h = 5381; for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0; return h + ':' + str.length; };
 const SECTION_CHARS = 5000;   // размер секции для генерации кусков
 export const CHARS_PER_SEC = 13; // скорость русской речи TTS при rate=1
 const SPOKEN_FACTOR = 1.35;   // устный текст длиннее исходного (пояснения, формулы словами)
@@ -110,10 +124,13 @@ ${prevTitle ? `Предыдущий фрагмент закончился тем
 Ответ JSON: {"topics":[{"title":"…","from":1,"to":4,"continues":false}]}
 
 ${numbered}`;
+  const key = hash(prompt);
+  if (segCache.has(key)) return normalizeRanges(segCache.get(key), n, blocks);
   let topics = [];
   try {
     const res = await generateJSON({ ...conn(settings), system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.2 });
     topics = Array.isArray(res.topics) ? res.topics : [];
+    segCache.set(key, topics);
   } catch (e) {
     if (!(e instanceof GeminiError) || e.code !== 'BAD_JSON') throw e;
   }

@@ -443,7 +443,8 @@ export class Dictation {
       if (!topic) return this.finish(my);
       if (topic.status !== 'ready') {
         this.h.kickGenerator();
-        this.set('waiting', topic.status === 'error' ? 'Ошибка подготовки темы: ' + (topic.error || '') : '');
+        this.set('waiting', topic.status === 'error' ? 'Ошибка подготовки темы: ' + (topic.error || '')
+          : this.h.genLimited?.() ? 'Бесплатные запросы на сегодня закончились — эту тему подготовим позже. Выберите готовую тему в плане или подключите свой ключ (Настройки → Настроить заново).' : '');
         await sleep(400);
         continue;
       }

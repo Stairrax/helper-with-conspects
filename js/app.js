@@ -6,7 +6,7 @@ import {
 } from './storage.js';
 import { fileToSource } from './extract.js';
 import {
-  analyze, generateTopicChunks, generateExtras, extractFormulas, FX_MIN, orderTopics, activeSeq, estimateTopicSec, allocateBudget, fitPause,
+  analyze, estimatePlanRequests, generateTopicChunks, generateExtras, extractFormulas, FX_MIN, orderTopics, activeSeq, estimateTopicSec, allocateBudget, fitPause,
   pauseFor, CHARS_PER_SEC,
 } from './analyze.js';
 import { listModels, conn, PROVIDERS, providerName, hasAI } from './ai.js';
@@ -120,19 +120,28 @@ document.querySelectorAll('.navbar button').forEach((b) => b.addEventListener('c
 
 // ---------- Фоновая генерация кусков ----------
 
+const AHEAD = 3;               // бесплатный режим: заранее готовим текущую тему и две следующие
+const LIMIT_PAUSE = 30 * 60e3; // кончились бесплатные запросы — пробуем снова не чаще, чем раз в полчаса
+const isFreeMode = () => !!PROVIDERS[settings.provider]?.noKey;
+
 const gen = {
   running: false,
   status: '',
+  limited: 0, // когда в последний раз сервер ответил «бесплатные запросы на сегодня закончились»
+  /** Бесплатных запросов в день немного, поэтому темы готовятся по мере чтения, а не все сразу (кнопка «Подготовить все темы» отменяет это). */
+  lazy(p) { return isFreeMode() && !p.prepAll; },
   pick(p) {
+    if (this.limited && Date.now() - this.limited < LIMIT_PAUSE) return null;
     const seq = activeSeq(p);
     const start = Math.max(0, seq.findIndex((t) => t.id === progress?.topicId));
     const ordered = [...seq.slice(start), ...seq.slice(0, start)];
-    return ordered.find((t) => t.status === 'pending' ||
+    const reach = this.lazy(p) ? ordered.slice(0, AHEAD) : ordered;
+    return reach.find((t) => t.status === 'pending' ||
       (t.status === 'error' && (t.errors || 0) < 4 && Date.now() - (t.errorAt || 0) > 30000)) ||
       // темы, подготовленные до появления самопроверки: досоздаём выжимку и вопросы (по одной, начиная с текущей)
       (settings.selfCheck ? ordered.slice(0, 2).find((t) => t.status === 'ready' && !t.quiz && !t.extrasFailed) : null) ||
       // темы, подготовленные до появления блока формул: выписываем формулы
-      (settings.formulasApart !== false ? ordered.find((t) => t.status === 'ready' && t.formulas === undefined && !t.fxFailed) : null) || null;
+      (settings.formulasApart !== false ? reach.find((t) => t.status === 'ready' && t.formulas === undefined && !t.fxFailed) : null) || null;
   },
   async loop() {
     if (this.running || !project) return;
@@ -173,6 +182,14 @@ const gen = {
           t.error = '';
           t.errors = 0;
         } catch (e) {
+          if (e.code === 'DAILY_LIMIT') {
+            // бесплатные запросы на сегодня кончились: тема не «сломана», вернётся в очередь позже; ждём и не тратим попытки
+            t.status = 'pending';
+            this.limited = Date.now();
+            toast('Бесплатные запросы на сегодня закончились. Готовые темы можно диктовать, остальные подготовятся позже.', 6000);
+            if (p === project) saveProject();
+            break;
+          }
           t.status = 'error';
           t.error = e.message || String(e);
           t.errors = (t.errors || 0) + 1;
@@ -193,6 +210,18 @@ const gen = {
     }
   },
 };
+$('prepAllBtn').addEventListener('click', () => {
+  if (!project) return;
+  const left = activeSeq(project).filter((t) => t.status !== 'ready').length;
+  if (!confirm(T(`Подготовить сразу все темы (осталось ${left})? На каждую уйдёт один-два запроса, а бесплатных запросов в день ограниченное число — на всех. Обычно лучше готовить по мере чтения.`))) return;
+  project.prepAll = true;
+  saveProject();
+  gen.limited = 0;
+  gen.loop();
+  render();
+});
+$('limitKeyBtn').addEventListener('click', () => wizard.open(1));
+$('analyzeStatus').addEventListener('click', (e) => { if (e.target.closest('[data-own-key]')) wizard.open(1); });
 // ошибочные темы перезапускаются автоматически
 setInterval(() => { if (project && !gen.running && gen.pick(project)) gen.loop(); }, 15000);
 
@@ -218,6 +247,7 @@ const dict = new Dictation({
   onActivity: (playing) => updateMedia(dictTitle(), playing),
   onStudy: () => addStudy(1),
   onExam: (r) => addExam({ subject: curSubject()?.title || '', right: r.right, n: r.n }),
+  genLimited: () => !!gen.limited && Date.now() - gen.limited < LIMIT_PAUSE,
   onTicket: () => renderTickets(),
 });
 const dictTitle = () => (dict.mode === 'review' ? T('Повторение') : project?.topics.find((t) => t.id === progress?.topicId)?.title) || T('Помощник по учёбе');
@@ -400,6 +430,13 @@ $('analyzeBtn').addEventListener('click', async () => {
   if (!sources.length) return toast('Добавьте хотя бы один конспект');
   const budgetMin = getBudget();
   if (!budgetMin) return toast('Укажите, сколько у вас времени');
+  // бесплатных запросов в день немного, а большой конспект тратит их десятками: предупреждаем заранее
+  if (isFreeMode()) {
+    const need = estimatePlanRequests(sources);
+    if (need >= 8 && !confirm(T(need >= 40
+      ? `Этот конспект очень большой: на план уйдёт около ${need} запросов к нейросети, а бесплатных запросов в день меньше. Скорее всего, за один день план не составится. Лучше добавить конспект по частям или подключить свой ключ (Настройки → Настроить заново). Всё равно продолжить?`
+      : `Конспект большой: на план уйдёт около ${need} запросов к нейросети, а бесплатных запросов в день ограниченное число — их может не хватить. Можно добавить конспект по частям или подключить свой ключ (Настройки → Настроить заново). Продолжить?`))) return;
+  }
   if (project && !confirm('Составить план заново? Текущий план и место, где вы остановились, будут сброшены.\n\nЧтобы продолжить диктовку, нажмите «Отмена» и откройте вкладку «Диктовка». Для другого предмета создайте новый предмет (название под заголовком).')) return;
   const btn = $('analyzeBtn');
   btn.disabled = true;
@@ -439,7 +476,9 @@ $('analyzeBtn').addEventListener('click', async () => {
     gen.loop();
   } catch (e) {
     logLine('Ошибка: ' + (e.message || e), 'err');
-    $('analyzeStatus').innerHTML = `<span style="color:var(--danger)">${esc(e.message || e)}</span>`;
+    $('analyzeStatus').innerHTML = `<span style="color:var(--danger)">${esc(e.message || e)}</span>` + (e.code === 'DAILY_LIMIT'
+      ? `<br><span class="muted small">${esc(T('Уже разобранные части сохранены: завтра план достроится быстрее. Или подключите свой ключ.'))}</span> <button class="btn text" data-own-key>${esc(T('Подключить свой ключ'))}</button>`
+      : '');
   } finally {
     btn.disabled = false;
   }
@@ -500,9 +539,13 @@ function renderPlan() {
   $('planSummary').innerHTML = `<div class="plan-sum"><span class="big">${seq.length} ${plural(seq.length, ['тема', 'темы', 'тем'])} · ≈${fmtDur(total)}</span>` +
     `<span class="muted">из ${fmtDur(budget)}. ${line}</span></div>`;
   $('fitPauseBtn').classList.toggle('hidden', !(total > budget * 1.05 || total < budget * 0.8));
+  const limited = !!gen.limited && Date.now() - gen.limited < LIMIT_PAUSE;
   $('genStatus').textContent = ready < seq.length
-    ? `Подготовлено ${ready} из ${seq.length}${gen.running && gen.status ? ' · ' + gen.status : ''}`
+    ? `Подготовлено ${ready} из ${seq.length}${gen.running && gen.status ? ' · ' + gen.status : ''}${limited ? ' · бесплатные запросы на сегодня закончились' : gen.lazy(project) && !gen.running ? ' · остальные темы — по мере чтения' : ''}`
     : '';
+  // бесплатный режим: «Подготовить все темы» и «Подключить свой ключ»
+  $('prepAllBtn').classList.toggle('hidden', !(gen.lazy(project) && ready < seq.length && !limited));
+  $('limitKeyBtn').classList.toggle('hidden', !limited);
   document.querySelectorAll('input[name=planPriority]').forEach((r) => { r.checked = r.value === project.priority; });
   const rv = reviewSets();
   $('reviewSummary').textContent = rv.studied.length
