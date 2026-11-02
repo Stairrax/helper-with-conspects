@@ -26,6 +26,7 @@ let countersDay = '';
 let freeCache = { at: 0, list: [] }; // подобранные бесплатные модели (обновляются раз в 6 часов)
 let modelsError = '';                // почему не удалось получить список моделей в последний раз (для /health)
 let aiLast = '';                     // что ответил запасной ИИ в последний раз (для /health)
+let aiTried = [];                    // какие модели запасного ИИ отказали и почему — в последнем запросе (для /health)
 let healthCache = { at: 0, data: null };
 
 function opt(env, name, def) {
@@ -206,6 +207,7 @@ async function viaAI(env, body, maxTokens, headers) {
   const messages = models.length ? plainMessages(body.messages) : null;
   if (!messages) return null;
   const stream = body.stream === true;
+  aiTried = [];
   // у моделей свой потолок длины ответа: если отказались из-за него — пробуем покороче
   const budgets = [...new Set([maxTokens, Math.min(maxTokens, 4096)])];
   for (const model of models) {
@@ -215,10 +217,12 @@ async function viaAI(env, body, maxTokens, headers) {
         const out = aiResponse(res, model, stream, headers, budget);
         if (out) { aiLast = 'ok ' + model; return out; }
         aiLast = 'empty ' + model;
+        aiTried.push({ model, error: 'пустой ответ' });
         break;
       } catch (e) {
         const msg = String(e?.message || e);
         aiLast = (model + ': ' + msg).slice(0, 200);
+        aiTried.push({ model, budget, error: msg.slice(0, 160) });
         if (!/token|length|context|exceed|large|too long/i.test(msg)) break;
       }
     }
@@ -261,6 +265,7 @@ async function health(req, env) {
   if (new URL(req.url).searchParams.get('test') === '1' && env.AI) {
     const r = await viaAI(env, { messages: [{ role: 'user', content: 'Ответь одним словом: работает' }] }, 30, {});
     fallback.test = r ? { ok: true, answeredBy: aiLast.replace(/^ok /, ''), text: String((await r.json()).choices?.[0]?.message?.content || '').slice(0, 40) } : { ok: false, error: aiLast || 'нет ответа' };
+    if (aiTried.length) fallback.test.refused = aiTried; // какие модели отказали до той, что ответила, и почему
   }
   return new Response(JSON.stringify({ ...healthCache.data, fallback, where }, null, 2), { headers: h });
 }
