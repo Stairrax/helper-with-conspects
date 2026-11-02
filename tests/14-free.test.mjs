@@ -126,7 +126,7 @@ export default async ({ open, prepare, FINANCE, ok }) => {
     r = await withAI(() => ({ response: 'Привет из запасного' }), {}, { stream: false });
     let d = await r.json();
     ok(r.status === 200 && d.choices[0].message.content === 'Привет из запасного' && r.headers.get('X-Answered-By') === 'workers-ai', 'лимит OpenRouter кончился — отвечает запасной ИИ, формат как у OpenAI');
-    ok(aiCalls.at(-1).model === '@cf/google/gemma-3-12b-it' && aiCalls.at(-1).input.messages[0].content === 'привет' && aiCalls.at(-1).input.max_tokens === 1000, 'запасному уходят те же сообщения, длина ответа ограничена сервером');
+    ok(aiCalls.at(-1).model === '@cf/mistralai/mistral-small-3.1-24b-instruct' && aiCalls.at(-1).input.messages[0].content === 'привет' && aiCalls.at(-1).input.max_tokens === 1000, 'запасному уходят те же сообщения, длина ответа ограничена сервером');
     r = await withAI(() => sseOf('При', 'вет'), {}, { stream: true });
     const sse = await r.text();
     ok(r.headers.get('Content-Type') === 'text/event-stream' && /"content":"При"/.test(sse) && /"content":"вет"/.test(sse) && /\[DONE\]\s*$/.test(sse), 'потоковый ответ запасного — в формате OpenAI');
@@ -141,8 +141,17 @@ export default async ({ open, prepare, FINANCE, ok }) => {
     ok(r.status === 200, 'сбой 5xx у OpenRouter — отвечает запасной');
     globalThis.fetch = async () => dailyLimit();
     // не получилось у запасного: первая модель отказала — берётся следующая; все отказали — прежняя ошибка про лимит
-    r = await withAI((model) => { if (model.includes('gemma')) throw new Error('model not found'); return { response: 'со второй' }; }, {}, { stream: false });
+    r = await withAI((model) => { if (model.includes('mistral')) throw new Error('model not found'); return { response: 'со второй' }; }, {}, { stream: false });
     ok(r.status === 200 && (await r.json()).choices[0].message.content === 'со второй', 'первая запасная модель отказала — берётся следующая');
+    // модель «не для вашего аккаунта» или снятая с обслуживания пропускается — не тратим на неё время при каждом запросе
+    {
+      const w = (await import('../server/worker.js?ai=skip' + ++inst)).default;
+      const seen = [];
+      const env = { OPENROUTER_KEY: 'k', MODELS: 'gpt-x', MAX_TOKENS: '1000', AI: makeAI((model) => { seen.push(model); if (model.includes('mistral')) throw new Error('5018: This account is not allowed to access ' + model); return { response: 'ответил ' + model }; }) };
+      const ask = (dev) => w.fetch(new Request('https://w.test/v1/chat/completions', { method: 'POST', headers: { Origin: APP, Authorization: 'Bearer ' + dev, 'Content-Type': 'application/json' }, body: JSON.stringify({ ...msg, stream: false }) }), env);
+      await ask('kd-s1'); await ask('kd-s2');
+      ok(seen.filter((m) => m.includes('mistral')).length === 1 && seen.length === 3, 'модель, к которой нет доступа, пробуется один раз, дальше пропускается: ' + seen.join(' → '));
+    }
     r = await withAI(() => { throw new Error('4006: daily free allocation exceeded'); }, {}, { stream: false });
     const e3 = (await r.json()).error;
     ok(r.status === 429 && e3.code === 'daily_limit', 'запасной тоже исчерпан — прежнее «на сегодня закончились»');
