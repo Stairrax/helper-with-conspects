@@ -123,7 +123,7 @@ export async function generate(opts) {
       attempt--;
       continue;
     } else {
-      err = new AIError(humanError(res.status, data), { status: res.status, retryable: canRetry(res.status, data) });
+      err = new AIError(humanError(res.status, data), { status: res.status, retryable: canRetry(res.status, data), code: isDailyLimit(data) ? 'DAILY_LIMIT' : '' });
     }
     if (!err.retryable || attempt > retries) throw err;
     let wait = err.status === 429 ? retryAfter(res) || 15000 * attempt : 2000 * 2 ** (attempt - 1);
@@ -145,7 +145,7 @@ export async function stream(opts) {
     if (!res.ok || !res.body) {
       const data = await res.json().catch(() => ({}));
       const noFallbacks = res.status === 400 && (opts.fallbacks || []).length > 0; // повторим обычным запросом без них
-      throw new AIError(humanError(res.status, data), { status: res.status, retryable: canRetry(res.status, data) || noFallbacks });
+      throw new AIError(humanError(res.status, data), { status: res.status, retryable: canRetry(res.status, data) || noFallbacks, code: isDailyLimit(data) ? 'DAILY_LIMIT' : '' });
     }
     const reader = res.body.getReader();
     const dec = new TextDecoder();

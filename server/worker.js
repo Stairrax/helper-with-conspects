@@ -12,6 +12,10 @@
 //    Счётчики живут в памяти сервера и считают примерно — если ключ платный, главный предохранитель
 //    всё равно лимит расходов на самом ключе (см. server/README.md).
 //
+// Запасной вариант — Cloudflare Workers AI (привязка AI в wrangler.toml, отдельный бесплатный дневной запас, карта не нужна):
+// когда у OpenRouter кончился дневной лимит, отказал ключ или не ответили модели, сервер отвечает через него.
+// Фото он не читает — такие запросы запасному не передаются.
+//
 // Работает в Cloudflare Workers; настройки — переменные окружения (wrangler.toml или панель Cloudflare).
 
 const OPENROUTER = 'https://openrouter.ai/api/v1';
@@ -21,6 +25,7 @@ const counters = new Map(); // «сутки|кто» -> число запрос�
 let countersDay = '';
 let freeCache = { at: 0, list: [] }; // подобранные бесплатные модели (обновляются раз в 6 часов)
 let modelsError = '';                // почему не удалось получить список моделей в последний раз (для /health)
+let aiLast = '';                     // что ответил запасной ИИ в последний раз (для /health)
 let healthCache = { at: 0, data: null };
 
 function opt(env, name, def) {
@@ -129,6 +134,98 @@ async function models(env) {
   return v.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
+// ---------- запасной ИИ: Cloudflare Workers AI ----------
+
+// Небольшие модели — чтобы бесплатного дневного запаса хватало на больше запросов; первая, что ответит, и берётся
+const AI_MODELS = ['@cf/google/gemma-3-12b-it', '@cf/meta/llama-3.1-8b-instruct', '@cf/meta/llama-3.3-70b-instruct-fp8-fast'];
+const aiModels = (env) => {
+  const v = String(opt(env, 'FALLBACK_AI_MODELS', AI_MODELS.join(','))).trim();
+  return v === 'off' ? [] : v.split(',').map((s) => s.trim()).filter(Boolean);
+};
+
+/** Сообщения без картинок (запасные модели их не читают). null — в запросе есть фото. */
+function plainMessages(messages) {
+  const out = [];
+  for (const m of messages) {
+    let c = m.content;
+    if (Array.isArray(c)) {
+      if (c.some((p) => p.type && p.type !== 'text')) return null;
+      c = c.map((p) => p.text || '').join('\n');
+    }
+    out.push({ role: m.role, content: String(c ?? '') });
+  }
+  return out;
+}
+
+const answerText = (r) => {
+  const t = r?.response ?? r?.result?.response ?? r?.choices?.[0]?.message?.content ?? r?.output_text ?? '';
+  return typeof t === 'string' ? t : JSON.stringify(t);
+};
+
+/** Ответ запасной модели в формате OpenAI (обычный или потоковый). */
+function aiResponse(res, model, stream, headers, budget) {
+  const h = { ...headers, 'Cache-Control': 'no-store', 'X-Answered-By': 'workers-ai' };
+  if (stream && res instanceof ReadableStream) {
+    const enc = new TextEncoder(), dec = new TextDecoder();
+    let buf = '';
+    const toOpenAI = new TransformStream({
+      transform(chunk, ctrl) {
+        buf += typeof chunk === 'string' ? chunk : dec.decode(chunk, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, i).trim();
+          buf = buf.slice(i + 1);
+          if (!line.startsWith('data:')) continue;
+          const p = line.slice(5).trim();
+          if (!p || p === '[DONE]') continue;
+          let j;
+          try { j = JSON.parse(p); } catch { continue; }
+          const t = j.response ?? j.choices?.[0]?.delta?.content ?? '';
+          if (t) ctrl.enqueue(enc.encode('data: ' + JSON.stringify({ choices: [{ delta: { content: t } }] }) + '\n\n'));
+        }
+      },
+      flush(ctrl) { ctrl.enqueue(enc.encode('data: [DONE]\n\n')); },
+    });
+    return new Response(res.pipeThrough(toOpenAI), { headers: { ...h, 'Content-Type': 'text/event-stream' } });
+  }
+  const text = answerText(res);
+  if (!text.trim()) return null;
+  if (stream) { // модель ответила сразу целиком — отдаём как поток из одного куска
+    const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: text } }] }) + '\n\ndata: [DONE]\n\n';
+    return new Response(sse, { headers: { ...h, 'Content-Type': 'text/event-stream' } });
+  }
+  // ответ упёрся в лимит длины — приложение разделит задачу пополам, как и с обычной моделью
+  const cut = Number(res?.usage?.completion_tokens) >= budget - 1;
+  return json(200, { id: 'cf-ai', object: 'chat.completion', model, choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: cut ? 'length' : 'stop' }] }, h);
+}
+
+/** Пробует запасные модели Workers AI по очереди. null — запасного нет, в запросе фото или все отказали (причина — в aiLast). */
+async function viaAI(env, body, maxTokens, headers) {
+  if (!env.AI) return null;
+  const models = aiModels(env);
+  const messages = models.length ? plainMessages(body.messages) : null;
+  if (!messages) return null;
+  const stream = body.stream === true;
+  // у моделей свой потолок длины ответа: если отказались из-за него — пробуем покороче
+  const budgets = [...new Set([maxTokens, Math.min(maxTokens, 4096)])];
+  for (const model of models) {
+    for (const budget of budgets) {
+      try {
+        const res = await env.AI.run(model, { messages, max_tokens: budget, stream, ...(typeof body.temperature === 'number' ? { temperature: body.temperature } : {}) });
+        const out = aiResponse(res, model, stream, headers, budget);
+        if (out) { aiLast = 'ok ' + model; return out; }
+        aiLast = 'empty ' + model;
+        break;
+      } catch (e) {
+        const msg = String(e?.message || e);
+        aiLast = (model + ': ' + msg).slice(0, 200);
+        if (!/token|length|context|exceed|large|too long/i.test(msg)) break;
+      }
+    }
+  }
+  return null;
+}
+
 /** Диагностика: есть ли ключ, принимает ли его OpenRouter, какие бесплатные модели видны. Секретов не раскрывает. */
 async function health(req, env) {
   const who = req.headers.get('CF-Connecting-IP') || 'unknown';
@@ -159,7 +256,13 @@ async function health(req, env) {
     }
     healthCache = { at: Date.now(), data: out };
   }
-  return new Response(JSON.stringify({ ...healthCache.data, where }, null, 2), { headers: h });
+  // запасной ИИ; ?test=1 — один крошечный запрос ему (тратит немного бесплатного запаса)
+  const fallback = { binding: !!env.AI, models: env.AI ? aiModels(env) : [] };
+  if (new URL(req.url).searchParams.get('test') === '1' && env.AI) {
+    const r = await viaAI(env, { messages: [{ role: 'user', content: 'Ответь одним словом: работает' }] }, 30, {});
+    fallback.test = r ? { ok: true, answeredBy: aiLast.replace(/^ok /, ''), text: String((await r.json()).choices?.[0]?.message?.content || '').slice(0, 40) } : { ok: false, error: aiLast || 'нет ответа' };
+  }
+  return new Response(JSON.stringify({ ...healthCache.data, fallback, where }, null, 2), { headers: h });
 }
 
 export default {
@@ -195,8 +298,10 @@ export default {
 
     let list;
     try { list = await models(env); } catch { list = []; }
-    if (!list.length) return fail(503, 'unavailable', DOWN_TEXT, c.headers, modelsError || 'models-empty');
     const maxTokens = +opt(env, 'MAX_TOKENS', 16000);
+    // запасной ИИ: если основной не может ответить — отвечаем через него, а не «недоступно»
+    const backup = () => viaAI(env, body, Math.min(+body.max_tokens || maxTokens, maxTokens), c.headers);
+    if (!list.length) return (await backup()) || fail(503, 'unavailable', DOWN_TEXT, c.headers, modelsError || 'models-empty');
     const out = {
       model: list[0],
       messages: body.messages,
@@ -216,16 +321,18 @@ export default {
     try {
       up = await fetch(upstream(env) + '/chat/completions', { method: 'POST', headers, body: JSON.stringify(out) });
     } catch {
-      return fail(502, 'upstream', 'Сервер нейросети не отвечает. Попробуйте ещё раз.', c.headers, 'upstream-unreachable');
+      return (await backup()) || fail(502, 'upstream', 'Сервер нейросети не отвечает. Попробуйте ещё раз.', c.headers, 'upstream-unreachable');
     }
     // кончились деньги или лимит на ключе, ключ отозван — это забота владельца сервера, а не пользователя
-    if ([401, 402, 403].includes(up.status)) return fail(503, 'unavailable', DOWN_TEXT, c.headers, 'upstream-' + up.status);
+    if ([401, 402, 403].includes(up.status)) return (await backup()) || fail(503, 'unavailable', DOWN_TEXT, c.headers, 'upstream-' + up.status);
     // у бесплатных моделей дневной лимит на весь ключ — когда он кончился, повторять бессмысленно
     if (up.status === 429) {
       const text = await up.text();
-      if (/per-day|daily/i.test(text)) return fail(429, 'daily_limit', LIMIT_TEXT, c.headers);
+      if (/per-day|daily/i.test(text)) return (await backup()) || fail(429, 'daily_limit', LIMIT_TEXT, c.headers);
       return new Response(text, { status: 429, headers: { ...c.headers, 'Content-Type': 'application/json', 'Retry-After': up.headers.get('Retry-After') || '20' } });
     }
+    // сбой на стороне нейросети — пробуем запасную
+    if (up.status >= 500) { const alt = await backup(); if (alt) return alt; }
     // ответ (и потоковый тоже) отдаём как есть
     return new Response(up.body, {
       status: up.status,
