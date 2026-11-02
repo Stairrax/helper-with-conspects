@@ -67,6 +67,59 @@ export default async ({ open, prepare, FINANCE, ok }) => {
     r = await req({ OPENROUTER_KEY: 'k', MODELS: 'gpt-x', UPSTREAM: 'https://api.other.test/v1' }, 'kd-other2');
     ok(r.status === 200 && sent.url === 'https://api.other.test/v1/chat/completions' && !sent.body.models && !sent.body.reasoning && !sent.headers['X-Title'],
       'другой провайдер (UPSTREAM): без полей, которые понимает только OpenRouter');
+
+    // ---- диагностика: по коду видно, что сломалось (каждый случай — на «свежем» сервере: у модуля свой кэш и счётчики)
+    let inst = 0;
+    const cold = async () => {
+      const w = (await import('../server/worker.js?cold=' + ++inst)).default;
+      return (env, device) => w.fetch(new Request('https://w.test/v1/chat/completions', {
+        method: 'POST', headers: { Origin: APP, Authorization: 'Bearer ' + device, 'Content-Type': 'application/json' }, body: JSON.stringify(msg),
+      }), env);
+    };
+    globalThis.fetch = async () => new Response('{}', { status: 401 });
+    r = await (await cold())({ OPENROUTER_KEY: 'k', MODELS: 'gpt-x' }, 'kd-401');
+    let e2 = (await r.json()).error;
+    ok(r.status === 503 && e2.code === 'unavailable' && e2.reason === 'upstream-401', 'ключ отозван (401) — «недоступно» с кодом upstream-401');
+    globalThis.fetch = async (url) => (String(url).endsWith('/models') ? new Response('<html>challenge</html>', { status: 403 }) : new Response('{}'));
+    r = await (await cold())({ OPENROUTER_KEY: 'k', MODELS: 'free' }, 'kd-nomodels');
+    e2 = (await r.json()).error;
+    ok(r.status === 503 && /^models-/.test(e2.reason), 'список моделей не получен — «недоступно» с кодом ' + e2.reason);
+    // OpenRouter ответил проверкой вместо списка один раз — второй попыткой список получается
+    let tries = 0;
+    globalThis.fetch = async (url, init) => {
+      if (String(url).endsWith('/models')) {
+        tries++;
+        return tries === 1 ? new Response('<html>challenge</html>', { status: 403 }) : new Response(JSON.stringify(catalog));
+      }
+      sent = { url, headers: init.headers, body: JSON.parse(init.body) };
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }));
+    };
+    const retryReq = await cold();
+    r = await retryReq({ OPENROUTER_KEY: 'k', MODELS: 'free' }, 'kd-retry');
+    ok(r.status === 200 && tries === 2 && sent.body.model.endsWith(':free'), 'список моделей не получился с первого раза — повтор, и всё работает');
+    // а если потом OpenRouter недоступен — работаем со старым списком, а не отвечаем «недоступно»
+    // (кэш живёт 6 часов, поэтому сначала «состарим» его, подменив время)
+    const realNow = Date.now;
+    Date.now = () => realNow() + 7 * 3600e3;
+    globalThis.fetch = async (url, init) => {
+      if (String(url).endsWith('/models')) throw new Error('network');
+      sent = { url, headers: init.headers, body: JSON.parse(init.body) };
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }));
+    };
+    r = await retryReq({ OPENROUTER_KEY: 'k', MODELS: 'free' }, 'kd-stale'); // тот же сервер: список в кэше уже есть
+    Date.now = realNow;
+    ok(r.status === 200 && sent.body.model.endsWith(':free'), 'не удалось обновить список моделей — работаем со старым');
+
+    // /health: открывается без «Origin» (прямо в браузере), ключ не раскрывает
+    globalThis.fetch = async (url) => {
+      if (String(url).endsWith('/key')) return new Response(JSON.stringify({ data: { label: 'sk-or-v1-abc...xyz', is_free_tier: true, usage: 1.5 } }));
+      return new Response(JSON.stringify(catalog));
+    };
+    const hr = await worker.fetch(new Request('https://w.test/health', { headers: { 'CF-Connecting-IP': '9.9.9.9' } }), { OPENROUTER_KEY: 'sk-or-SECRET-KEY', MODELS: 'free' });
+    const htext = await hr.text();
+    const hd = JSON.parse(htext);
+    ok(hr.status === 200 && hd.keyOnServer === true && hd.keyCheck.status === 200 && hd.keyCheck.freeTier === true && hd.models.length > 0, '/health: ключ на месте и принят, бесплатные модели видны');
+    ok(!/SECRET-KEY|sk-or/.test(htext), '/health не раскрывает ключ');
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -82,6 +135,22 @@ export default async ({ open, prepare, FINANCE, ok }) => {
   ok(ai.generate > 0 && /^Bearer kd-[0-9a-f]{24}$/.test(ai.auth), 'конспект готовится через сервер, вместо ключа — номер устройства');
   await page.click('[data-tab=settings]');
   ok((await page.textContent('#aiSummary')).startsWith('Бесплатно, без ключа') && !(await page.isVisible('#apiKey')), 'в настройках: «Бесплатно, без ключа», поля ключа нет');
+
+  // сервер недоступен: пользователь видит понятный текст и код причины — по нему можно найти поломку
+  const down = await open({ settings: { provider: 'free', apiKey: '' }, freeProxy: 'https://free-proxy.test' });
+  await down.page.route(/free-proxy\.test/, (route) => route.fulfill({
+    status: 503, contentType: 'application/json',
+    body: JSON.stringify({ error: { code: 'unavailable', proxy: true, reason: 'upstream-403', message: 'Бесплатный режим сейчас недоступен. Попробуйте позже или укажите свой ключ: Настройки → Настроить заново.' } }),
+  }));
+  await down.page.click('[data-tab=load]');
+  await down.page.click('#addTextBtn');
+  await down.page.fill('#pasteText', FINANCE);
+  await down.page.click('#pasteAdd');
+  await down.page.click('#analyzeBtn');
+  await down.page.waitForFunction(() => /код: upstream-403/.test(document.body.innerText), null, { timeout: 15000 });
+  ok(/Бесплатный режим сейчас недоступен[\s\S]*\(код: upstream-403\)/.test(await down.page.evaluate(() => document.body.innerText)), 'сервер недоступен: текст ошибки и код причины на экране');
+  const enText = await down.page.evaluate(async () => { const m = await import('./js/i18n.js'); m.setUiLang('en'); return m.T('Бесплатный режим сейчас недоступен. Попробуйте позже или укажите свой ключ: Настройки → Настроить заново. (код: upstream-403)'); });
+  ok(/Free mode is unavailable right now[\s\S]*\(code: upstream-403\)/.test(enText), 'по-английски — тоже с кодом: ' + enText);
 
   // без адреса сервера всё как раньше — нужен ключ
   const old = await open({ settings: null });

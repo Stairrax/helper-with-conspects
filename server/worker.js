@@ -20,6 +20,8 @@ const MAX_BODY = 12 * 1024 * 1024; // фото страниц приходят �
 const counters = new Map(); // «сутки|кто» -> число запросов
 let countersDay = '';
 let freeCache = { at: 0, list: [] }; // подобранные бесплатные модели (обновляются раз в 6 часов)
+let modelsError = '';                // почему не удалось получить список моделей в последний раз (для /health)
+let healthCache = { at: 0, data: null };
 
 function opt(env, name, def) {
   const v = env[name];
@@ -49,8 +51,10 @@ function json(status, data, headers) {
   return new Response(JSON.stringify(data), { status, headers: { ...headers, 'Content-Type': 'application/json; charset=utf-8' } });
 }
 
-// ошибки сервера — в формате OpenAI, с пометкой: приложение покажет текст как есть
-const fail = (status, code, message, headers) => json(status, { error: { code, message, proxy: true } }, headers);
+// ошибки сервера — в формате OpenAI, с пометкой: приложение покажет текст как есть.
+// reason — короткий код причины («upstream-401», «models-empty»): приложение дописывает его к сообщению,
+// чтобы по скриншоту было видно, что именно сломалось.
+const fail = (status, code, message, headers, reason) => json(status, { error: { code, message, proxy: true, ...(reason ? { reason } : {}) } }, headers);
 
 const LIMIT_TEXT = 'На сегодня бесплатные запросы закончились. Продолжите завтра или укажите свой ключ: Настройки → Настроить заново.';
 const DOWN_TEXT = 'Бесплатный режим сейчас недоступен. Попробуйте позже или укажите свой ключ: Настройки → Настроить заново.';
@@ -86,23 +90,76 @@ function score(m) {
   return s;
 }
 
+// OpenRouter стоит за защитой от ботов: запросу без User-Agent она может ответить страницей-проверкой, а не списком
+const FETCH_HEADERS = { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 (compatible; StudyHelperServer/1.0; +https://stairrax.github.io/helper-with-conspects/)' };
+
+async function loadFreeList() {
+  let lastErr = '';
+  for (let i = 0; i < 2; i++) {
+    try {
+      const res = await fetch(OPENROUTER + '/models', { headers: FETCH_HEADERS });
+      if (!res.ok) { lastErr = 'models-http-' + res.status; continue; }
+      const data = await res.json();
+      const list = (data.data || [])
+        .filter((m) => m.id.endsWith(':free') && (m.architecture?.output_modalities || ['text']).includes('text'))
+        .sort((a, b) => score(b) - score(a))
+        .slice(0, 3)
+        .map((m) => m.id);
+      if (list.length) return { list, error: '' };
+      lastErr = 'models-empty';
+    } catch {
+      lastErr = 'models-unreachable';
+    }
+  }
+  return { list: [], error: lastErr };
+}
+
 async function freeModels() {
   if (freeCache.list.length && Date.now() - freeCache.at < 6 * 3600e3) return freeCache.list;
-  const res = await fetch(OPENROUTER + '/models');
-  const data = await res.json();
-  const list = (data.data || [])
-    .filter((m) => m.id.endsWith(':free') && (m.architecture?.output_modalities || ['text']).includes('text'))
-    .sort((a, b) => score(b) - score(a))
-    .slice(0, 3)
-    .map((m) => m.id);
-  if (list.length) freeCache = { at: Date.now(), list };
-  return list;
+  const { list, error } = await loadFreeList();
+  modelsError = error;
+  if (list.length) { freeCache = { at: Date.now(), list }; return list; }
+  // не получилось обновить — лучше работать со старым списком, чем отвечать «недоступно»
+  return freeCache.list;
 }
 
 async function models(env) {
   const v = String(opt(env, 'MODELS', 'free')).trim();
   if (v === 'free') return freeModels();
   return v.split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+/** Диагностика: есть ли ключ, принимает ли его OpenRouter, какие бесплатные модели видны. Секретов не раскрывает. */
+async function health(req, env) {
+  const who = req.headers.get('CF-Connecting-IP') || 'unknown';
+  const h = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' };
+  if (!count('health|' + who, 30)) return new Response(JSON.stringify({ error: 'слишком часто, подождите минуту' }), { status: 429, headers: h });
+  const where = { colo: req.cf?.colo || null, country: req.cf?.country || null }; // через какой город и страну идут запросы
+  if (!healthCache.data || Date.now() - healthCache.at > 60e3) {
+    const out = { keyOnServer: !!env.OPENROUTER_KEY, upstream: upstream(env), mode: String(opt(env, 'MODELS', 'free')) };
+    try {
+      out.models = await models(env);
+      if (!out.models.length) out.modelsProblem = modelsError || 'models-empty';
+    } catch (e) {
+      out.models = [];
+      out.modelsProblem = modelsError || 'models-error';
+    }
+    if (env.OPENROUTER_KEY && isOpenRouter(env)) {
+      try {
+        const r = await fetch(OPENROUTER + '/key', { headers: { ...FETCH_HEADERS, Authorization: 'Bearer ' + env.OPENROUTER_KEY } });
+        out.keyCheck = { status: r.status };
+        if (r.ok) {
+          const d = (await r.json().catch(() => ({}))).data || {};
+          out.keyCheck.freeTier = d.is_free_tier !== false; // true — ключ без пополнения: у бесплатных моделей общий лимит на день
+          if (typeof d.limit_remaining === 'number') out.keyCheck.limitRemaining = d.limit_remaining;
+        }
+      } catch {
+        out.keyCheck = { status: 'unreachable' };
+      }
+    }
+    healthCache = { at: Date.now(), data: out };
+  }
+  return new Response(JSON.stringify({ ...healthCache.data, where }, null, 2), { headers: h });
 }
 
 export default {
@@ -113,6 +170,8 @@ export default {
 
     if (req.method === 'OPTIONS') return new Response(null, { status: c.ok ? 204 : 403, headers: c.headers });
     if (path === '/' || path === '') return new Response('ok', { headers: c.headers });
+    // /health — для владельца: что сервер видит из того места, куда обратились (можно открыть в браузере на телефоне)
+    if (req.method === 'GET' && path === '/health') return health(req, env);
     if (!c.ok) return fail(403, 'origin', 'Этот сервер работает только для приложения «Помощник по учёбе».', c.headers);
 
     if (req.method === 'GET' && path === '/models') {
@@ -136,7 +195,7 @@ export default {
 
     let list;
     try { list = await models(env); } catch { list = []; }
-    if (!list.length) return fail(503, 'unavailable', DOWN_TEXT, c.headers);
+    if (!list.length) return fail(503, 'unavailable', DOWN_TEXT, c.headers, modelsError || 'models-empty');
     const maxTokens = +opt(env, 'MAX_TOKENS', 16000);
     const out = {
       model: list[0],
@@ -157,10 +216,10 @@ export default {
     try {
       up = await fetch(upstream(env) + '/chat/completions', { method: 'POST', headers, body: JSON.stringify(out) });
     } catch {
-      return fail(502, 'upstream', 'Сервер нейросети не отвечает. Попробуйте ещё раз.', c.headers);
+      return fail(502, 'upstream', 'Сервер нейросети не отвечает. Попробуйте ещё раз.', c.headers, 'upstream-unreachable');
     }
     // кончились деньги или лимит на ключе, ключ отозван — это забота владельца сервера, а не пользователя
-    if ([401, 402, 403].includes(up.status)) return fail(503, 'unavailable', DOWN_TEXT, c.headers);
+    if ([401, 402, 403].includes(up.status)) return fail(503, 'unavailable', DOWN_TEXT, c.headers, 'upstream-' + up.status);
     // у бесплатных моделей дневной лимит на весь ключ — когда он кончился, повторять бессмысленно
     if (up.status === 429) {
       const text = await up.text();
