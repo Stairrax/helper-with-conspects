@@ -53,7 +53,8 @@ const isDailyLimit = (body) => body?.error?.code === 'daily_limit' || /per-day|f
 
 function humanError(status, body) {
   const msg = errMessage(body);
-  if (body?.error?.proxy) return body.error.message; // сервер бесплатного режима сам пишет понятный текст
+  // сервер бесплатного режима сам пишет понятный текст; код причины (например, upstream-403) — чтобы было видно, что сломалось
+  if (body?.error?.proxy) return body.error.message + (body.error.reason ? ` (код: ${body.error.reason})` : '');
   if (status === 401) return 'Неверный API-ключ (401). Проверьте ключ в настройках.';
   if (status === 402) return 'Недостаточно средств на счёте провайдера (402). Выберите бесплатную модель (с «:free» на конце) или пополните баланс.';
   if (status === 403) return 'Доступ запрещён (403): ' + msg;
