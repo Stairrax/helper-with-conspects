@@ -123,10 +123,11 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 36px; marg
 .switch span { display: flex; flex-direction: column; }
 .switch small { color: var(--muted); font-size: 13px; }
 .switch input { position: absolute; opacity: 0; pointer-events: none; }
-.switch i { position: relative; width: 52px; height: 32px; border-radius: 16px; background: var(--surface3); border: 2px solid #5a606d; flex: none; transition: .2s; }
-.switch i::after { content: ""; position: absolute; top: 6px; left: 6px; width: 16px; height: 16px; border-radius: 50%; background: #8e95a3; transition: .2s; }
+/* бегунок одного размера в обоих положениях, с одинаковыми отступами со всех сторон */
+.switch i { position: relative; width: 52px; height: 32px; border-radius: 16px; background: var(--surface3); border: 1.5px solid #5a606d; flex: none; transition: .2s; }
+.switch i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 23px; height: 23px; border-radius: 50%; background: #8e95a3; transition: .2s; }
 .switch input:checked + i { background: var(--accent); border-color: var(--accent); }
-.switch input:checked + i::after { left: 22px; top: 2px; width: 24px; height: 24px; background: var(--on-accent); }
+.switch input:checked + i::after { transform: translateX(20px); background: var(--on-accent); }
 
 details.mini { margin-top: 12px; }
 details.mini summary { color: var(--accent); font-size: 14px; font-weight: 500; min-height: 36px; display: flex; align-items: center; cursor: pointer; list-style: none; }
@@ -327,6 +328,7 @@ body.has-stop .toast { bottom: calc(var(--nav-h) + var(--stop-h) + var(--safe-b)
 .ob-num { color: var(--accent); font-size: 14px; font-weight: 500; }
 .ob-list { padding-left: 20px; color: var(--muted); margin: 0 0 24px; }
 .ob-list li { margin-bottom: 10px; }
+.ob-list li.ob-vpn { color: var(--warn); }
 .ob-steps { padding-left: 22px; margin: 0 0 8px; }
 .ob-steps li { margin-bottom: 18px; }
 .ob-steps li b { color: var(--accent); font-weight: 500; }

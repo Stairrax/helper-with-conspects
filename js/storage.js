@@ -27,7 +27,6 @@ export const DEFAULT_SETTINGS = {
   showText: true,
   voiceEngine: 'system',  // 'system' — голос Android, 'neural' — нейросетевой голос на телефоне
   neuralVoice: 'silero-baya',
-  intonation: true,       // живая интонация голосов Silero: логические ударения, «нá руки»
   abbreviate: false,      // диктовать сокращениями: «физ. лиц», «НДФЛ»
   formulasApart: true,    // 3+ формулы в теме — в отдельный блок, голос объясняет словами
   fxPause: false,         // пауза в диктовке, пока открыт блок формул

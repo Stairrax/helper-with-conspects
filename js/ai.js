@@ -22,7 +22,7 @@ export const PROVIDERS = {
     },
   } : {}),
   openrouter: {
-    name: 'OpenRouter (работает из России, есть бесплатные модели)',
+    name: 'OpenRouter (из России — только с VPN, есть бесплатные модели)',
     kind: 'openai',
     base: 'https://openrouter.ai/api/v1',
     model: 'google/gemini-2.5-flash',

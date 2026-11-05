@@ -171,7 +171,7 @@ export function initOnboarding(hooks) {
     stopSpeaking();
     speak(hooks.getSettings().contentLang === 'en'
       ? 'Hi! This is the voice that will dictate your notes. If something is unclear, say “stop” and ask a question.'
-      : 'Привет! Меня зовут Бая. Я буду диктовать ваш конспект — если что-то непонятно, скажите «стоп» и задайте вопрос.', { rate: hooks.getSettings().rate });
+      : 'Привет! Этим голосом я буду диктовать ваш конспект — если что-то непонятно, скажите «стоп» и задайте вопрос.', { rate: hooks.getSettings().rate });
   });
 
   $('obMic').addEventListener('click', async () => {

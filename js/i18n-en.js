@@ -74,7 +74,6 @@ export const EXACT = {
   'Только слушаю: текст пойдёт подряд, без пауз на запись.': 'Listen only: text goes straight through, no pauses for writing.',
   'Записываю: снова паузы на запись.': 'Writing: pauses for writing are back.',
   'Диктую сокращениями.': 'Dictating with abbreviations.', 'Диктую без сокращений.': 'Dictating without abbreviations.',
-  'Живая интонация включена.': 'Lively intonation is on.', 'Живая интонация выключена.': 'Lively intonation is off.',
   'Самопроверка после темы включена.': 'Self-check after topics is on.', 'Самопроверка выключена.': 'Self-check is off.',
   'Сначала добавьте материал и составьте план.': 'First add material and make a plan.',
   'Только слушаю: текст пойдёт подряд — без пауз на запись, самопроверки и вопросов после тем. Остановить — «СТОП».': 'Listen only: text goes straight through — no pauses for writing, self-checks or questions after topics. To stop — “STOP”.',
@@ -112,9 +111,9 @@ export const EXACT = {
   'Ключ API': 'API key', 'ключ API': 'API key', 'Модель': 'Model', 'название модели': 'model name', 'Проверить ключ': 'Check key', 'Свой адрес API': 'Custom API address',
   'Адрес (например, прокси)': 'Address (e.g. a proxy)', 'Показать ключ': 'Show key', 'Введите ключ': 'Enter a key', 'Проверяю…': 'Checking…',
   'Ключ не указан — нажмите «Настроить заново».': 'No key — press “Set up again”.',
-  'OpenRouter (работает из России, есть бесплатные модели)': 'OpenRouter (free models available)', 'DeepSeek (без распознавания фото)': 'DeepSeek (no photo recognition)',
+  'OpenRouter (из России — только с VPN, есть бесплатные модели)': 'OpenRouter (free models available)', 'DeepSeek (без распознавания фото)': 'DeepSeek (no photo recognition)',
   'Свой OpenAI-совместимый адрес': 'Custom OpenAI-compatible address',
-  'Один ключ — доступ к моделям Google, Anthropic, DeepSeek и других; работает из России. Бесплатные модели оканчиваются на «:free» (нажмите «Проверить ключ» — они будут в начале списка), но у них низкие дневные лимиты.':
+  'Один ключ — доступ к моделям Google, Anthropic, DeepSeek и других; из России OpenRouter пускает только через VPN. Бесплатные модели оканчиваются на «:free» (нажмите «Проверить ключ» — они будут в начале списка), но у них низкие дневные лимиты.':
     'One key gives access to models from Google, Anthropic, DeepSeek and others. Free models end with “:free” (press “Check key” — they’ll be at the top of the list), but they have low daily limits.',
   'Claude напрямую. Нужен отдельный ключ API с оплатой в console.anthropic.com — подписка claude.ai (Pro/Max) не даёт доступа к API. Из России API не работает (блокировка по стране); Claude доступен и через OpenRouter.':
     'Claude directly. You need a separate paid API key from console.anthropic.com — a claude.ai subscription (Pro/Max) doesn’t include API access. Claude is also available through OpenRouter.',
@@ -190,6 +189,7 @@ export const EXACT = {
   'Через сервер автора. Есть дневной лимит; если его не хватает, укажите свой ключ OpenRouter — «Настроить заново».': 'Through the author’s server. There is a daily limit; if it’s not enough, add your own OpenRouter key — “Set up again”.',
   'Ничего настраивать не нужно: запросы идут через сервер автора приложения. Есть дневной лимит на устройство.': 'Nothing to set up: requests go through the app author’s server. There is a daily limit per device.',
   'Ничего настраивать не нужно: нейросеть уже подключена.': 'Nothing to set up: the AI is already connected.',
+  'В России работает только с VPN: без него нейросеть недоступна. Готовые конспекты диктуются и без интернета.': 'In Russia a VPN is required: without one the AI is unreachable. Notes that are already prepared are dictated offline too.',
   'У меня свой ключ OpenRouter': 'I have my own OpenRouter key', 'Последний шаг': 'Last step',
   'На сегодня бесплатные запросы закончились. Продолжите завтра или укажите свой ключ: Настройки → Настроить заново.': 'Free requests are used up for today. Continue tomorrow or add your own key: Settings → Set up again.',
   'Бесплатный режим сейчас недоступен. Попробуйте позже или укажите свой ключ: Настройки → Настроить заново.': 'Free mode is unavailable right now. Try later or add your own key: Settings → Set up again.',
@@ -217,7 +217,9 @@ export const EXACT = {
   'Настройки телефона → поиск «Синтез речи» (или «Преобразование текста в речь»).': 'Phone settings → search for “Text-to-speech”.',
   'Предпочтительная система': 'Preferred engine', '— «Синтезатор речи Google» / «Речевые сервисы Google».': '— “Speech Services by Google”.',
   'Шестерёнка рядом →': 'The gear next to it →', 'Установить голосовые данные': 'Install voice data', '→ выберите голос (их несколько) и скачайте.': '→ choose a voice (there are several) and download it.',
-  'Нейросетевой голос': 'AI voice', 'Живая интонация': 'Lively intonation',
+  'Нейросетевой голос': 'AI voice',
+  'Живая интонация включена всегда: голос выделяет главное, как лектор — термин перед «— это», слова в «кавычках», «не …, а …», «важно»; разговорные ударения «нá руки», «зá город», «нé был».':
+    'Lively intonation is always on: the voice brings out what matters, like a lecturer — the term before “is”, words in “quotes”, “not …, but …”, “important”.',
   'голос выделяет главное, как лектор: термин перед «— это», слова в «кавычках», «не …, а …», «важно»; разговорные ударения — «нá руки», «зá город», «нé был». Выключите и включите, нажимая 🔊, чтобы сравнить':
     'the voice stresses what matters, like a lecturer: the term before “is”, words in quotes, “not …, but …”, “important”. Switch it off and on and press 🔊 to compare (Russian voices)',
   'Работает прямо на телефоне, без интернета и лимитов. Живые голоса (Бая, Ксения, Ксюша, Айдар, Евгений) один раз скачиваются вместе — около 120 МБ, остальные — около 65 МБ каждый; лучше по Wi-Fi. Если голос не загрузится, приложение будет говорить голосом':
@@ -313,8 +315,8 @@ export const EXACT = {
   'Звук и микрофон': 'Sound and microphone',
   'Проверьте, что слышно голос, и разрешите микрофон — он нужен для команд «стоп», «дальше» и вопросов голосом.': 'Check that you can hear the voice and allow the microphone — it’s needed for the “stop” and “next” commands and spoken questions.',
   'звучит механически.': 'sounds mechanical.',
-  'Живой голос «Бая» работает прямо на телефоне, без интернета: его один раз скачивают — около 120 МБ, лучше по Wi-Fi.': 'The AI voice runs right on the phone, offline: it’s downloaded once — 65–120 MB, Wi-Fi is better.',
-  'Прослушать голос': 'Listen to the voice', 'Включить живой голос «Бая»': 'Turn on the AI voice', 'Разрешить микрофон': 'Allow microphone',
+  'Живой голос работает прямо на телефоне, без интернета: его один раз скачивают — около 120 МБ, лучше по Wi-Fi.': 'The AI voice runs right on the phone, offline: it’s downloaded once — 65–120 MB, Wi-Fi is better.',
+  'Прослушать голос': 'Listen to the voice', 'Включить живой голос': 'Turn on the AI voice', 'Разрешить микрофон': 'Allow microphone',
   'Совет: в наушниках голосовые команды срабатывают надёжнее.': 'Tip: voice commands work more reliably with headphones.',
   'Нет связи с OpenRouter. Проверьте интернет.': 'Can’t reach OpenRouter. Check your internet.',
   'Ключ не подошёл. Скопируйте его ещё раз целиком — он начинается с «sk-or-».': 'The key didn’t work. Copy it again in full — it starts with “sk-or-”.',
