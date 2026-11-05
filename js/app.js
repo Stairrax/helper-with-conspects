@@ -11,7 +11,7 @@ import {
 } from './analyze.js';
 import { listModels, conn, PROVIDERS, providerName, hasAI } from './ai.js';
 import {
-  loadVoices, getVoices, speak, stopSpeaking, speechProgress, setEngine, setStyle, setIntonation, setSpeechLang, srSupported, ttsSupported, hasBtHeadset, onBtChange,
+  loadVoices, getVoices, speak, stopSpeaking, speechProgress, setEngine, setStyle, setSpeechLang, srSupported, ttsSupported, hasBtHeadset, onBtChange,
 } from './speech.js';
 import { prepare as prepareNeural, missingMB, NEURAL_VOICES, VOICE_STYLES, audioContext, isSilero, voiceLang } from './neural.js';
 import { enableMedia, disableMedia, updateMedia, mediaSupported } from './media.js';
@@ -1407,7 +1407,6 @@ function appCommand(c, topicId) {
       return L(`Пауза между кусками — ${String(p).replace('.', ',')} ${plural(Math.round(p), ['секунда', 'секунды', 'секунд'])}.`, `Pause between parts: ${p} ${p === 1 ? 'second' : 'seconds'}.`);
     }
     case 'abbreviate': set('abbreviate', !!c.arg); return c.arg ? 'Диктую сокращениями.' : 'Диктую без сокращений.';
-    case 'intonation': set('intonation', !!c.arg); setIntonation(!!c.arg); return c.arg ? 'Живая интонация включена.' : 'Живая интонация выключена.';
     case 'selfCheck': set('selfCheck', !!c.arg); return c.arg ? L('Самопроверка после темы включена.', 'Self-check after each topic is on.') : L('Самопроверка выключена.', 'Self-check is off.');
     case 'showText': set('showText', !!c.arg); return '';
     case 'theme': {
@@ -1595,7 +1594,7 @@ function renderVoices() {
 let modelsLoaded = false;
 const PROVIDER_HINTS = {
   free: 'Ничего настраивать не нужно: запросы идут через сервер автора приложения. Есть дневной лимит на устройство.',
-  openrouter: 'Один ключ — доступ к моделям Google, Anthropic, DeepSeek и других; работает из России. Бесплатные модели оканчиваются на «:free» (нажмите «Проверить ключ» — они будут в начале списка), но у них низкие дневные лимиты.',
+  openrouter: 'Один ключ — доступ к моделям Google, Anthropic, DeepSeek и других; из России OpenRouter пускает только через VPN. Бесплатные модели оканчиваются на «:free» (нажмите «Проверить ключ» — они будут в начале списка), но у них низкие дневные лимиты.',
   anthropic: 'Claude напрямую. Нужен отдельный ключ API с оплатой в console.anthropic.com — подписка claude.ai (Pro/Max) не даёт доступа к API. Из России API не работает (блокировка по стране); Claude доступен и через OpenRouter.',
   gemini: 'Бесплатный ключ в Google AI Studio. Из России Google блокирует запросы — нужен VPN или свой прокси (поле «Адрес API»).',
   deepseek: 'Недорогая модель, работает из России. Фото страниц не распознаёт — для фото выберите другого провайдера.',
@@ -1644,8 +1643,6 @@ function renderSettings() {
   $('systemVoiceBox').classList.toggle('hidden', settings.voiceEngine !== 'system');
   $('neuralBox').classList.toggle('hidden', settings.voiceEngine !== 'neural');
   $('neuralVoice').value = settings.neuralVoice;
-  $('intonation').checked = settings.intonation !== false;
-  $('intonationRow').classList.toggle('hidden', !isSilero(settings.neuralVoice));
   $('voiceStyle').value = settings.voiceStyle;
   $('address').value = settings.address;
   $('styleHint').textContent = settings.voiceStyle !== 'jarvis' ? ''
@@ -1819,7 +1816,6 @@ let neuralFailNotified = false;
 
 function applyEngine() {
   setStyle(settings.voiceStyle);
-  setIntonation(settings.intonation !== false);
   setEngine(settings.voiceEngine, settings.neuralVoice, (err) => {
     // нейроголос не сработал посреди занятия — дальше говорим голосом Android
     setEngine('system');
@@ -1866,11 +1862,6 @@ document.querySelectorAll('input[name=voiceEngine]').forEach((r) => r.addEventLi
   renderSettings();
   if (settings.voiceEngine === 'neural') downloadNeural(); else applyEngine();
 }));
-$('intonation').addEventListener('change', (e) => {
-  settings.intonation = e.target.checked;
-  saveSettings(settings);
-  setIntonation(settings.intonation);
-});
 // Язык интерфейса: перевод накладывается при запуске, поэтому после смены — перезагрузка
 document.querySelectorAll('input[name=uiLang]').forEach((r) => r.addEventListener('change', () => {
   settings.uiLang = r.value === 'en' ? 'en' : 'ru';
@@ -2188,7 +2179,7 @@ $('audioMake').addEventListener('click', async () => {
       else if (p.stage === 'session') status('Подготавливаю голос…');
     });
     const { blob, seconds } = await renderMp3(pieces, {
-      voice, rate: settings.rate || 1, expressive: settings.intonation !== false, signal: audio.ctrl.signal,
+      voice, rate: settings.rate || 1, expressive: true, signal: audio.ctrl.signal,
       onProgress: (d, n) => { $('audioBar').style.width = `${Math.round((d / n) * 100)}%`; status(`Озвучиваю: ${d} из ${n}`); },
     });
     if (audio.url) URL.revokeObjectURL(audio.url);

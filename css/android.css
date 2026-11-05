@@ -118,7 +118,7 @@
 [data-theme="android"] .switch i::after { background: var(--outline); transition: .2s cubic-bezier(.2, 0, 0, 1); }
 [data-theme="android"] .switch input:checked + i { background: var(--accent); border-color: var(--accent); }
 [data-theme="android"] .switch input:checked + i::after { background: var(--on-accent); }
-[data-theme="android"] .switch:active i::after { transform: scale(1.15); }
+[data-theme="android"] .switch:active i::after { scale: 1.15; } /* отдельным свойством, чтобы не сбивать сдвиг бегунка */
 
 /* ---------- план ---------- */
 [data-theme="android"] .plan li { border-radius: 24px; margin-bottom: 10px; }

@@ -3,6 +3,7 @@ export default async ({ open, ok }) => {
   const fresh = await open({ settings: null });
   ok(await fresh.page.isVisible('#onboard'), 'новому пользователю показывается мастер');
   ok(await fresh.page.isVisible('#obImport'), 'в мастере есть «Мне прислали готовый конспект»');
+  ok(/В России работает только с VPN/.test(await fresh.page.textContent('.ob-vpn')), 'на первом экране сказано, что из России нужен VPN');
 
   const { page, ctx } = await open();
   ok(await page.isVisible('#tab-load'), 'открывается вкладка «Материал»');
