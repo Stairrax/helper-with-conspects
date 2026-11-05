@@ -109,7 +109,7 @@ export const EXACT = {
   // настройки: нейросеть
   'Нейросеть': 'AI', 'Настроить заново (мастер)': 'Set up again (wizard)', 'Настроить вручную': 'Set up manually', 'Провайдер': 'Provider',
   'Ключ API': 'API key', 'ключ API': 'API key', 'Модель': 'Model', 'название модели': 'model name', 'Проверить ключ': 'Check key', 'Свой адрес API': 'Custom API address',
-  'Адрес (например, прокси)': 'Address (e.g. a proxy)', 'Показать ключ': 'Show key', 'Введите ключ': 'Enter a key', 'Проверяю…': 'Checking…',
+  'Адрес (например, прокси)': 'Address (e.g. a proxy)', 'Показать ключ': 'Show key', 'Введите ключ': 'Enter a key',
   'Ключ не указан — нажмите «Настроить заново».': 'No key — press “Set up again”.',
   'OpenRouter (из России — только с VPN, есть бесплатные модели)': 'OpenRouter (free models available)', 'DeepSeek (без распознавания фото)': 'DeepSeek (no photo recognition)',
   'Свой OpenAI-совместимый адрес': 'Custom OpenAI-compatible address',
@@ -164,7 +164,7 @@ export const EXACT = {
   'Повторять сегодня нечего.': 'Nothing to review today.',
 
   // статистика
-  'Статистика': 'Statistics', 'сегодня': 'today', 'всего': 'total',
+  'Статистика': 'Statistics', 'всего': 'total',
   'день подряд': 'day in a row', 'дня подряд': 'days in a row', 'дней подряд': 'days in a row',
 
   // шпаргалка
