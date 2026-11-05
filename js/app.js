@@ -24,7 +24,7 @@ import { setUiLang, T, uiLang } from './i18n.js';
 import { addStudy, addExam, flushStats, statsSummary } from './stats.js';
 import { buildCheatsheet, cheatsheetFile, CHEATSHEET_CSS } from './cheatsheet.js';
 import { audioPieces, renderMp3 } from './audiobook.js';
-import { FREE_PROXY } from './config.js';
+import { FREE_PROXY_LIST, useFreeProxy } from './config.js';
 import { parseTickets, mergeTickets, prepareNextBatch, ticketSummary } from './tickets.js';
 
 const $ = (id) => document.getElementById(id);
@@ -1538,18 +1538,29 @@ async function netCheck() {
   btn.disabled = true;
   out.classList.remove('hidden');
   out.textContent = T('Проверяю…');
-  const free = isFreeMode() && FREE_PROXY;
+  const free = isFreeMode() && FREE_PROXY_LIST.length > 0;
   const provider = conn(settings).baseUrl;
-  const [srv, ai] = await Promise.all([
-    free ? probe(FREE_PROXY + '/health') : Promise.resolve(null),
+  const list = free ? FREE_PROXY_LIST : [];
+  const [tries, ai] = await Promise.all([
+    Promise.all(list.map((u) => probe(u + '/health'))),
     probe(free ? 'https://openrouter.ai/' : provider, { cors: false }),
   ]);
+  // адресов сервера может быть несколько: берём первый ответивший и запоминаем его
+  const best = tries.findIndex((r) => r.ok);
+  if (best >= 0) useFreeProxy(list[best]);
+  const srv = tries[best >= 0 ? best : 0] || null;
   const t = (s) => esc(T(s));
   const row = (ok, text, ms) => `<div>${ok ? '✓' : '✗'} ${text} <span class="muted">(${ms >= 1000 ? (ms / 1000).toFixed(1) + ' ' + t('с') : ms + ' ' + t('мс')})</span></div>`;
+  const host = (u) => esc(u.replace(/^https?:\/\//, ''));
   const rows = [];
   let verdict;
   if (free) {
-    rows.push(row(srv.ok, t(srv.ok ? 'Сервер бесплатного режима отвечает' : 'Сервер бесплатного режима не отвечает'), srv.ms));
+    if (list.length > 1) {
+      // когда адресов несколько, видно, какой именно закрыт в этой сети
+      tries.forEach((r, i) => rows.push(row(r.ok, (r.ok ? t('Сервер бесплатного режима отвечает') : t('Сервер бесплатного режима не отвечает')) + ' — ' + host(list[i]), r.ms)));
+    } else {
+      rows.push(row(srv.ok, t(srv.ok ? 'Сервер бесплатного режима отвечает' : 'Сервер бесплатного режима не отвечает'), srv.ms));
+    }
     const d = srv.data;
     if (d) {
       const keyOk = d.keyCheck?.status === 200;

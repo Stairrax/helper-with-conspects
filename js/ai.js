@@ -3,17 +3,17 @@
 import * as gemini from './gemini.js';
 import * as openai from './openai.js';
 import * as anthropic from './anthropic.js';
-import { FREE_PROXY, deviceId } from './config.js';
+import { FREE_PROXY, FREE_PROXY_LIST, deviceId } from './config.js';
 
 export { GeminiError as AIError } from './gemini.js';
 
 export const PROVIDERS = {
   // без своего ключа — через сервер автора (есть, только если задан его адрес в config.js)
-  ...(FREE_PROXY ? {
+  ...(FREE_PROXY_LIST.length ? {
     free: {
       name: 'Бесплатно, без ключа',
       kind: 'openai',
-      base: FREE_PROXY,
+      get base() { return FREE_PROXY; }, // адрес может смениться на запасной, поэтому читаем каждый раз
       model: 'auto',
       models: [],
       keyUrl: '',
