@@ -522,3 +522,9 @@ body.ios .android-only, body:not(.ios) .ios-only { display: none !important; }
 }
 :is([data-theme="aurora"], [data-theme="ink"]) body.has-stop[data-tab="dictate"] #repeatBtn { left: calc(50% + var(--rail, 0px) / 2 - 136px); }
 :is([data-theme="aurora"], [data-theme="ink"]) body.has-stop[data-tab="dictate"] #nextBtn { left: calc(50% + var(--rail, 0px) / 2 + 80px); }
+
+/* проверка связи */
+.net-check { margin-top: 8px; font-size: 14px; }
+.net-check p { margin: 8px 0 0; }
+.net-check p.ok { color: var(--ok); }
+.net-check p.err { color: var(--danger); }

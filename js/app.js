@@ -24,6 +24,7 @@ import { setUiLang, T, uiLang } from './i18n.js';
 import { addStudy, addExam, flushStats, statsSummary } from './stats.js';
 import { buildCheatsheet, cheatsheetFile, CHEATSHEET_CSS } from './cheatsheet.js';
 import { audioPieces, renderMp3 } from './audiobook.js';
+import { FREE_PROXY } from './config.js';
 import { parseTickets, mergeTickets, prepareNextBatch, ticketSummary } from './tickets.js';
 
 const $ = (id) => document.getElementById(id);
@@ -1510,6 +1511,65 @@ $('questionInput').addEventListener('focus', () => {
   if (['speaking', 'gap', 'waiting', 'topicEnd', 'reviewing'].includes(dict.state)) dict.interrupt('question');
   dict.cancelAutoResume();
 });
+
+// ---------- Проверка связи ----------
+// Что открывается из этой сети: сервер бесплатного режима и нейросеть. Помогает понять, нужен ли VPN
+// (в России Cloudflare, на котором стоит сервер, часто закрыт без него).
+
+/** Запрос с ограничением по времени. cors:false — достаточно, что соединение установилось (ответ не читаем). */
+async function probe(url, { cors = true, ms = 8000 } = {}) {
+  const t0 = performance.now();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal, cache: 'no-store', ...(cors ? {} : { mode: 'no-cors' }) });
+    const data = cors && r.ok ? await r.json().catch(() => null) : null;
+    return { ok: cors ? r.ok : true, ms: Math.round(performance.now() - t0), data };
+  } catch {
+    return { ok: false, ms: Math.round(performance.now() - t0), data: null };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function netCheck() {
+  const out = $('netCheckOut');
+  const btn = $('netCheckBtn');
+  btn.disabled = true;
+  out.classList.remove('hidden');
+  out.textContent = T('Проверяю…');
+  const free = isFreeMode() && FREE_PROXY;
+  const provider = conn(settings).baseUrl;
+  const [srv, ai] = await Promise.all([
+    free ? probe(FREE_PROXY + '/health') : Promise.resolve(null),
+    probe(free ? 'https://openrouter.ai/' : provider, { cors: false }),
+  ]);
+  const t = (s) => esc(T(s));
+  const row = (ok, text, ms) => `<div>${ok ? '✓' : '✗'} ${text} <span class="muted">(${ms >= 1000 ? (ms / 1000).toFixed(1) + ' ' + t('с') : ms + ' ' + t('мс')})</span></div>`;
+  const rows = [];
+  let verdict;
+  if (free) {
+    rows.push(row(srv.ok, t(srv.ok ? 'Сервер бесплатного режима отвечает' : 'Сервер бесплатного режима не отвечает'), srv.ms));
+    const d = srv.data;
+    if (d) {
+      const keyOk = d.keyCheck?.status === 200;
+      rows.push(`<div class="muted small">${t('Он видит нейросеть:')} ${keyOk ? t('ключ принят') : t('ключ не принят')} · ${t('моделей')}: ${d.models?.length || 0}${d.fallback?.binding ? ' · ' + t('есть запасной ИИ') : ''}${d.where?.colo ? ' · ' + t('путь через') + ' ' + esc(d.where.colo) + (d.where.country ? ' (' + esc(d.where.country) + ')' : '') : ''}</div>`);
+    }
+  }
+  rows.push(row(ai.ok, t(free ? (ai.ok ? 'OpenRouter открывается' : 'OpenRouter не открывается') : (ai.ok ? 'Адрес нейросети открывается' : 'Адрес нейросети не открывается')), ai.ms));
+  if (free) {
+    const d = srv.data;
+    const serverTrouble = srv.ok && d && (d.keyCheck?.status !== 200 || !d.models?.length) && !d.fallback?.binding;
+    verdict = srv.ok ? (serverTrouble ? 'Связь есть, но у сервера проблема с нейросетью. Попробуйте позже или подключите свой ключ.' : 'Связь в порядке.')
+      : ai.ok ? 'Сервер бесплатного режима из вашей сети недоступен, а OpenRouter открывается: подключите свой ключ (Настройки → Настроить заново).'
+        : 'Похоже, ваша сеть не пускает к нейросети. В России так бывает с мобильным интернетом и «белыми списками». Включите VPN или подключитесь к другой сети. Готовые конспекты диктуются и без интернета.';
+  } else {
+    verdict = ai.ok ? 'Связь в порядке.' : 'Адрес нейросети из вашей сети не открывается. Проверьте интернет, VPN и адрес в настройках.';
+  }
+  out.innerHTML = rows.join('') + `<p class="${(free ? srv.ok : ai.ok) ? 'ok' : 'err'}">${t(verdict)}</p>`;
+  btn.disabled = false;
+}
+$('netCheckBtn').addEventListener('click', netCheck);
 
 // ---------- Настройки ----------
 
