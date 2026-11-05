@@ -188,26 +188,90 @@
   const PREP_LOC = new Set(['в', 'во', 'о', 'об', 'обо', 'на', 'при']);
   const PREP_INS = new Set(['с', 'со', 'между', 'над', 'под', 'перед', 'пред', 'за']);
 
+  const wordBeforeNum = (str, offset) => {
+    const m = /([а-яё]+)[\s\u00a0]+$/i.exec(str.slice(Math.max(0, offset - 16), offset));
+    return m ? m[1].toLowerCase() : '';
+  };
+  const wordAfterNum = (rest) => {
+    const m = /^[\s\u00a0]*([а-яё]+)/i.exec(String(rest || ''));
+    return m ? m[1].toLowerCase() : '';
+  };
+
   /**
    * Падеж числа: 'g' родительный | 'd' дательный | 'p' предложный | 'i' творительный | '' именительный.
    * Решают предлог перед числом и окончание слова после него: «в пяти случаях», но «в пять раз».
+   * single — число оканчивается на «один»: существительное после него в единственном числе, окончания другие.
    */
-  function numCase(str, offset, rest) {
-    const m = /([а-яё]+)[\s\u00a0]+$/i.exec(str.slice(Math.max(0, offset - 16), offset));
-    const prev = m ? m[1].toLowerCase() : '';
-    const n = /^[\s\u00a0]*([а-яё]+)/i.exec(String(rest || ''));
-    const next = n ? n[1].toLowerCase() : '';
-    // творительный виден по окончанию слова после числа; мешает только предлог другого падежа («до пяти задач»)
+  function numCase(prev, next, single = false) {
+    // падеж виден по окончанию слова после числа; мешает только предлог другого падежа («до пяти задач»)
     const otherPrep = PREP_G.has(prev) || PREP_LOC.has(prev) || prev === 'к' || prev === 'ко';
-    if (next && /(?:ами|ями|ьми|ыми|ими)$/.test(next) && (PREP_INS.has(prev) || !otherPrep)) return 'i';
-    if (next && /(?:ах|ях)$/.test(next) && PREP_LOC.has(prev)) return 'p';
+    const ins = single ? /(?:ом|ем|ём|ой|ей|ью)$/ : /(?:ами|ями|ьми|ыми|ими)$/;
+    const loc = single ? /[еи]$/ : /(?:ах|ях)$/;
+    // у единственного числа окончания короткие, поэтому союзы и предлоги («и», «не») в расчёт не берём
+    const word = single ? next.length >= 4 && next : next;
+    if (word && ins.test(word) && (PREP_INS.has(prev) || !otherPrep)) return 'i';
+    if (word && loc.test(word) && PREP_LOC.has(prev)) return 'p';
     if (PREP_G.has(prev)) return 'g';
     if (prev === 'к' || prev === 'ко') return 'd';
     return '';
   }
   const CASE_FN = { g: toGenitive, d: toDative, p: toLocative, i: toInstrumental };
   const inCase = (words, c) => (CASE_FN[c] ? CASE_FN[c](words) : words);
-  const genAfterPrep = (str, offset) => numCase(str, offset, '') === 'g';
+  const genAfterPrep = (str, offset) => numCase(wordBeforeNum(str, offset), '') === 'g';
+
+  // ---------- Род существительного после числа ----------
+  // Нужен только для «один/одна/одно» и «два/две». Определяется по окончанию слова после числа,
+  // а оно зависит от падежа: «одна задача», «одной задачи», «одной задачей».
+  const FEM_BY_CASE = {
+    '': /(?:[ая]|ость|есть|[жчшщ]ь)$/,  // именительный: задача, неделя, скорость, ночь
+    g: /[ыи]$/,                         // задачи, недели (а «рубля», «слова» — мужской и средний)
+    d: /е$/,                            // задаче (а «случаю», «слову» — мужской и средний)
+    i: /(?:ой|ей|ью)$/,                 // задачей, степенью (а «случаем» — мужской)
+    p: /(?:ости|ести|сти|[жчшщ]и)$/,    // скорости, ночи; у «задаче» и «случае» окончания совпадают — там мужской
+  };
+  const NEU_BY_CASE = { '': /(?:мя|[ое])$/ };
+
+  // служебные слова — не существительные, род по ним не определяем («с 1 и 2»)
+  const FUNC_WORDS = new Set(['и', 'или', 'а', 'но', 'да', 'же', 'ли', 'бы', 'не', 'ни', 'то', 'как', 'что', 'это', 'так',
+    'уже', 'ещё', 'еще', 'если', 'чем', 'тоже', 'также', 'в', 'во', 'на', 'за', 'из', 'от', 'до', 'по', 'к', 'ко', 'с', 'со',
+    'о', 'об', 'обо', 'у', 'для', 'при', 'над', 'под', 'перед', 'между', 'через', 'про', 'без']);
+
+  /** «задача 1», «глава 2», «рисунок 3» — это нумерация: род числа со следующим словом не согласуется. */
+  const isLabel = (w) => /^(?:глав|част|том|раздел|параграф|пункт|тип|групп|класс|квартал|этап|степен|уров|задач|вопрос|тем|билет|вариант|пример|рисун|рис|таблиц|табл|формул|страниц|строк|стать|закон|теорем|лекци|урок|опыт|шаг|номер|примечан|упражнен)/.test(w);
+
+  /** 'f' | 'n' | 'm' — род слова после числа в падеже c. */
+  function genderOf(next, c) {
+    if (!next || FUNC_WORDS.has(next)) return 'm';
+    if (NEU_BY_CASE[c]?.test(next)) return 'n';
+    return FEM_BY_CASE[c]?.test(next) ? 'f' : 'm';
+  }
+
+  // «один» по падежам и родам; «два/две» различаются только в именительном
+  const ONE_FORMS = {
+    '': { m: 'один', f: 'одна', n: 'одно' },
+    g: { m: 'одного', f: 'одной', n: 'одного' },
+    d: { m: 'одному', f: 'одной', n: 'одному' },
+    i: { m: 'одним', f: 'одной', n: 'одним' },
+    p: { m: 'одном', f: 'одной', n: 'одном' },
+  };
+
+  /** Число словами с учётом падежа и рода следующего слова. */
+  function readNumber(d, prev, rest) {
+    const nom = numberWords(d);
+    const parts = nom.split(' ');
+    const last = parts[parts.length - 1];
+    const one = last === 'один';
+    const two = last === 'два';
+    const next = wordAfterNum(rest);
+    const c = numCase(prev, next, one);
+    const g = isLabel(prev) ? 'm' : genderOf(next, c); // «задача 1» — число просто номер
+    if (one) {
+      parts[parts.length - 1] = ONE_FORMS[c][g];
+      return inCase(parts.slice(0, -1).join(' '), c) + (parts.length > 1 ? ' ' : '') + parts[parts.length - 1];
+    }
+    if (two && !c && !isLabel(prev) && genderOf(next, 'g') === 'f') parts[parts.length - 1] = 'две'; // «две задачи», но «два рубля»
+    return inCase(parts.join(' '), c);
+  }
 
   // окончание после дефиса («1990-х», «2-й», «5-ю») -> форма порядкового числительного
   const SUFFIX_FORM = { ых: 'plg', ым: 'pld', ыми: 'pli', й: 'm', ый: 'm', ий: 'm', ой: 'm', го: 'mg', ого: 'mg', его: 'mg',
@@ -399,6 +463,15 @@
       const word = noun.includes('.') ? (noun.startsWith('гг') ? 'годы' : 'год') : noun;
       return `${prep} ${ordinalWords(a, 'mg')} по ${ordinalWords(b2, 'm')} ${word}${noun.includes('.') ? endDot(str, off + m.length) : ''}`;
     });
+    // «с 5 по 10 задачу», «со 2 по 4 пункт» — порядковые, первое в родительном, второе в винительном
+    t = t.replace(/(?<![а-яё])(с|со)\s+(\d{1,3})\s+по\s+(\d{1,3})\s+([а-яё]+)/gi, (m, prep, a2, b2, noun) => {
+      const g = /(?:мя|[ое])$/.test(noun) ? 'n' : /[ую]$/.test(noun) ? 'f' : 'm';
+      const from = ordinalWords(a2, g === 'f' ? 'fo' : 'mg');
+      const to = ordinalWords(b2, g === 'f' ? 'fa' : g);
+      if (!from || !to) return m;
+      // «со второго», «со сто первой» — предлог смягчается перед стечением согласных
+      return `${/^(?:вт|мн)/.test(from) ? 'со' : prep} ${from} по ${to} ${noun}`;
+    });
     t = t.replace(/(\d{3,4})\s*[–—-]\s*(\d{3,4})\s*(гг\.|годах|годы|годов|годам)/g, (m, a, b, noun, off, str) => {
       const w = wordBefore(str, off);
       const [form, word] = noun === 'гг.' ? caseByPrep(w, ['mp', 'годах'], ['md', 'годам'], ['m', 'годы'])
@@ -460,7 +533,7 @@
     });
     t = t.replace(/(\d+)[.,](\d+)/g, (_, a, b, off, str) => (genAfterPrep(str, off) ? toGenitive(decimalWords(a, b)) : decimalWords(a, b)));
     t = t.replace(/(\d+)\s*-\s*(\d+)/g, '$1 – $2');
-    t = t.replace(/\d+/g, (d, off, str) => ` ${inCase(numberWords(d), numCase(str, off, str.slice(off + d.length)))} `);
+    t = t.replace(/\d+/g, (d, off, str) => ` ${readNumber(d, wordBeforeNum(str, off), str.slice(off + d.length))} `);
     // аббревиатуры (до перевода латиницы в русские буквы)
     t = t.replace(/(?<![А-Яа-яЁёA-Za-z])([А-ЯЁ]{2,5}|[A-Z]{2,6})(?![А-Яа-яЁёA-Za-z])/g, (m, w, off, str) => ` ${readAbbr(w, str.slice(Math.max(0, off - 30), off))} `);
     t = t.replace(/№\s*/g, ' номер ').replace(/§\s*/g, ' параграф ').replace(/\s*&\s*/g, ' и ').replace(/\s*±\s*/g, ' плюс-минус ')
