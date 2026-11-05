@@ -2,7 +2,7 @@
 // Запросы к API нейросетей никогда не кэшируются.
 
 // При выпуске новой версии поднимайте VERSION и ?v= в index.html (importmap и app.js) — одно и то же число.
-const VERSION = 'kd-v69';
+const VERSION = 'kd-v70';
 const SHELL = [
   './',
   'index.html',
@@ -20,6 +20,8 @@ const SHELL = [
   'js/config.js',
   'js/stats.js',
   'js/cheatsheet.js',
+  'js/calendar.js',
+  'js/mcq.js',
   'js/audiobook.js',
   'js/tickets.js',
   'js/i18n.js',

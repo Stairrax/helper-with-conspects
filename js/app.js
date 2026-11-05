@@ -24,6 +24,8 @@ import { setUiLang, T, uiLang } from './i18n.js';
 import { addStudy, addExam, flushStats, statsSummary } from './stats.js';
 import { buildCheatsheet, cheatsheetFile, CHEATSHEET_CSS } from './cheatsheet.js';
 import { audioPieces, renderMp3 } from './audiobook.js';
+import { prepSchedule, buildIcs, perDayCount } from './calendar.js';
+import { testTopics, topicsToPrepare, makeTest, buildQuiz, testResult, readyCount, PER_TOPIC } from './mcq.js';
 import { FREE_PROXY_LIST, useFreeProxy } from './config.js';
 import { parseTickets, mergeTickets, prepareNextBatch, ticketSummary } from './tickets.js';
 
@@ -770,6 +772,123 @@ $('examStart').addEventListener('click', () => {
   startExam();
 });
 
+// ---------- Тест с вариантами ответа ----------
+// Вопросы составляет нейросеть (js/mcq.js) — один запрос на тему. Сама проверка идёт в приложении,
+// поэтому проходить тест можно сколько угодно раз, не тратя запросов.
+
+let quiz = null;   // { items, i, answers, locked }
+
+const testPool = () => (project ? testTopics(activeSeq(project), progress?.done || {}) : []);
+const testCount = () => +settings.testCount || 10;
+
+$('testBtn').addEventListener('click', () => {
+  if (!project) return toast('Сначала составьте план');
+  const pool = testPool();
+  if (!pool.length) return toast('Тест появится, когда будет подготовлена хотя бы одна тема.', 5000);
+  document.querySelectorAll('input[name=testCount]').forEach((r) => { r.checked = +r.value === testCount(); });
+  showTestStep('setup');
+  renderTestHint();
+  $('testStatus').textContent = '';
+  $('testSheet').classList.remove('hidden');
+});
+$('testSheet').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeTest(); });
+document.querySelectorAll('input[name=testCount]').forEach((r) => r.addEventListener('change', () => {
+  settings.testCount = +r.value;
+  saveSettings(settings);
+  renderTestHint();
+}));
+
+function showTestStep(step) {
+  $('testSetup').classList.toggle('hidden', step !== 'setup');
+  $('testRun').classList.toggle('hidden', step !== 'run');
+  $('testDone').classList.toggle('hidden', step !== 'done');
+}
+function closeTest() { $('testSheet').classList.add('hidden'); quiz = null; }
+
+function renderTestHint() {
+  const pool = testPool();
+  const have = readyCount(project, pool);
+  const need = topicsToPrepare(project, pool, testCount()).length;
+  $('testPoolHint').textContent = have
+    ? `Готовых вопросов: ${have}.` + (need ? ` Для теста из ${testCount()} нужно подготовить ещё тем: ${need} (столько же запросов).` : '')
+    : `Вопросов ещё нет: на тест из ${testCount()} уйдёт запросов к нейросети — ${need}. Потом тест бесплатный.`;
+  $('testStart').disabled = false;
+}
+
+$('testStart').addEventListener('click', async () => {
+  const pool = testPool();
+  const todo = topicsToPrepare(project, pool, testCount());
+  if (todo.length && !hasAI(settings)) return toast('Чтобы составить вопросы, нужна нейросеть.', 5000);
+  $('testStart').disabled = true;
+  try {
+    for (const t of todo) {
+      $('testStatus').textContent = T(`Готовлю вопросы: «${t.title}»…`);
+      await makeTest(project, t, settings, (m) => { $('testStatus').textContent = m; });
+      saveProject();
+    }
+  } catch (e) {
+    $('testStatus').textContent = '✗ ' + (e.message || e);
+    $('testStart').disabled = false;
+    if (!readyCount(project, pool)) return;
+  }
+  const items = buildQuiz(project, pool, testCount());
+  if (!items.length) { $('testStatus').textContent = T('Вопросы не получились — попробуйте позже.'); $('testStart').disabled = false; return; }
+  quiz = { items, i: 0, answers: [], locked: false };
+  showTestStep('run');
+  renderQuestion();
+});
+
+function renderQuestion() {
+  if (!quiz) return;
+  const q = quiz.items[quiz.i];
+  const right = quiz.answers.filter((a, i) => a === quiz.items[i].correct).length;
+  $('testNum').textContent = T(`Вопрос ${quiz.i + 1} из ${quiz.items.length}`);
+  $('testScore').textContent = quiz.i ? `${right} / ${quiz.i}` : '';
+  $('testQ').textContent = q.q;
+  $('testOpts').innerHTML = q.options.map((o, i) => `<button class="test-opt" data-opt="${i}" data-no-i18n>${esc(o)}</button>`).join('');
+  $('testNext').classList.add('hidden');
+  $('testNext').textContent = quiz.i + 1 < quiz.items.length ? 'Дальше' : 'Итог';
+  quiz.locked = false;
+}
+
+$('testOpts').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-opt]');
+  if (!btn || !quiz || quiz.locked) return;
+  quiz.locked = true;
+  const chosen = +btn.dataset.opt;
+  const q = quiz.items[quiz.i];
+  quiz.answers[quiz.i] = chosen;
+  $('testOpts').querySelectorAll('[data-opt]').forEach((b) => {
+    const i = +b.dataset.opt;
+    if (i === q.correct) b.classList.add('right');
+    else if (i === chosen) b.classList.add('wrong');
+    b.disabled = true;
+  });
+  // ответ сразу идёт в статистику темы: слабые места попадут в «Повторение»
+  dict.scoreTopic(q.topicId, chosen === q.correct ? 1 : 0);
+  $('testNext').classList.remove('hidden');
+});
+
+$('testNext').addEventListener('click', () => {
+  if (!quiz) return;
+  if (quiz.i + 1 < quiz.items.length) { quiz.i++; renderQuestion(); return; }
+  finishTest();
+});
+$('testStop').addEventListener('click', () => (quiz?.answers.length ? finishTest() : closeTest()));
+$('testAgain').addEventListener('click', () => { showTestStep('setup'); renderTestHint(); $('testStatus').textContent = ''; $('testStart').disabled = false; });
+
+function finishTest() {
+  const answered = quiz.items.slice(0, quiz.answers.length);
+  const r = testResult(answered, quiz.answers);
+  $('testResultText').textContent = T(`Верно ${r.right} из ${r.total} — это ${r.pct} %.`);
+  $('testWeak').innerHTML = r.weak.length
+    ? `<li><b>Стоит повторить:</b> <span data-no-i18n>${r.weak.map(esc).join(', ')}</span></li>`
+    : '<li class="ok">Слабых мест нет.</li>';
+  showTestStep('done');
+  persistProgress();
+  render();
+}
+
 // ---------- Билеты к экзамену ----------
 // Список вопросов вставляет студент; ответы готовятся в фоне пачками (js/tickets.js), оценки — в progress.tickets.
 
@@ -801,7 +920,7 @@ const tk = {
 let ticketOpen = null; // билет, у которого раскрыт ответ
 let ticketEditing = false;
 
-function closeSheets() { ['ticketSheet', 'examSheet'].forEach((id) => $(id).classList.add('hidden')); }
+function closeSheets() { ['ticketSheet', 'examSheet', 'testSheet'].forEach((id) => $(id).classList.add('hidden')); quiz = null; }
 
 function openTickets() {
   if (!project) return toast('Сначала составьте план');
@@ -910,9 +1029,8 @@ function prepToday() {
   const today = dayStr();
   let prep = project.prep;
   if (!prep || prep.day !== today || prep.date !== project.examDate) {
-    // последний день перед экзаменом — на повторение; новые темы — до него
-    const newDays = days >= 2 ? days - 1 : 1;
-    const perDay = days > 0 ? Math.ceil(undone.length / newDays) : 0;
+    // последний день перед экзаменом — на повторение; новые темы — до него (та же раскладка, что и в календаре)
+    const perDay = perDayCount(undone.length, days);
     prep = project.prep = { day: today, date: project.examDate, ids: undone.slice(0, perDay).map((t) => t.id) };
     saveProject();
   }
@@ -931,6 +1049,7 @@ function renderPrep() {
   $('examDate').min = dayStr();
   const p = prepToday();
   $('prepStart').classList.toggle('hidden', !p || p.days < 0);
+  $('prepIcs').classList.toggle('hidden', !p || p.days < 0);
   $('prepClear').classList.toggle('hidden', !project.examDate);
   if (!p) {
     $('prepBody').innerHTML = '<p class="hint">Укажите дату экзамена — разложу темы по дням и подскажу, что сделать сегодня.</p>';
@@ -976,6 +1095,16 @@ $('prepClear').addEventListener('click', () => {
   syncDueSoon();
 });
 /** «Начать сегодняшнее»: сначала новые темы, потом повторение, потом билеты. */
+// План подготовки в календарь телефона: по событию на каждый день, с напоминанием в 9 утра
+$('prepIcs').addEventListener('click', async () => {
+  if (!project?.examDate) return;
+  const undone = activeSeq(project).filter((t) => !progress?.done?.[t.id]).map((t) => t.title);
+  const schedule = prepSchedule(undone, project.examDate);
+  if (!schedule.length) return toast(T('Экзамен уже прошёл — укажите новую дату.'), 4000);
+  const subject = curSubject()?.title || '';
+  const text = buildIcs(schedule, { subject, en: uiLang() === 'en' });
+  await shareOrDownload(new File([text], `${subject || 'exam'}.ics`, { type: 'text/calendar' }));
+});
 $('prepStart').addEventListener('click', () => {
   const p = prepToday();
   if (!p) return;

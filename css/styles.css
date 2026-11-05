@@ -124,6 +124,17 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 36px; marg
 .switch small { color: var(--muted); font-size: 13px; }
 .switch input { position: absolute; opacity: 0; pointer-events: none; }
 /* бегунок одного размера в обоих положениях, с одинаковыми отступами со всех сторон */
+/* тест с вариантами ответа */
+.test-head { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+.test-q { font-size: 18px; line-height: 1.35; margin: 0 0 14px; }
+.test-opts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.test-opt { text-align: left; padding: 13px 16px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--surface2);
+  color: var(--text); font: inherit; font-size: 15px; line-height: 1.3; min-height: 48px; cursor: pointer; transition: .15s; }
+.test-opt:active { filter: brightness(1.1); }
+.test-opt:disabled { cursor: default; opacity: 1; }
+.test-opt.right { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 18%, transparent); }
+.test-opt.wrong { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 18%, transparent); }
+
 .switch i { position: relative; width: 52px; height: 32px; border-radius: 16px; background: var(--surface3); border: 1.5px solid #5a606d; flex: none; transition: .2s; }
 .switch i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 23px; height: 23px; border-radius: 50%; background: #8e95a3; transition: .2s; }
 .switch input:checked + i { background: var(--accent); border-color: var(--accent); }

@@ -99,6 +99,23 @@ export default async ({ open, prepare, FINANCE, ok, base }) => {
   ok(/Экзамен завтра/.test(p1) && /Новые темы: 0 из 2/.test(p1) && /Осталось непройденных тем: 2/.test(p1), 'накануне — все оставшиеся темы и предупреждение');
   await page.waitForTimeout(1700); // сроки для напоминаний сохраняются чуть позже
   ok(await page.evaluate(() => Object.values(JSON.parse(localStorage.getItem('kd.exams') || '{}'))[0]?.left === 2), 'для напоминаний сохранены дата и сколько тем осталось ' + await page.evaluate(() => localStorage.getItem('kd.exams')));
+
+  // ---- план подготовки в календарь (.ics)
+  ok(await page.isVisible('#prepIcs'), 'есть кнопка «Положить план в календарь»');
+  const ics = await page.evaluate(async () => {
+    const { prepSchedule, buildIcs } = await import('./js/calendar.js');
+    const now = new Date(2026, 10, 5, 10).getTime();
+    const sch = prepSchedule(['Доходы и расходы', 'Сложный процент', 'Налоги', 'Вклады'], '2026-11-08', now);
+    return { sch, text: buildIcs(sch, { subject: 'Финансы, лекция 2', now }) };
+  });
+  ok(ics.sch.map((d) => d.date + ':' + d.kind).join(' ') === '2026-11-05:study 2026-11-06:study 2026-11-07:review 2026-11-08:exam',
+    'расписание: темы по дням, канун — повторение, последний день — экзамен — ' + ics.sch.map((d) => d.date + ':' + d.kind).join(' '));
+  ok(/^BEGIN:VCALENDAR/.test(ics.text) && /END:VCALENDAR\r\n$/.test(ics.text) && (ics.text.match(/BEGIN:VEVENT/g) || []).length === 4, 'в файле календаря четыре события');
+  ok(/DTSTART;VALUE=DATE:20261108\r\nDTEND;VALUE=DATE:20261109/.test(ics.text) && /SUMMARY:Финансы\\, лекция 2: Экзамен/.test(ics.text),
+    'экзамен — отдельным днём, запятая в названии экранирована');
+  ok(/DESCRIPTION:Доходы и расходы\\nСложный процент/.test(ics.text) && /TRIGGER:PT9H/.test(ics.text), 'в событии — темы дня и напоминание утром');
+  ok(!ics.text.split('\r\n').some((l) => new TextEncoder().encode(l).length > 75), 'длинные строки свёрнуты по правилам .ics');
+
   await page.click('#prepStart');
   await page.waitForFunction(() => window.__spoken.some((t) => t.startsWith('Тема: ')), null, { timeout: 10000 });
   ok(await page.evaluate(() => document.body.dataset.tab) === 'dictate', '«Начать сегодняшнее» — диктовка первой темы из плана на сегодня');
