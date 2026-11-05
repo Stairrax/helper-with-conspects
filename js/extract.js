@@ -57,17 +57,24 @@ async function getMammoth() {
 /** Сжимает изображение до maxSide и возвращает {mime, data(base64)}. */
 export async function imageToBase64(blob, maxSide = 2000) {
   const bmp = await createImageBitmap(blob).catch(() => null);
-  let w, h, src;
+  let w, h, src, url = '';
   if (bmp) { w = bmp.width; h = bmp.height; src = bmp; } else {
-    const url = URL.createObjectURL(blob);
-    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    url = URL.createObjectURL(blob);
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; })
+      .catch((e) => { URL.revokeObjectURL(url); throw e; });
     w = img.naturalWidth; h = img.naturalHeight; src = img;
   }
-  const k = Math.min(1, maxSide / Math.max(w, h));
-  const c = document.createElement('canvas');
-  c.width = Math.round(w * k); c.height = Math.round(h * k);
-  c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
-  return canvasToB64(c);
+  try {
+    const k = Math.min(1, maxSide / Math.max(w, h));
+    const c = document.createElement('canvas');
+    c.width = Math.round(w * k); c.height = Math.round(h * k);
+    c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+    return canvasToB64(c);
+  } finally {
+    // без этого каждое фото оставляло бы за собой копию в памяти — на iPhone это заметно
+    bmp?.close?.();
+    if (url) URL.revokeObjectURL(url);
+  }
 }
 
 function canvasToB64(c) {
