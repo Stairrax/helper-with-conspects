@@ -110,5 +110,37 @@ export default async ({ open, ok }) => {
     await page.click('#planList li:nth-child(1) [data-act=from]');
     await page.waitForFunction(() => /Бесплатные запросы на сегодня закончились — эту тему подготовим позже/.test(document.getElementById('dictMsg').textContent), null, { timeout: 15000 });
     ok(true, 'в диктовке вместо вечного «Готовлю…» — понятное сообщение');
+
+    // свой ключ подключён — подготовка продолжается сразу, а не через полчаса
+    await page.click('[data-tab=settings]');
+    await page.evaluate(() => { document.getElementById('manualAi').open = true; });
+    await page.selectOption('#provider', 'openrouter');
+    await page.fill('#apiKey', 'sk-or-test');
+    await page.dispatchEvent('#apiKey', 'change');
+    await page.click('[data-tab=plan]');
+    await page.waitForFunction(() => document.querySelectorAll('#planList .pstate.ok').length >= 2, null, { timeout: 20000 });
+    ok(!/запросы на сегодня закончились/.test(await page.textContent('#genStatus')), 'со своим ключом чужой дневной лимит больше не держит подготовку');
+  }
+
+  // ---- отложенная запись конспекта не теряется при закрытии приложения
+  {
+    const { page } = await open({ settings: FREE, freeProxy: 'https://free-proxy.test', titles: TITLES });
+    await addText(page, textOf(60));
+    await page.click('#analyzeBtn');
+    await page.waitForFunction(() => document.querySelectorAll('#planList li').length === 6, null, { timeout: 20000 });
+    await page.click('[data-tab=plan]');
+    // меняем конспект и тут же «сворачиваем» приложение — запись отложена на 400 мс
+    await page.evaluate(() => { document.getElementById('examDate').value = '2030-01-01'; document.getElementById('examDate').dispatchEvent(new Event('change')); });
+    await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+    await page.waitForTimeout(200);
+    const saved = await page.evaluate(async () => {
+      const key = Object.keys(localStorage).find((k) => k.startsWith('kd.subjects'));
+      const id = JSON.parse(localStorage.getItem(key)).current;
+      return await new Promise((res) => {
+        const r = indexedDB.open('konspekt-diktor', 1);
+        r.onsuccess = () => { const q = r.result.transaction('kv', 'readonly').objectStore('kv').get('project:' + id); q.onsuccess = () => res(q.result?.examDate || ''); };
+      });
+    });
+    ok(saved === '2030-01-01', 'конспект записан сразу при сворачивании, отложенная запись не пропала: ' + saved);
   }
 };

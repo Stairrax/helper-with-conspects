@@ -63,10 +63,19 @@ function freshProgress(projectId) {
 // ---------- Сохранение ----------
 
 let saveProjectTimer = null;
+let pendingSave = null;
 function saveProject() {
   clearTimeout(saveProjectTimer);
   const id = cur(), p = project;
-  saveProjectTimer = setTimeout(() => { if (p && id) idbSet('project:' + id, p); }, 400);
+  pendingSave = p && id ? { id, p } : null;
+  saveProjectTimer = setTimeout(flushProject, 400);
+}
+/** Записать конспект немедленно: при закрытии приложения и смене предмета отложенная запись пропала бы. */
+function flushProject() {
+  clearTimeout(saveProjectTimer);
+  const s = pendingSave;
+  pendingSave = null;
+  if (s) idbSet('project:' + s.id, s.p).catch(() => {});
 }
 const saveSources = () => idbSet('sources:' + cur(), sources);
 const persistProgress = () => { if (progress) { saveProgress(progress, cur()); syncDueSoon(); } };
@@ -86,12 +95,7 @@ function fmtDur(sec) {
   if (m) return `${m} мин`;
   return `${sec} с`;
 }
-function fmtClock(ms) {
-  const s = Math.floor(ms / 1000);
-  return `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}`;
-}
 const fmtChars = (n) => n >= 1000 ? `${(n / 1000).toFixed(1).replace('.', ',')} тыс. зн.` : `${n} зн.`;
-const stars = (d) => '★'.repeat(d) + '☆'.repeat(5 - d);
 
 let toastTimer;
 function toast(msg, ms = 2600) {
@@ -124,15 +128,21 @@ document.querySelectorAll('.navbar button').forEach((b) => b.addEventListener('c
 const AHEAD = 3;               // бесплатный режим: заранее готовим текущую тему и две следующие
 const LIMIT_PAUSE = 30 * 60e3; // кончились бесплатные запросы — пробуем снова не чаще, чем раз в полчаса
 const isFreeMode = () => !!PROVIDERS[settings.provider]?.noKey;
+/** Чем сейчас подключена нейросеть: сменили провайдера или ключ — прежние лимиты к ней не относятся. */
+const aiKey = () => settings.provider + '|' + (settings.apiKey || '');
 
 const gen = {
   running: false,
   status: '',
-  limited: 0, // когда в последний раз сервер ответил «бесплатные запросы на сегодня закончились»
+  limited: 0,     // когда в последний раз пришло «запросы на сегодня закончились»
+  limitedFor: '', // для какого подключения (провайдер + ключ): со своим ключом чужой лимит не действует
+  mark() { this.limited = Date.now(); this.limitedFor = aiKey(); },
+  clear() { this.limited = 0; this.limitedFor = ''; },
+  isLimited() { return !!this.limited && this.limitedFor === aiKey() && Date.now() - this.limited < LIMIT_PAUSE; },
   /** Бесплатных запросов в день немного, поэтому темы готовятся по мере чтения, а не все сразу (кнопка «Подготовить все темы» отменяет это). */
   lazy(p) { return isFreeMode() && !p.prepAll; },
   pick(p) {
-    if (this.limited && Date.now() - this.limited < LIMIT_PAUSE) return null;
+    if (this.isLimited()) return null;
     const seq = activeSeq(p);
     const start = Math.max(0, seq.findIndex((t) => t.id === progress?.topicId));
     const ordered = [...seq.slice(start), ...seq.slice(0, start)];
@@ -186,7 +196,7 @@ const gen = {
           if (e.code === 'DAILY_LIMIT') {
             // бесплатные запросы на сегодня кончились: тема не «сломана», вернётся в очередь позже; ждём и не тратим попытки
             t.status = 'pending';
-            this.limited = Date.now();
+            this.mark();
             toast('Бесплатные запросы на сегодня закончились. Готовые темы можно диктовать, остальные подготовятся позже.', 6000);
             if (p === project) saveProject();
             break;
@@ -217,7 +227,7 @@ $('prepAllBtn').addEventListener('click', () => {
   if (!confirm(T(`Подготовить сразу все темы (осталось ${left})? На каждую уйдёт один-два запроса, а бесплатных запросов в день ограниченное число — на всех. Обычно лучше готовить по мере чтения.`))) return;
   project.prepAll = true;
   saveProject();
-  gen.limited = 0;
+  gen.clear();
   gen.loop();
   render();
 });
@@ -248,7 +258,7 @@ const dict = new Dictation({
   onActivity: (playing) => updateMedia(dictTitle(), playing),
   onStudy: () => addStudy(1),
   onExam: (r) => addExam({ subject: curSubject()?.title || '', right: r.right, n: r.n }),
-  genLimited: () => !!gen.limited && Date.now() - gen.limited < LIMIT_PAUSE,
+  genLimited: () => gen.isLimited(),
   onTicket: () => renderTickets(),
 });
 const dictTitle = () => (dict.mode === 'review' ? T('Повторение') : project?.topics.find((t) => t.id === progress?.topicId)?.title) || T('Помощник по учёбе');
@@ -540,7 +550,7 @@ function renderPlan() {
   $('planSummary').innerHTML = `<div class="plan-sum"><span class="big">${seq.length} ${plural(seq.length, ['тема', 'темы', 'тем'])} · ≈${fmtDur(total)}</span>` +
     `<span class="muted">из ${fmtDur(budget)}. ${line}</span></div>`;
   $('fitPauseBtn').classList.toggle('hidden', !(total > budget * 1.05 || total < budget * 0.8));
-  const limited = !!gen.limited && Date.now() - gen.limited < LIMIT_PAUSE;
+  const limited = gen.isLimited();
   $('genStatus').textContent = ready < seq.length
     ? `Подготовлено ${ready} из ${seq.length}${gen.running && gen.status ? ' · ' + gen.status : ''}${limited ? ' · бесплатные запросы на сегодня закончились' : gen.lazy(project) && !gen.running ? ' · остальные темы — по мере чтения' : ''}`
     : '';
@@ -1713,6 +1723,8 @@ function bind(id, key, parse = (v) => v, ev = 'change') {
   });
 }
 bind('apiKey', 'apiKey', (v) => v.trim());
+// свой ключ вписан — подготовка тем продолжается сразу, не дожидаясь повторной попытки
+$('apiKey').addEventListener('change', () => { if (project && !gen.running && gen.pick(project)) gen.loop(); });
 bind('model', 'model', (v) => {
   settings.fallbackModels = []; // модель выбрана вручную — запасные от мастера больше не подходят
   return v.trim().replace(/^models\//, '') || (PROVIDERS[settings.provider]?.model ?? '');
@@ -2331,6 +2343,7 @@ function renderSubject() {
 }
 
 async function openSubject(id) {
+  flushProject();
   resetDictation();
   dict.rec.stop();
   disableMedia();
@@ -2568,9 +2581,10 @@ async function init() {
   syncDue();
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  window.addEventListener('pagehide', flushProject);
   window.addEventListener('pagehide', persistProgress);
   window.addEventListener('pagehide', flushStats);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') persistProgress(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { flushProject(); persistProgress(); } });
 }
 
 init().then(() => {

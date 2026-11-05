@@ -147,7 +147,8 @@ export async function idbGet(key) {
 
 export async function idbSet(key, value) {
   try { await tx('readwrite', (s) => s.put(value, key)); } catch {
-    localStorage.setItem('kd.idb.' + key, JSON.stringify(value));
+    // запасной вариант; в приватном режиме и при переполнении он тоже не сработает — молча, без падения
+    try { localStorage.setItem('kd.idb.' + key, JSON.stringify(value)); } catch { /* ignore */ }
   }
 }
 
