@@ -189,7 +189,8 @@ export const EXACT = {
   'Через сервер автора. Есть дневной лимит; если его не хватает, укажите свой ключ OpenRouter — «Настроить заново».': 'Through the author’s server. There is a daily limit; if it’s not enough, add your own OpenRouter key — “Set up again”.',
   'Ничего настраивать не нужно: запросы идут через сервер автора приложения. Есть дневной лимит на устройство.': 'Nothing to set up: requests go through the app author’s server. There is a daily limit per device.',
   'Ничего настраивать не нужно: нейросеть уже подключена.': 'Nothing to set up: the AI is already connected.',
-  'В России работает только с VPN: без него нейросеть недоступна. Готовые конспекты диктуются и без интернета.': 'In Russia a VPN is required: without one the AI is unreachable. Notes that are already prepared are dictated offline too.',
+  'В России — только с VPN. Без него нейросеть недоступна: не разобрать конспект на темы, не задать вопрос, не готовиться к экзамену. Остаются уже готовые конспекты — они диктуются и без интернета, живым голосом.':
+    'In Russia a VPN is required. Without one the AI is unreachable: notes can’t be split into topics, questions can’t be asked, exam practice won’t run. What remains is notes already prepared — they are dictated offline, with the lively voice.',
   'У меня свой ключ OpenRouter': 'I have my own OpenRouter key', 'Последний шаг': 'Last step',
   'На сегодня бесплатные запросы закончились. Продолжите завтра или укажите свой ключ: Настройки → Настроить заново.': 'Free requests are used up for today. Continue tomorrow or add your own key: Settings → Set up again.',
   'Бесплатный режим сейчас недоступен. Попробуйте позже или укажите свой ключ: Настройки → Настроить заново.': 'Free mode is unavailable right now. Try later or add your own key: Settings → Set up again.',
