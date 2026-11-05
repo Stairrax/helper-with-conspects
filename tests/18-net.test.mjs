@@ -35,4 +35,30 @@ export default async ({ open, ok }) => {
     try { await generate({ apiKey: 'k', baseUrl: 'https://other.test/v1', model: 'm', parts: [{ text: 'привет' }], retries: 0 }); return 'нет ошибки'; } catch (e) { return e.message; }
   });
   ok(/^Нет связи с API/.test(other), 'у своего ключа сообщение прежнее: ' + other.slice(0, 40));
+
+  // ---- запасной адрес сервера: первый закрыт в этой сети, работает второй
+  {
+    const { page } = await open({ settings: { provider: 'free', apiKey: '' }, freeProxy: 'https://closed.test, https://backup.test' });
+    await page.route(/closed\.test/, (r) => r.abort());
+    await page.route('https://openrouter.ai/', (r) => r.fulfill({ status: 200, contentType: 'text/html', body: 'ok' }));
+    await page.route(/backup\.test\/health/, (r) => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(HEALTH) }));
+    let asked = 0;
+    await page.route(/backup\.test\/chat\/completions/, (r) => {
+      asked++;
+      return r.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify({ choices: [{ message: { content: 'готово' }, finish_reason: 'stop' }] }) });
+    });
+    const got = await page.evaluate(async () => {
+      const { generate } = await import('./js/openai.js');
+      const { FREE_PROXY } = await import('./js/config.js');
+      const text = await generate({ apiKey: 'kd-x', baseUrl: FREE_PROXY, model: 'auto', parts: [{ text: 'привет' }], retries: 0 });
+      return { text, now: (await import('./js/config.js')).FREE_PROXY, saved: localStorage.getItem('kd.freeProxyOk') };
+    });
+    ok(got.text === 'готово' && asked === 1, 'первый адрес закрыт — запрос сам ушёл на запасной');
+    ok(got.now === 'https://backup.test' && got.saved === 'https://backup.test', 'рабочий адрес запомнен: ' + got.saved);
+    await page.click('[data-tab=settings]');
+    await page.click('#netCheckBtn');
+    await page.waitForFunction(() => /Связь в порядке/.test(document.getElementById('netCheckOut').textContent), null, { timeout: 15000 });
+    const txt = await page.textContent('#netCheckOut');
+    ok(/✗.*closed\.test/.test(txt) && /✓.*backup\.test/.test(txt), '«Проверить связь» показывает оба адреса: какой закрыт, какой отвечает — ' + txt.slice(0, 140));
+  }
 };
