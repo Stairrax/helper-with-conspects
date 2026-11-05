@@ -2,8 +2,14 @@
 // Принимает части в формате Gemini ({text} / {inline_data}) и сам переводит их в сообщения chat/completions.
 
 import { GeminiError as AIError } from './gemini.js';
+import { FREE_PROXY } from './config.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// В России без VPN сервер бесплатного режима (на Cloudflare) бывает недоступен — говорим об этом прямо
+const netMessage = (baseUrl) => (FREE_PROXY && String(baseUrl || '').trim().replace(/\/+$/, '') === FREE_PROXY
+  ? 'Нет связи с сервером бесплатного режима. Если вы в России и без VPN, он может быть недоступен: включите VPN или подключитесь к другой сети. Что именно не открывается, покажет Настройки → Проверить связь.'
+  : 'Нет связи с API (сеть или CORS). Проверьте интернет и адрес API.');
 
 function waitOnline() {
   if (navigator.onLine !== false) return Promise.resolve();
@@ -99,7 +105,7 @@ export async function generate(opts) {
       data = await res.json().catch(() => ({}));
     } catch (e) {
       if (e.name === 'AbortError') throw e;
-      if (attempt > retries) throw new AIError('Нет связи с API (сеть или CORS). Проверьте интернет и адрес API.', { code: 'NETWORK', retryable: true });
+      if (attempt > retries) throw new AIError(netMessage(baseUrl), { code: 'NETWORK', retryable: true });
       const wait = Math.min(2000 * 2 ** (attempt - 1), 30000);
       onStatus(`Нет сети, повтор через ${Math.round(wait / 1000)} с…`);
       await sleep(wait);
