@@ -125,6 +125,17 @@ export async function mockAI(page, ai) {
       const qs = text.split('Вопросы экзаменационных билетов:')[1].split('\n\n')[0].trim().split('\n');
       return reply({ answers: qs.map((q, i) => ({ n: i + 1, a: `Ответ: ${q.replace(/^\d+\. /, '')}.\nБюджет — это план доходов и расходов.`, t: [1] })) });
     }
+    if (text.includes('вопросов с выбором ответа')) {
+      ai.mcq = (ai.mcq || 0) + 1;
+      const title = (text.match(/^Тема: «(.+)»\.$/m) || [])[1] || 'Тема';
+      return reply({
+        items: Array.from({ length: 5 }, (_, i) => ({
+          q: `${title}: вопрос ${i + 1}?`,
+          a: `Верно ${i + 1}`,
+          w: [`Неверно ${i + 1}a`, `Неверно ${i + 1}b`, `Неверно ${i + 1}c`],
+        })),
+      });
+    }
     if (text.includes('Пользователь приложения для диктовки конспектов сказал')) {
       ai.command++;
       return reply(/короче/.test(text) ? { cmd: 'pauseLen', arg: -1 } : { cmd: 'none' });

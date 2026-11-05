@@ -181,6 +181,7 @@
           <div class="prep-date"><label for="examDate">Дата экзамена</label><input id="examDate" type="date"><button id="prepClear" class="btn text hidden">Убрать</button></div>
           <div id="prepBody" class="small"></div>
           <button id="prepStart" class="btn tonal wide hidden">Начать сегодняшнее</button>
+          <button id="prepIcs" class="btn text wide hidden">Положить план в календарь</button>
         </div>
         <div class="card" id="reviewCard">
           <div class="card-title">Повторение</div>
@@ -190,6 +191,7 @@
             <button id="reviewAllBtn" class="btn outline">Все пройденные</button>
             <button id="examBtn" class="btn outline">Экзамен</button>
             <button id="ticketBtn" class="btn outline">Билеты</button>
+            <button id="testBtn" class="btn outline">Тест</button>
           </div>
           <button id="exportBtn" class="btn text">Сохранить конспект и вопросы в файл</button>
           <button id="shareBtn" class="btn text">Поделиться готовым конспектом</button>
@@ -633,6 +635,41 @@
     </div>
   </div>
 
+  <!-- Тест с вариантами ответа -->
+  <div id="testSheet" class="sheet hidden">
+    <div class="sheet-scrim" data-close></div>
+    <div class="sheet-body tool-body">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">Тест с вариантами ответа</div>
+      <div id="testSetup">
+        <p class="hint">Вопросы с четырьмя вариантами по подготовленным темам. Нейросеть составляет их один раз, дальше тест проверяется в самом приложении — проходить можно сколько угодно, запросы на это не тратятся.</p>
+        <div class="field">Вопросов</div>
+        <div class="seg" id="testCountSeg">
+          <label><input type="radio" name="testCount" value="5"><span>5</span></label>
+          <label><input type="radio" name="testCount" value="10"><span>10</span></label>
+          <label><input type="radio" name="testCount" value="20"><span>20</span></label>
+        </div>
+        <p class="hint mt" id="testPoolHint"></p>
+        <div id="testStatus" class="status small"></div>
+        <button id="testStart" class="btn filled wide">Начать тест</button>
+        <button class="btn text wide" data-close>Отмена</button>
+      </div>
+      <div id="testRun" class="hidden">
+        <div class="test-head"><span id="testNum"></span><span id="testScore"></span></div>
+        <p id="testQ" class="test-q"></p>
+        <div id="testOpts" class="test-opts"></div>
+        <button id="testNext" class="btn filled wide hidden">Дальше</button>
+        <button id="testStop" class="btn text wide">Закончить</button>
+      </div>
+      <div id="testDone" class="hidden">
+        <p id="testResultText" class="test-q"></p>
+        <ul id="testWeak" class="prep-list"></ul>
+        <button id="testAgain" class="btn filled wide">Ещё раз</button>
+        <button class="btn text wide" data-close>Закрыть</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Билеты -->
   <div id="ticketSheet" class="sheet hidden">
     <div class="sheet-scrim" data-close></div>
@@ -736,31 +773,33 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/abbr.js": "./js/abbr.js?v=69",
-      "./js/ai.js": "./js/ai.js?v=69",
-      "./js/analyze.js": "./js/analyze.js?v=69",
-      "./js/anthropic.js": "./js/anthropic.js?v=69",
-      "./js/app.js": "./js/app.js?v=69",
-      "./js/commands.js": "./js/commands.js?v=69",
-      "./js/lecture.js": "./js/lecture.js?v=69",
-      "./js/config.js": "./js/config.js?v=69",
-      "./js/stats.js": "./js/stats.js?v=69",
-      "./js/cheatsheet.js": "./js/cheatsheet.js?v=69",
-      "./js/audiobook.js": "./js/audiobook.js?v=69",
-      "./js/tickets.js": "./js/tickets.js?v=69",
-      "./js/i18n.js": "./js/i18n.js?v=69",
-      "./js/i18n-en.js": "./js/i18n-en.js?v=69",
-      "./js/platform.js": "./js/platform.js?v=69",
-      "./js/dictation.js": "./js/dictation.js?v=69",
-      "./js/extract.js": "./js/extract.js?v=69",
-      "./js/gemini.js": "./js/gemini.js?v=69",
-      "./js/media.js": "./js/media.js?v=69",
-      "./js/neural.js": "./js/neural.js?v=69",
-      "./js/onboarding.js": "./js/onboarding.js?v=69",
-      "./js/openai.js": "./js/openai.js?v=69",
-      "./js/ripple.js": "./js/ripple.js?v=69",
-      "./js/speech.js": "./js/speech.js?v=69",
-      "./js/storage.js": "./js/storage.js?v=69"
+      "./js/abbr.js": "./js/abbr.js?v=70",
+      "./js/ai.js": "./js/ai.js?v=70",
+      "./js/analyze.js": "./js/analyze.js?v=70",
+      "./js/anthropic.js": "./js/anthropic.js?v=70",
+      "./js/app.js": "./js/app.js?v=70",
+      "./js/commands.js": "./js/commands.js?v=70",
+      "./js/lecture.js": "./js/lecture.js?v=70",
+      "./js/config.js": "./js/config.js?v=70",
+      "./js/stats.js": "./js/stats.js?v=70",
+      "./js/cheatsheet.js": "./js/cheatsheet.js?v=70",
+      "./js/calendar.js": "./js/calendar.js?v=70",
+      "./js/mcq.js": "./js/mcq.js?v=70",
+      "./js/audiobook.js": "./js/audiobook.js?v=70",
+      "./js/tickets.js": "./js/tickets.js?v=70",
+      "./js/i18n.js": "./js/i18n.js?v=70",
+      "./js/i18n-en.js": "./js/i18n-en.js?v=70",
+      "./js/platform.js": "./js/platform.js?v=70",
+      "./js/dictation.js": "./js/dictation.js?v=70",
+      "./js/extract.js": "./js/extract.js?v=70",
+      "./js/gemini.js": "./js/gemini.js?v=70",
+      "./js/media.js": "./js/media.js?v=70",
+      "./js/neural.js": "./js/neural.js?v=70",
+      "./js/onboarding.js": "./js/onboarding.js?v=70",
+      "./js/openai.js": "./js/openai.js?v=70",
+      "./js/ripple.js": "./js/ripple.js?v=70",
+      "./js/speech.js": "./js/speech.js?v=70",
+      "./js/storage.js": "./js/storage.js?v=70"
     }
   }
   </script>
@@ -794,7 +833,7 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=69"></script>
+  <script type="module" src="js/app.js?v=70"></script>
   <div id="printArea" class="cheatsheet" data-no-i18n></div>
 </body>
 </html>
