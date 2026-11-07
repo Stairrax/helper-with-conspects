@@ -97,7 +97,7 @@ export default async ({ open, prepare, FINANCE, ok, base }) => {
   await setDate(dayPlus(1));
   const p1 = await page.textContent('#prepBody');
   ok(/Экзамен завтра/.test(p1) && /Новые темы: 0 из 2/.test(p1) && /Осталось непройденных тем: 2/.test(p1), 'накануне — все оставшиеся темы и предупреждение');
-  await page.waitForTimeout(1700); // сроки для напоминаний сохраняются чуть позже
+  await page.waitForFunction(() => Object.values(JSON.parse(localStorage.getItem('kd.exams') || '{}'))[0]?.left === 2, null, { timeout: 10000 });
   ok(await page.evaluate(() => Object.values(JSON.parse(localStorage.getItem('kd.exams') || '{}'))[0]?.left === 2), 'для напоминаний сохранены дата и сколько тем осталось ' + await page.evaluate(() => localStorage.getItem('kd.exams')));
 
   // ---- план подготовки в календарь (.ics)

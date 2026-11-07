@@ -4,6 +4,7 @@
 
 import { Recognizer, srSupported, keepAwake } from './speech.js';
 import { generate, conn } from './ai.js';
+import { saveLectureDraft, clearLectureDraft } from './storage.js';
 
 const DRAFT = 'kd.lectureDraft';
 
@@ -76,9 +77,7 @@ export class LectureRecorder {
   /** Готово: текст расшифровки, черновик очищается. */
   finish() {
     this.pause();
-    const text = this.text.trim();
-    this.discard();
-    return text;
+    return this.text.trim();
   }
 
   discard() {
@@ -87,12 +86,12 @@ export class LectureRecorder {
     this.interim = '';
     this.ms = 0;
     this.title = '';
-    try { localStorage.removeItem(DRAFT); } catch { /* ignore */ }
+    clearLectureDraft();
     this.emit();
   }
 
   save() {
-    try { localStorage.setItem(DRAFT, JSON.stringify({ text: this.text, ms: this.elapsed(), title: this.title, at: Date.now() })); } catch { /* ignore */ }
+    return saveLectureDraft({ text: this.text, ms: this.elapsed(), title: this.title, at: Date.now() });
   }
 
   emit() {
@@ -145,9 +144,10 @@ function parts(text, size = 6000) {
  * Расшифровка с распознавания — сплошной текст без знаков препинания и с ошибками.
  * Нейросеть расставляет знаки и абзацы и исправляет явные ошибки распознавания, не меняя смысла.
  */
-export async function tidyTranscript(text, settings, onStatus = () => {}) {
+export async function tidyTranscript(text, settings, onStatus = () => {}, onProgress = () => {}) {
   const ps = parts(text);
   const out = [];
+  onProgress(0, ps.length);
   for (let i = 0; i < ps.length; i++) {
     onStatus(ps.length > 1 ? `Навожу порядок в расшифровке: часть ${i + 1} из ${ps.length}` : 'Навожу порядок в расшифровке');
     const res = await generate({
@@ -164,6 +164,7 @@ ${ps[i]}
       temperature: 0.2,
     });
     out.push(String(res || '').trim() || roughParagraphs(ps[i]));
+    onProgress(i + 1, ps.length);
   }
   return out.join('\n\n');
 }

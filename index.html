@@ -132,6 +132,14 @@
             <button id="lectureDone" class="btn filled">Готово</button>
           </div>
         </div>
+        <div id="lectureWork" class="hidden" role="status" aria-live="polite">
+          <span id="lectureWorkStatus"></span>
+          <progress id="lectureWorkBar" aria-labelledby="lectureWorkStatus" max="1" value="0" style="width:100%"></progress>
+        </div>
+        <div id="fileWork" class="hidden" role="status" aria-live="polite">
+          <span id="fileWorkStatus"></span>
+          <progress id="fileWorkBar" aria-labelledby="fileWorkStatus" style="width:100%"></progress>
+        </div>
       </div>
 
       <div class="card">
@@ -774,33 +782,33 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/abbr.js": "./js/abbr.js?v=77",
-      "./js/ai.js": "./js/ai.js?v=77",
-      "./js/analyze.js": "./js/analyze.js?v=77",
-      "./js/anthropic.js": "./js/anthropic.js?v=77",
-      "./js/app.js": "./js/app.js?v=77",
-      "./js/commands.js": "./js/commands.js?v=77",
-      "./js/lecture.js": "./js/lecture.js?v=77",
-      "./js/config.js": "./js/config.js?v=77",
-      "./js/stats.js": "./js/stats.js?v=77",
-      "./js/cheatsheet.js": "./js/cheatsheet.js?v=77",
-      "./js/calendar.js": "./js/calendar.js?v=77",
-      "./js/mcq.js": "./js/mcq.js?v=77",
-      "./js/audiobook.js": "./js/audiobook.js?v=77",
-      "./js/tickets.js": "./js/tickets.js?v=77",
-      "./js/i18n.js": "./js/i18n.js?v=77",
-      "./js/i18n-en.js": "./js/i18n-en.js?v=77",
-      "./js/platform.js": "./js/platform.js?v=77",
-      "./js/dictation.js": "./js/dictation.js?v=77",
-      "./js/extract.js": "./js/extract.js?v=77",
-      "./js/gemini.js": "./js/gemini.js?v=77",
-      "./js/media.js": "./js/media.js?v=77",
-      "./js/neural.js": "./js/neural.js?v=77",
-      "./js/onboarding.js": "./js/onboarding.js?v=77",
-      "./js/openai.js": "./js/openai.js?v=77",
-      "./js/ripple.js": "./js/ripple.js?v=77",
-      "./js/speech.js": "./js/speech.js?v=77",
-      "./js/storage.js": "./js/storage.js?v=77"
+      "./js/abbr.js": "./js/abbr.js?v=78",
+      "./js/ai.js": "./js/ai.js?v=78",
+      "./js/analyze.js": "./js/analyze.js?v=78",
+      "./js/anthropic.js": "./js/anthropic.js?v=78",
+      "./js/app.js": "./js/app.js?v=78",
+      "./js/commands.js": "./js/commands.js?v=78",
+      "./js/lecture.js": "./js/lecture.js?v=78",
+      "./js/config.js": "./js/config.js?v=78",
+      "./js/stats.js": "./js/stats.js?v=78",
+      "./js/cheatsheet.js": "./js/cheatsheet.js?v=78",
+      "./js/calendar.js": "./js/calendar.js?v=78",
+      "./js/mcq.js": "./js/mcq.js?v=78",
+      "./js/audiobook.js": "./js/audiobook.js?v=78",
+      "./js/tickets.js": "./js/tickets.js?v=78",
+      "./js/i18n.js": "./js/i18n.js?v=78",
+      "./js/i18n-en.js": "./js/i18n-en.js?v=78",
+      "./js/platform.js": "./js/platform.js?v=78",
+      "./js/dictation.js": "./js/dictation.js?v=78",
+      "./js/extract.js": "./js/extract.js?v=78",
+      "./js/gemini.js": "./js/gemini.js?v=78",
+      "./js/media.js": "./js/media.js?v=78",
+      "./js/neural.js": "./js/neural.js?v=78",
+      "./js/onboarding.js": "./js/onboarding.js?v=78",
+      "./js/openai.js": "./js/openai.js?v=78",
+      "./js/ripple.js": "./js/ripple.js?v=78",
+      "./js/speech.js": "./js/speech.js?v=78",
+      "./js/storage.js": "./js/storage.js?v=78"
     }
   }
   </script>
@@ -834,7 +842,7 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=77"></script>
+  <script type="module" src="js/app.js?v=78"></script>
   <div id="printArea" class="cheatsheet" data-no-i18n></div>
 </body>
 </html>
