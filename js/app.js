@@ -62,6 +62,7 @@ let analysisController = null;
 function invalidateAnalysis() {
   analysisEpoch++;
   if (analysisController) $('analyzeStatus').textContent = T('Материалы изменились. Составьте план заново.');
+  if (analysisController && project) saveProject();
   analysisController?.abort();
   analysisController = null;
   $('analyzeBtn').disabled = switchingSubject;
@@ -549,7 +550,11 @@ $('analyzeBtn').addEventListener('click', async () => {
       ? `<br><span class="muted small">${esc(T('Уже разобранные части сохранены: завтра план достроится быстрее. Или подключите свой ключ.'))}</span> <button class="btn text" data-own-key>${esc(T('Подключить свой ключ'))}</button>`
       : '');
   } finally {
-    if (my === analysisEpoch) { analysisController = null; btn.disabled = switchingSubject; if (!switchingSubject) gen.loop(); }
+    if (my === analysisEpoch) {
+      analysisController = null;
+      btn.disabled = switchingSubject;
+      if (!switchingSubject) { if (project) saveProject(); gen.loop(); }
+    }
   }
 });
 
