@@ -1,6 +1,7 @@
 export default async ({ open, ok, say: unused }) => {
   const { page, say } = await open();
   await page.click('#addLectureBtn');
+  await page.waitForFunction(() => !!window.__sr);
   await page.evaluate(() => {
     window.originalSet = Storage.prototype.setItem;
     Storage.prototype.setItem = function(k, v) {
@@ -25,7 +26,7 @@ export default async ({ open, ok, say: unused }) => {
     };
   });
   await page.click('#lectureDone');
-  await page.waitForTimeout(300);
+  await page.waitForFunction(() => !document.getElementById('lectureDone').disabled);
   ok(await page.locator('#lecturePanel').isVisible() && (await page.textContent('#lectureText')).includes('важный текст'), 'при ошибке сохранения материала лекция остаётся на экране');
   ok(await page.evaluate(() => JSON.parse(localStorage.getItem('kd.lectureDraft')).text.includes('важный текст')), 'черновик не удалён при ошибке сохранения материала');
   await page.evaluate(() => { Storage.prototype.setItem = window.originalSet; IDBObjectStore.prototype.put = window.originalPut; });
@@ -40,6 +41,7 @@ export default async ({ open, ok, say: unused }) => {
     await route.fallback();
   });
   await next.page.click('#addLectureBtn');
+  await next.page.waitForFunction(() => !!window.__sr);
   await next.say('текст для обработки лекции', true, 100);
   await next.page.click('#lectureDone');
   await next.page.waitForSelector('#lectureWork:not(.hidden)');
