@@ -54,6 +54,19 @@ let subjects = null;        // { list: [{id, title}], current }
 let sources = [];
 let project = null;
 let progress = null;
+let subjectEpoch = 0;
+let loadedSubject = null;
+let switchingSubject = false;
+let analysisEpoch = 0;
+let analysisController = null;
+function invalidateAnalysis() {
+  analysisEpoch++;
+  if (analysisController) $('analyzeStatus').textContent = T('Материалы изменились. Составьте план заново.');
+  if (analysisController && project) saveProject();
+  analysisController?.abort();
+  analysisController = null;
+  $('analyzeBtn').disabled = switchingSubject;
+}
 
 const cur = () => subjects?.current;
 const curSubject = () => subjects?.list.find((x) => x.id === cur());
@@ -166,12 +179,12 @@ const gen = {
       (settings.formulasApart !== false ? reach.find((t) => t.status === 'ready' && t.formulas === undefined && !t.fxFailed) : null) || null;
   },
   async loop() {
-    if (this.running || !project) return;
+    if (this.running || !project || analysisController) return;
     this.running = true;
     try {
       for (;;) {
         const p = project;
-        if (!p) break;
+        if (!p || analysisController) break;
         const t = this.pick(p);
         if (!t) break;
         if (t.status === 'ready') {
@@ -192,7 +205,7 @@ const gen = {
               t.fxFailed = true;
             }
           }
-          if (p === project) saveProject();
+          if (p === project && !analysisController) saveProject();
           render();
           continue;
         }
@@ -209,7 +222,7 @@ const gen = {
             t.status = 'pending';
             this.mark();
             toast('Бесплатные запросы на сегодня закончились. Готовые темы можно диктовать, остальные подготовятся позже.', 6000);
-            if (p === project) saveProject();
+            if (p === project && !analysisController) saveProject();
             break;
           }
           t.status = 'error';
@@ -218,11 +231,11 @@ const gen = {
           t.errorAt = Date.now();
           if (e.code === 'NO_KEY' || e.status === 400 || e.status === 403 || e.status === 404) {
             toast(t.error, 5000);
-            if (p === project) saveProject();
+            if (p === project && !analysisController) saveProject();
             break;
           }
         }
-        if (p === project) saveProject();
+        if (p === project && !analysisController) saveProject();
         render();
       }
     } finally {
@@ -306,6 +319,7 @@ function renderSources() {
 $('sourceList').addEventListener('click', (e) => {
   const id = e.target.closest('[data-del]')?.dataset.del;
   if (!id) return;
+  invalidateAnalysis();
   sources = sources.filter((s) => s.id !== id);
   saveSources();
   renderSources();
@@ -316,6 +330,7 @@ $('pasteCancel').addEventListener('click', () => $('pastePanel').classList.add('
 $('pasteAdd').addEventListener('click', () => {
   const text = $('pasteText').value.trim();
   if (!text) return toast('Вставьте текст');
+  invalidateAnalysis();
   sources.push({ id: uid(), name: $('pasteTitle').value.trim() || `Текст ${sources.length + 1}`, kind: 'text', text });
   $('pasteText').value = '';
   $('pasteTitle').value = '';
@@ -361,17 +376,28 @@ $('lectureCancel').addEventListener('click', () => {
   $('lecturePanel').classList.add('hidden');
 });
 $('lectureDone').addEventListener('click', async () => {
+  const epoch = subjectEpoch;
   const title = $('lectureTitle').value.trim() || `Лекция ${new Date().toLocaleDateString('ru-RU')}`;
   const raw = lecture.finish();
   $('lecturePanel').classList.add('hidden');
   if (!raw) return toast('Запись пустая');
   let text = roughParagraphs(raw);
+  invalidateAnalysis();
+  // Save the raw transcript before asking the AI: changing subjects must not lose the recording.
+  const source = { id: uid(), name: title, kind: 'text', text };
+  sources.push(source);
+  if (!await saveSources()) return;
+  renderSources();
+  if (epoch !== subjectEpoch || switchingSubject) return;
   if ($('lectureTidy').checked && hasAI(settings)) {
-    try { text = await tidyTranscript(raw, settings, (m) => toast(m, 8000)); } catch (e) {
+    try { text = await tidyTranscript(raw, settings, (m) => { if (epoch === subjectEpoch) toast(m, 8000); }); } catch (e) {
+      if (epoch !== subjectEpoch) return;
       toast('Не получилось навести порядок — сохраняю расшифровку как есть: ' + (e.message || e), 6000);
     }
   }
-  sources.push({ id: uid(), name: title, kind: 'text', text });
+  if (epoch !== subjectEpoch || switchingSubject) return;
+  invalidateAnalysis();
+  source.text = text;
   saveSources();
   renderSources();
   toast(`Лекция «${title}» добавлена в материал — можно составлять план.`, 5000);
@@ -383,13 +409,16 @@ $('addFileBtn').addEventListener('click', () => $('fileInput').click());
 $('addPhotoBtn').addEventListener('click', () => $('photoInput').click());
 
 $('fileInput').addEventListener('change', async (e) => {
+  const epoch = subjectEpoch;
   const files = [...e.target.files];
   e.target.value = '';
   for (const f of files) {
     try {
       toast(`Читаю «${f.name}»…`, 8000);
       const src = await fileToSource(f, (m) => toast(m, 8000));
+      if (epoch !== subjectEpoch || switchingSubject) return;
       if (src.kind === 'text' && !src.text.trim()) { toast(`«${f.name}»: текст не найден`); continue; }
+      invalidateAnalysis();
       sources.push({ id: uid(), ...src });
       saveSources();
       renderSources();
@@ -401,6 +430,7 @@ $('fileInput').addEventListener('change', async (e) => {
 });
 
 $('photoInput').addEventListener('change', async (e) => {
+  const epoch = subjectEpoch;
   const files = [...e.target.files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   e.target.value = '';
   if (!files.length) return;
@@ -409,10 +439,13 @@ $('photoInput').addEventListener('change', async (e) => {
     toast(`Обрабатываю фото ${i + 1} из ${files.length}…`, 8000);
     try {
       const src = await fileToSource(files[i]);
+      if (epoch !== subjectEpoch || switchingSubject) return;
       images.push(...src.images);
     } catch (err) { toast(`Фото «${files[i].name}» не прочитано: ${err.message}`, 5000); }
   }
   if (!images.length) return;
+  if (epoch !== subjectEpoch || switchingSubject) return;
+  invalidateAnalysis();
   const n = sources.filter((s) => s.kind === 'images').length + 1;
   sources.push({ id: uid(), name: `Фото страниц ${n} (${images.length} шт.)`, kind: 'images', images });
   saveSources();
@@ -448,6 +481,7 @@ function logLine(msg, cls = '') {
 }
 
 $('analyzeBtn').addEventListener('click', async () => {
+  if (switchingSubject) return;
   if (!hasAI(settings)) { wizard.open(1); return; }
   if (!sources.length) return toast('Добавьте хотя бы один конспект');
   const budgetMin = getBudget();
@@ -460,6 +494,11 @@ $('analyzeBtn').addEventListener('click', async () => {
       : `Конспект большой: на план уйдёт около ${need} запросов к нейросети, а бесплатных запросов в день ограниченное число — их может не хватить. Можно добавить конспект по частям или подключить свой ключ (Настройки → Настроить заново). Продолжить?`))) return;
   }
   if (project && !confirm('Составить план заново? Текущий план и место, где вы остановились, будут сброшены.\n\nЧтобы продолжить диктовку, нажмите «Отмена» и откройте вкладку «Диктовка». Для другого предмета создайте новый предмет (название под заголовком).')) return;
+  invalidateAnalysis();
+  const my = analysisEpoch, epoch = subjectEpoch, subject = cur();
+  const input = structuredClone(sources);
+  const current = () => my === analysisEpoch && epoch === subjectEpoch && cur() === subject && !switchingSubject;
+  const controller = analysisController = new AbortController();
   const btn = $('analyzeBtn');
   btn.disabled = true;
   $('analyzeCard').classList.remove('hidden');
@@ -468,9 +507,13 @@ $('analyzeBtn').addEventListener('click', async () => {
   $('analyzeStatus').textContent = 'Начинаю…';
   let lastStep = '';
   try {
+    // Finish autosaving the previous plan before its replacement can be committed.
+    if (!await flushProject()) throw new Error(T('Не удалось сохранить план. Освободите место и попробуйте снова.'));
+    if (!current()) return;
     const p = await analyze({
-      sources, budgetMin, priority: getPriority(), settings,
+      sources: input, budgetMin, priority: getPriority(), settings: structuredClone(settings), signal: controller.signal,
       log: (msg, frac) => {
+        if (!current()) return;
         if (frac !== undefined) {
           $('analyzeBar').style.width = Math.round(frac * 100) + '%';
           if (msg !== lastStep) { logLine(msg); lastStep = msg; }
@@ -478,15 +521,19 @@ $('analyzeBtn').addEventListener('click', async () => {
         } else $('analyzeStatus').textContent = msg;
       },
     });
-    saveSources(); // распознанный текст фото сохраняется, повторно не распознаём
-    resetDictation();
+    if (!current()) return;
     // новый план: список билетов и дата экзамена остаются, ответы на билеты подготовятся заново — по новым темам
     if (project?.tickets?.length) p.tickets = project.tickets.map((t) => ({ id: t.id, q: t.q, a: '', topics: [], status: 'pending' }));
     if (project?.examDate) p.examDate = project.examDate;
+    if (!await idbSet('project:' + subject, p) || !await idbSet('sources:' + subject, input)) {
+      throw new Error(T('Не удалось сохранить план. Освободите место и попробуйте снова.'));
+    }
+    if (!current()) return;
+    resetDictation();
+    sources = input; // распознанный текст фото сохраняется вместе с планом
     project = p;
     progress = freshProgress(p.id);
     persistProgress();
-    await idbSet('project:' + cur(), project);
     const subj = curSubject();
     if (subj && /^(Предмет|Новый предмет)/.test(subj.title) && sources[0]) {
       subj.title = sources[0].name.replace(/\.[a-z0-9]+$/i, '').slice(0, 40);
@@ -497,12 +544,17 @@ $('analyzeBtn').addEventListener('click', async () => {
     switchTab('plan');
     gen.loop();
   } catch (e) {
+    if (!current() || e.name === 'AbortError') return;
     logLine('Ошибка: ' + (e.message || e), 'err');
     $('analyzeStatus').innerHTML = `<span style="color:var(--danger)">${esc(e.message || e)}</span>` + (e.code === 'DAILY_LIMIT'
       ? `<br><span class="muted small">${esc(T('Уже разобранные части сохранены: завтра план достроится быстрее. Или подключите свой ключ.'))}</span> <button class="btn text" data-own-key>${esc(T('Подключить свой ключ'))}</button>`
       : '');
   } finally {
-    btn.disabled = false;
+    if (my === analysisEpoch) {
+      analysisController = null;
+      btn.disabled = switchingSubject;
+      if (!switchingSubject) { if (project) saveProject(); gen.loop(); }
+    }
   }
 });
 
@@ -2503,30 +2555,48 @@ function renderSubject() {
 }
 
 async function openSubject(id) {
-  flushProject();
-  resetDictation();
-  dict.rec.stop();
-  disableMedia();
-  subjects.current = id;
-  saveSubjects(subjects);
-  sources = (await idbGet('sources:' + id)) || [];
-  project = (await idbGet('project:' + id)) || null;
-  progress = loadProgress(id);
-  openTopic = null;
-  if (project) {
-    project.topics.forEach((t) => { if (t.status === 'generating') t.status = 'pending'; });
-    if (!progress || progress.projectId !== project.id) progress = freshProgress(project.id);
-    budgetMin = project.budgetMin;
-    const r = document.querySelector(`input[name=priority][value=${project.priority}]`);
-    if (r) r.checked = true;
-    gen.loop();
-  } else {
-    progress = null;
+  const epoch = ++subjectEpoch;
+  switchingSubject = true;
+  invalidateAnalysis();
+  $('analyzeCard').classList.add('hidden');
+  try {
+    if (!await flushProject()) return;
+    if (epoch !== subjectEpoch) return;
+    if (loadedSubject && subjects.list.some((s) => s.id === cur()) && !await saveSources()) return;
+    if (epoch !== subjectEpoch) return;
+    persistProgress();
+    resetDictation();
+    dict.rec.stop();
+    disableMedia();
+    const [loadedSources, loadedProject] = await Promise.all([idbGet('sources:' + id), idbGet('project:' + id)]);
+    if (epoch !== subjectEpoch) return;
+    subjects.current = id;
+    saveSubjects(subjects);
+    sources = loadedSources || [];
+    project = loadedProject || null;
+    loadedSubject = id;
+    progress = loadProgress(id);
+    openTopic = null;
+    if (project) {
+      project.topics.forEach((t) => { if (t.status === 'generating') t.status = 'pending'; });
+      if (!progress || progress.projectId !== project.id) progress = freshProgress(project.id);
+      budgetMin = project.budgetMin;
+      const r = document.querySelector(`input[name=priority][value=${project.priority}]`);
+      if (r) r.checked = true;
+      gen.loop();
+    } else {
+      progress = null;
+    }
+    renderSubject();
+    renderSources();
+    renderBudget();
+    render();
+  } catch (err) {
+    if (!loadedSubject) throw err;
+    if (epoch === subjectEpoch) toast(T('Не удалось открыть предмет. Попробуйте снова.'), 6000);
+  } finally {
+    if (epoch === subjectEpoch) { switchingSubject = false; $('analyzeBtn').disabled = false; }
   }
-  renderSubject();
-  renderSources();
-  renderBudget();
-  render();
 }
 
 function newSubject() {
@@ -2585,7 +2655,7 @@ const openSubjectSheet = (on) => $('subjectSheet').classList.toggle('hidden', !o
 $('subjectBtn').addEventListener('click', () => { renderSubject(); openSubjectSheet(true); });
 $('subjectSheet').addEventListener('click', (e) => {
   const b = e.target.closest('[data-subject]');
-  if (b) { openSubjectSheet(false); if (b.dataset.subject !== cur()) openSubject(b.dataset.subject); return; }
+  if (b) { openSubjectSheet(false); if (switchingSubject || b.dataset.subject !== cur()) openSubject(b.dataset.subject); return; }
   if (e.target.closest('[data-close]')) openSubjectSheet(false);
 });
 $('subjectNew').addEventListener('click', () => { openSubjectSheet(false); newSubject(); });

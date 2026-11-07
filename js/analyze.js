@@ -94,9 +94,9 @@ const SYS_DICTATION = 'Ты готовишь учебный конспект к 
 // ---------- Распознавание фото ----------
 // (фото отправляются выбранной нейросети как изображения)
 
-export async function ocrImage(img, settings, onStatus) {
+export async function ocrImage(img, settings, onStatus, signal) {
   return generate({
-    ...conn(settings), onStatus, temperature: 0.1,
+    ...conn(settings), onStatus, signal, temperature: 0.1,
     system: 'Ты точно переписываешь учебные материалы с фотографий.',
     parts: [
       { text: 'Перепиши ВЕСЬ текст с этой страницы конспекта дословно, сохраняя структуру: заголовки начинай с «# », списки с «- ». ' +
@@ -110,7 +110,7 @@ export async function ocrImage(img, settings, onStatus) {
 
 // ---------- Разбиение на темы ----------
 
-async function segmentPart(blocks, sourceName, prevTitle, settings, onStatus) {
+async function segmentPart(blocks, sourceName, prevTitle, settings, onStatus, signal) {
   const numbered = blocks.map((b, i) => `[${i + 1}] ${b}`).join('\n\n');
   const n = blocks.length;
   if (n === 1) return [{ title: guessTitle(blocks), from: 1, to: 1, continues: !!prevTitle }];
@@ -128,7 +128,7 @@ ${numbered}`;
   if (segCache.has(key)) return normalizeRanges(segCache.get(key), n, blocks);
   let topics = [];
   try {
-    const res = await generateJSON({ ...conn(settings), system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.2 });
+    const res = await generateJSON({ ...conn(settings), signal, system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.2 });
     topics = Array.isArray(res.topics) ? res.topics : [];
     segCache.set(key, topics);
   } catch (e) {
@@ -167,7 +167,7 @@ export function normalizeRanges(topics, n, blocks) {
 
 // ---------- Планирование ----------
 
-async function planTopics(topics, settings, onStatus) {
+async function planTopics(topics, settings, onStatus, signal) {
   const snip = topics.length > 100 ? 200 : 400;
   const list = topics.map((t) => ({
     id: t.id, title: t.title, chars: t.chars,
@@ -183,7 +183,7 @@ async function planTopics(topics, settings, onStatus) {
 
 ${JSON.stringify(list)}`;
   try {
-    const res = await generateJSON({ ...conn(settings), system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.2 });
+    const res = await generateJSON({ ...conn(settings), signal, system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.2 });
     const map = new Map((res.topics || []).map((x) => [x.id, x]));
     const ids = new Set(topics.map((t) => t.id));
     for (const t of topics) {
@@ -194,7 +194,7 @@ ${JSON.stringify(list)}`;
       t.summary = String(x.summary || '');
     }
   } catch (e) {
-    if (e.code === 'NO_KEY' || e.status === 400 || e.status === 403) throw e;
+    if (e.name === 'AbortError' || e.code === 'NO_KEY' || e.status === 400 || e.status === 403) throw e;
     onStatus?.('Не удалось оценить сложность — ставлю среднюю.');
     topics.forEach((t) => { t.difficulty = t.difficulty || 3; t.prereq = t.prereq || []; t.summary = t.summary || ''; });
   }
@@ -315,7 +315,9 @@ export function activeSeq(project) {
  * sources: [{id,name,kind,text?,images?}] -> project
  * log(msg, fraction)
  */
-export async function analyze({ sources, budgetMin, priority, settings, log }) {
+export async function analyze({ sources, budgetMin, priority, settings, log, signal }) {
+  const active = () => { if (signal?.aborted) throw new DOMException('Analysis cancelled', 'AbortError'); };
+  active();
   const status = (m) => log(m);
   // 1. Фото -> текст
   const imgTotal = sources.reduce((s, x) => s + (x.kind === 'images' ? x.images.length : 0), 0);
@@ -325,7 +327,8 @@ export async function analyze({ sources, budgetMin, priority, settings, log }) {
     const texts = [];
     for (const img of s.images) {
       log(`Распознаю фото: «${s.name}» (${++imgDone}/${imgTotal})`, 0.05 + 0.25 * (imgDone / Math.max(1, imgTotal)));
-      texts.push(await ocrImage(img, settings, status));
+      texts.push(await ocrImage(img, settings, status, signal));
+      active();
     }
     s.text = texts.join('\n\n');
   }
@@ -344,7 +347,9 @@ export async function analyze({ sources, budgetMin, priority, settings, log }) {
     const { source, blocks } = parts[i];
     log(`Разбиваю на темы: часть ${i + 1} из ${parts.length}`, 0.3 + 0.45 * (i / parts.length));
     const sameSource = prevSource === source;
-    const ranges = await segmentPart(blocks, source.name, sameSource ? prevTitle : null, settings, status);
+    active();
+    const ranges = await segmentPart(blocks, source.name, sameSource ? prevTitle : null, settings, status, signal);
+    active();
     ranges.forEach((r, j) => {
       const text = blocks.slice(r.from - 1, r.to).join('\n\n');
       if (j === 0 && r.continues && sameSource && topics.length) {
@@ -362,7 +367,8 @@ export async function analyze({ sources, budgetMin, priority, settings, log }) {
 
   // 3. Сложность, зависимости, план
   log(`Оцениваю сложность и зависимости (${topics.length} тем)`, 0.8);
-  await planTopics(topics, settings, status);
+  await planTopics(topics, settings, status, signal);
+  active();
   const project = {
     id: 'p' + uid(),
     createdAt: Date.now(),
