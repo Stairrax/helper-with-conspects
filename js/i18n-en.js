@@ -7,6 +7,7 @@ const pl = (n, one, many) => `${n} ${+n === 1 ? one : many}`;
 const VOICE = { Бая: 'Baya', Ксения: 'Xenia', Ксюша: 'Ksyusha', Айдар: 'Aidar', Евгений: 'Evgeny', Ирина: 'Irina', Дмитрий: 'Dmitri', Денис: 'Denis', Руслан: 'Ruslan' };
 
 export const EXACT = {
+  'Нейросеть слишком долго не отвечает. Попробуйте снова.': 'The AI is taking too long to respond. Please try again.',
   'Не удалось сохранить текущие данные. Восстановление не начато.': 'Current data could not be saved. Backup restoration has not started.',
   'Не удалось прочитать все данные для резервной копии. Не закрывайте приложение и попробуйте снова.': 'Some data could not be read for the backup. Keep the app open and try again.',
   'Не удалось перенести сохранённые данные. Исходные записи сохранены.': 'Saved data could not be migrated. The original records have been kept.',
