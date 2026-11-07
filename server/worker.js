@@ -8,9 +8,8 @@
 // Чтобы ключ не потратили чужие:
 //  - запросы принимаются только со страниц из ALLOWED_ORIGINS (сайт приложения);
 //  - модель выбирает сервер (MODELS), а не тот, кто прислал запрос; длина ответа ограничена (MAX_TOKENS);
-//  - лимит запросов в сутки на устройство (DAILY_PER_DEVICE) и на IP-адрес (DAILY_PER_IP).
-//    Счётчики живут в памяти сервера и считают примерно — если ключ платный, главный предохранитель
-//    всё равно лимит расходов на самом ключе (см. server/README.md).
+//  - общий дневной лимит, лимит на устройство и на IP в Durable Object.
+//    Идентификатор устройства и Origin можно подделать; ограничение расходов на ключе остаётся важным.
 //
 // Запасной вариант — Cloudflare Workers AI (привязка AI в wrangler.toml, отдельный бесплатный дневной запас, карта не нужна):
 // когда у OpenRouter кончился дневной лимит, отказал ключ или не ответили модели, сервер отвечает через него.
@@ -21,8 +20,6 @@
 const OPENROUTER = 'https://openrouter.ai/api/v1';
 const MAX_BODY = 12 * 1024 * 1024; // фото страниц приходят картинками в base64
 
-const counters = new Map(); // «сутки|кто» -> число запросов
-let countersDay = '';
 let freeCache = { at: 0, list: [] }; // подобранные бесплатные модели (обновляются раз в 6 часов)
 let modelsError = '';                // почему не удалось получить список моделей в последний раз (для /health)
 let aiLast = '';                     // что ответил запасной ИИ в последний раз (для /health)
@@ -65,14 +62,39 @@ const fail = (status, code, message, headers, reason) => json(status, { error: {
 const LIMIT_TEXT = 'На сегодня бесплатные запросы закончились. Продолжите завтра или укажите свой ключ: Настройки → Настроить заново.';
 const DOWN_TEXT = 'Бесплатный режим сейчас недоступен. Попробуйте позже или укажите свой ключ: Настройки → Настроить заново.';
 
-/** Считает запрос; false — лимит на сегодня исчерпан. */
-function count(who, limit) {
-  const day = new Date().toISOString().slice(0, 10);
-  if (day !== countersDay) { counters.clear(); countersDay = day; }
-  const n = (counters.get(who) || 0) + 1;
-  if (n > limit) return false;
-  counters.set(who, n);
-  return true;
+// Один объект ведёт общий счётчик для всех экземпляров Worker. Транзакция
+// проверяет и увеличивает все три лимита вместе; отказ не тратит другие лимиты.
+export class RequestLimits {
+  constructor(state) { this.storage = state.storage; }
+  async fetch(request) {
+    const { device, ip, limits } = await request.json();
+    const accepted = await this.storage.transaction(async (tx) => {
+      const keys = ['total', 'device:' + device, 'ip:' + ip];
+      const values = await Promise.all(keys.map((key) => tx.get(key)));
+      if (values.some((v, i) => (v || 0) >= limits[i])) return false;
+      for (let i = 0; i < keys.length; i++) await tx.put(keys[i], (values[i] || 0) + 1);
+      return true;
+    });
+    if (!await this.storage.getAlarm()) await this.storage.setAlarm(Date.now() + 48 * 3600e3);
+    return Response.json({ accepted });
+  }
+  async alarm() { await this.storage.deleteAll(); }
+}
+
+const positiveLimit = (v, fallback) => Number.isSafeInteger(+v) && +v > 0 ? +v : fallback;
+async function countRequest(env, device, ip) {
+  const ns = env.REQUEST_LIMITS;
+  if (!ns) throw new Error('Request limits unavailable');
+  const stub = ns.get(ns.idFromName('daily:' + new Date().toISOString().slice(0, 10)));
+  const response = await stub.fetch('https://limits.internal/', {
+    method: 'POST', body: JSON.stringify({ device, ip, limits: [
+      positiveLimit(opt(env, 'DAILY_TOTAL', 900), 900),
+      positiveLimit(opt(env, 'DAILY_PER_DEVICE', 30), 30),
+      positiveLimit(opt(env, 'DAILY_PER_IP', 100), 100),
+    ] }),
+  });
+  if (!response.ok) throw new Error('Request limits unavailable');
+  return (await response.json()).accepted === true;
 }
 
 // ---------- бесплатные модели OpenRouter ----------
@@ -308,7 +330,10 @@ export default {
     // кто прислал: устройство (случайный номер из приложения) и IP-адрес
     const device = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').slice(0, 64) || 'none';
     const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
-    if (!count('d|' + device, +opt(env, 'DAILY_PER_DEVICE', 300)) || !count('ip|' + ip, +opt(env, 'DAILY_PER_IP', 1500))) {
+    let allowed;
+    try { allowed = await countRequest(env, device, ip); }
+    catch { return fail(503, 'unavailable', DOWN_TEXT, c.headers, 'limits-unavailable'); }
+    if (!allowed) {
       return fail(429, 'daily_limit', LIMIT_TEXT, c.headers);
     }
 
