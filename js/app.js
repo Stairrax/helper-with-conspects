@@ -2478,6 +2478,12 @@ $('restoreInput').addEventListener('change', async (e) => {
     if (data?.format === SHARE_FORMAT) return await importKonspekt(data);
     const when = data?.at ? new Date(data.at).toLocaleString('ru-RU') : 'неизвестно когда';
     if (!confirm(`Заменить все данные приложения копией от ${when}? Текущие настройки и конспекты будут заменены.`)) return;
+    // The rollback snapshot must include edits still waiting for the autosave timer.
+    if (!await flushProject() || !await saveSources() || !saveSubjects(subjects) ||
+        !saveSettings(settings) || (progress && !saveProgress(progress, cur()))) {
+      throw new Error(T('Не удалось сохранить текущие данные. Восстановление не начато.'));
+    }
+    flushStats();
     resetDictation();
     dict.rec.stop();
     await restoreBackup(data);
