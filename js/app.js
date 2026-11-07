@@ -289,7 +289,7 @@ function renderSources() {
       <svg><use href="#i-${s.kind === 'images' ? 'camera' : 'doc'}"/></svg>
       <span class="name" data-no-i18n>${esc(s.name)}</span>
       <span class="size">${s.kind === 'images' ? `${s.images.length} стр.` : fmtChars((s.text || '').length)}</span>
-      <button class="icon-btn small" data-del="${s.id}" aria-label="Удалить"><svg><use href="#i-close"/></svg></button>
+      <button class="icon-btn small" data-del="${esc(s.id)}" aria-label="Удалить"><svg><use href="#i-close"/></svg></button>
     </li>`).join('');
   $('sourcesEmpty').classList.toggle('hidden', sources.length > 0);
 }
@@ -630,7 +630,7 @@ function renderPlan() {
         ${points}
       </div>`;
     }
-    return `<li class="${skipped ? 'skipped' : ''} ${isCur ? 'current' : ''} ${done ? 'done' : ''}" data-id="${id}">
+    return `<li class="${skipped ? 'skipped' : ''} ${isCur ? 'current' : ''} ${done ? 'done' : ''}" data-id="${esc(id)}">
       <button class="phead" data-act="open">
         <span class="pnum">${skipped ? '–' : done ? '✓' : n}</span>
         <span class="pbody"><span class="ptitle"><span data-no-i18n>${esc(t.title)}</span>${badges}</span>
@@ -952,7 +952,7 @@ function renderTickets() {
     const badge = r ? `<span class="badge ${r.grade >= 5 ? 'good' : r.grade >= 4 ? 'fx' : 'weak'}">${r.grade}</span>`
       : t.status === 'ready' ? '' : '<span class="badge">⏳</span>';
     const open = ticketOpen === t.id;
-    return `<li data-id="${t.id}" class="${open ? 'open' : ''}">
+    return `<li data-id="${esc(t.id)}" class="${open ? 'open' : ''}">
       <button class="thead" data-act="open"><span class="tnum">${i + 1}</span><span class="tq" data-no-i18n>${esc(t.q)}</span>${badge}</button>
       ${open ? `<div class="tdetail">
         ${t.status === 'ready' ? `<p class="tans" data-no-i18n>${esc(t.a)}</p>` : `<p class="hint">${t.status === 'error' ? 'Ответ подготовить не удалось.' : 'Ответ готовится…'}</p>`}
@@ -2287,7 +2287,7 @@ $('audioBtn').addEventListener('click', () => {
   const seq = activeSeq(project).filter((t) => t.status === 'ready');
   const cur = progress?.topicId;
   $('audioWhat').innerHTML = '<option value="all">Весь конспект</option>' +
-    seq.map((t, i) => `<option value="${t.id}" data-no-i18n>${i + 1}. ${esc(t.title)}</option>`).join('');
+    seq.map((t, i) => `<option value="${esc(t.id)}" data-no-i18n>${i + 1}. ${esc(t.title)}</option>`).join('');
   if (cur && seq.some((t) => t.id === cur) && !audio.url) $('audioWhat').value = cur;
   const lang = settings.contentLang === 'en' ? 'en' : 'ru';
   const voices = Object.entries(NEURAL_VOICES).filter(([id]) => voiceLang(id) === lang);
@@ -2468,7 +2468,7 @@ $('restoreInput').addEventListener('change', async (e) => {
 function renderSubject() {
   $('subjectName').textContent = curSubject()?.title || T('Предмет');
   $('subjectList').innerHTML = (subjects?.list || []).map((x) =>
-    `<button class="sheet-item ${x.id === cur() ? 'active' : ''}" data-subject="${x.id}">${esc(x.title)}</button>`).join('');
+    `<button class="sheet-item ${x.id === cur() ? 'active' : ''}" data-subject="${esc(x.id)}">${esc(x.title)}</button>`).join('');
 }
 
 async function openSubject(id) {
