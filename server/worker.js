@@ -19,6 +19,15 @@
 
 const OPENROUTER = 'https://openrouter.ai/api/v1';
 const MAX_BODY = 12 * 1024 * 1024; // фото страниц приходят картинками в base64
+const healthCounters = new Map();
+let healthDay = '';
+function countHealth(who) {
+  const day = new Date().toISOString().slice(0, 10);
+  if (healthDay !== day) { healthDay = day; healthCounters.clear(); }
+  const n = (healthCounters.get(who) || 0) + 1;
+  healthCounters.set(who, n);
+  return n <= 30;
+}
 
 let freeCache = { at: 0, list: [] }; // подобранные бесплатные модели (обновляются раз в 6 часов)
 let modelsError = '';                // почему не удалось получить список моделей в последний раз (для /health)
@@ -265,7 +274,7 @@ async function viaAI(env, body, maxTokens, headers) {
 async function health(req, env) {
   const who = req.headers.get('CF-Connecting-IP') || 'unknown';
   const h = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' };
-  if (!count('health|' + who, 30)) return new Response(JSON.stringify({ error: 'слишком часто, подождите минуту' }), { status: 429, headers: h });
+  if (!countHealth(who)) return new Response(JSON.stringify({ error: 'слишком часто, попробуйте позже' }), { status: 429, headers: h });
   const where = { colo: req.cf?.colo || null, country: req.cf?.country || null }; // через какой город и страну идут запросы
   if (!healthCache.data || Date.now() - healthCache.at > 60e3) {
     const out = { keyOnServer: !!env.OPENROUTER_KEY, upstream: upstream(env), mode: String(opt(env, 'MODELS', 'free')) };
