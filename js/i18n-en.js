@@ -7,6 +7,10 @@ const pl = (n, one, many) => `${n} ${+n === 1 ? one : many}`;
 const VOICE = { Бая: 'Baya', Ксения: 'Xenia', Ксюша: 'Ksyusha', Айдар: 'Aidar', Евгений: 'Evgeny', Ирина: 'Irina', Дмитрий: 'Dmitri', Денис: 'Denis', Руслан: 'Ruslan' };
 
 export const EXACT = {
+  'Не удалось прочитать все данные для резервной копии. Не закрывайте приложение и попробуйте снова.': 'Some data could not be read for the backup. Keep the app open and try again.',
+  'Не удалось перенести сохранённые данные. Исходные записи сохранены.': 'Saved data could not be migrated. The original records have been kept.',
+  'Не удалось сохранить конспект. Исходный файл можно открыть повторно после освобождения места.': 'The notes could not be saved. Free up space, then open the original file again.',
+  'Не удалось сохранить изменения на устройстве. Не закрывайте приложение. Освободите место и сохраните резервную копию в Настройках.': 'Changes could not be saved on this device. Keep the app open. Free up space and save a backup in Settings.',
   // вкладки и общее
   'Материал': 'Material', 'План': 'Plan', 'Диктовка': 'Dictation', 'Настройки': 'Settings', 'Повторение': 'Review',
   'Предмет': 'Subject', 'Помощник по учёбе': 'Study Helper', 'Учёба': 'Study Helper',

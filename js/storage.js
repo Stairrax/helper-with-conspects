@@ -5,6 +5,18 @@ import { FREE_PROXY } from './config.js';
 const LS_SETTINGS = 'kd.settings';
 const LS_PROGRESS = 'kd.progress';
 
+// Keep failures visible without putting keys or user data into error messages.
+export const storageFailures = new Set();
+function storageResult(key, ok) {
+  if (ok) storageFailures.delete(key); else storageFailures.add(key);
+  window.dispatchEvent(new CustomEvent('kd-storage-state', { detail: { failed: storageFailures.size > 0 } }));
+  return ok;
+}
+function writeLocal(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); return storageResult(key, true); }
+  catch { return storageResult(key, false); }
+}
+
 export const DEFAULT_SETTINGS = {
   provider: 'openrouter', // см. PROVIDERS в ai.js
   apiKey: '',             // ключ, модель и адрес текущего провайдера
@@ -85,7 +97,7 @@ export function loadSettings() {
 }
 
 export function saveSettings(s) {
-  try { localStorage.setItem(LS_SETTINGS, JSON.stringify(s)); } catch { /* приватный режим */ }
+  return writeLocal(LS_SETTINGS, s);
 }
 
 // Прогресс хранится отдельно для каждого предмета: kd.progress:<id> (без id — старый общий ключ).
@@ -96,7 +108,7 @@ export function loadProgress(id) {
 }
 
 export function saveProgress(p, id) {
-  try { localStorage.setItem(progressKey(id), JSON.stringify(p)); } catch { /* ignore */ }
+  return writeLocal(progressKey(id), p);
 }
 
 export function clearProgress(id) {
@@ -110,7 +122,7 @@ export function loadSubjects() {
 }
 
 export function saveSubjects(s) {
-  try { localStorage.setItem('kd.subjects', JSON.stringify(s)); } catch { /* ignore */ }
+  return writeLocal('kd.subjects', s);
 }
 
 // --- IndexedDB (key-value) с запасным вариантом на localStorage ---
@@ -122,9 +134,14 @@ function db() {
       if (!('indexedDB' in window)) return reject(new Error('no idb'));
       const req = indexedDB.open('konspekt-diktor', 1);
       req.onupgradeneeded = () => req.result.createObjectStore('kv');
-      req.onsuccess = () => resolve(req.result);
+      req.onsuccess = () => {
+        const d = req.result;
+        d.onversionchange = () => { d.close(); dbPromise = null; };
+        d.onclose = () => { dbPromise = null; };
+        resolve(d);
+      };
       req.onerror = () => reject(req.error);
-    });
+    }).catch((err) => { dbPromise = null; throw err; });
   }
   return dbPromise;
 }
@@ -141,15 +158,42 @@ function tx(mode, fn) {
 }
 
 export async function idbGet(key) {
-  try { return await tx('readonly', (s) => s.get(key)); } catch {
-    try { return JSON.parse(localStorage.getItem('kd.idb.' + key) || 'null'); } catch { return null; }
+  await writes.get(key);
+  // A fallback was written after a failed IDB write and is newer than IDB.
+  try {
+    const fallback = localStorage.getItem('kd.idb.' + key);
+    if (fallback !== null) return JSON.parse(fallback);
+  } catch { storageResult('idb:' + key, false); }
+  try { return await tx('readonly', (s) => s.get(key)); } catch (err) {
+    // A read failure is not evidence that a subject is empty.
+    storageResult('idb:' + key, false);
+    throw err;
   }
 }
 
-export async function idbSet(key, value) {
-  try { await tx('readwrite', (s) => s.put(value, key)); } catch {
-    // запасной вариант; в приватном режиме и при переполнении он тоже не сработает — молча, без падения
-    try { localStorage.setItem('kd.idb.' + key, JSON.stringify(value)); } catch { /* ignore */ }
+const writes = new Map();
+export function idbSet(key, value) {
+  let snapshot;
+  try { snapshot = structuredClone(value); }
+  catch { return Promise.resolve(storageResult('idb:' + key, false)); }
+  const write = (writes.get(key) || Promise.resolve()).then(() => writeIDB(key, snapshot));
+  writes.set(key, write);
+  write.finally(() => { if (writes.get(key) === write) writes.delete(key); });
+  return write;
+}
+
+async function writeIDB(key, value) {
+  try {
+    await tx('readwrite', (s) => s.put(value, key));
+    localStorage.removeItem('kd.idb.' + key);
+    return storageResult('idb:' + key, true);
+  } catch {
+    try {
+      const json = JSON.stringify(value);
+      if (json === undefined) throw new Error('Not JSON');
+      localStorage.setItem('kd.idb.' + key, json);
+      return storageResult('idb:' + key, true);
+    } catch { return storageResult('idb:' + key, false); }
   }
 }
 
@@ -164,8 +208,12 @@ async function idbEntries() {
       req.onsuccess = () => { const c = req.result; if (c) { out[c.key] = c.value; c.continue(); } };
       t.oncomplete = () => resolve(out);
       t.onerror = () => reject(t.error);
+      t.onabort = () => reject(t.error || new Error('Transaction aborted'));
     });
-  } catch { return {}; }
+  } catch (err) {
+    storageResult('backup', false);
+    throw err;
+  }
 }
 
 // ---------- Резервная копия ----------
@@ -174,12 +222,19 @@ const BACKUP_APP = 'konspekt-diktor';
 
 /** Все данные одним объектом: настройки и ключи, предметы, конспекты, прогресс. */
 export async function makeBackup() {
+  await Promise.all([...writes.values()]);
   const ls = {};
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
     if (k?.startsWith('kd.') && k !== 'kd.backupAt') ls[k] = localStorage.getItem(k);
   }
-  return { app: BACKUP_APP, version: 1, at: Date.now(), localStorage: ls, idb: await idbEntries() };
+  const idb = await idbEntries();
+  // Include fallback records even when IDB is available but still holds old data.
+  for (const [key, value] of Object.entries(ls)) {
+    if (key.startsWith('kd.idb.')) idb[key.slice('kd.idb.'.length)] = JSON.parse(value);
+  }
+  storageResult('backup', true);
+  return { app: BACKUP_APP, version: 1, at: Date.now(), localStorage: ls, idb };
 }
 
 /** Заменяет все данные приложения содержимым копии. */
