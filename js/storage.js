@@ -13,6 +13,7 @@ function storageResult(key, ok) {
   return ok;
 }
 function writeLocal(key, value) {
+  if (restoring) return storageResult(key, false);
   try { localStorage.setItem(key, JSON.stringify(value)); return storageResult(key, true); }
   catch { return storageResult(key, false); }
 }
@@ -112,6 +113,7 @@ export function saveProgress(p, id) {
 }
 
 export function clearProgress(id) {
+  if (restoring) return false;
   try { localStorage.removeItem(progressKey(id)); } catch { /* ignore */ }
 }
 
@@ -128,6 +130,9 @@ export function saveSubjects(s) {
 // --- IndexedDB (key-value) с запасным вариантом на localStorage ---
 
 let dbPromise = null;
+const RESTORE_JOURNAL = '__kd_restore_journal_v1__';
+let restoring = false;
+export const storageLocked = () => restoring;
 function db() {
   if (!dbPromise) {
     dbPromise = new Promise((resolve, reject) => {
@@ -138,7 +143,7 @@ function db() {
         const d = req.result;
         d.onversionchange = () => { d.close(); dbPromise = null; };
         d.onclose = () => { dbPromise = null; };
-        resolve(d);
+        recoverRestore(d).then(() => resolve(d), (err) => { d.close(); reject(err); });
       };
       req.onerror = () => reject(req.error);
     }).catch((err) => { dbPromise = null; throw err; });
@@ -146,18 +151,45 @@ function db() {
   return dbPromise;
 }
 
-function tx(mode, fn) {
-  return db().then((d) => new Promise((resolve, reject) => {
+function transaction(d, mode, fn) {
+  return new Promise((resolve, reject) => {
     const t = d.transaction('kv', mode);
     const store = t.objectStore('kv');
-    const req = fn(store);
+    let req;
     t.oncomplete = () => resolve(req && req.result);
     t.onerror = () => reject(t.error);
-    t.onabort = () => reject(t.error);
-  }));
+    t.onabort = () => reject(t.error || new DOMException('Transaction aborted', 'AbortError'));
+    try { req = fn(store); }
+    catch (err) { t.abort(); reject(err); }
+  });
+}
+function tx(mode, fn) {
+  return db().then((d) => transaction(d, mode, fn));
+}
+function replaceLocal(values) {
+  for (const k of Object.keys(localStorage)) {
+    if (k.startsWith('kd.') && k !== 'kd.backupAt') localStorage.removeItem(k);
+  }
+  for (const [k, v] of Object.entries(values)) localStorage.setItem(k, v);
+}
+function replaceIDB(d, values, journal) {
+  return transaction(d, 'readwrite', (s) => {
+    s.clear();
+    for (const [k, v] of Object.entries(values)) s.put(v, k);
+    if (journal) s.put(journal, RESTORE_JOURNAL);
+  });
+}
+// A crash can occur between IDB and localStorage commits. Never discard the old snapshot
+// until both stores have been written. Recovery finishes before normal reads are allowed.
+async function recoverRestore(d) {
+  const journal = await transaction(d, 'readonly', (s) => s.get(RESTORE_JOURNAL));
+  if (!journal) return;
+  replaceLocal(journal.localStorage);
+  await replaceIDB(d, journal.idb);
 }
 
 export async function idbGet(key) {
+  if (restoring) throw new Error('Restore in progress; reload required');
   await writes.get(key);
   // A fallback was written after a failed IDB write and is newer than IDB.
   try {
@@ -173,6 +205,7 @@ export async function idbGet(key) {
 
 const writes = new Map();
 export function idbSet(key, value) {
+  if (restoring || key === RESTORE_JOURNAL) return Promise.resolve(storageResult('idb:' + key, false));
   let snapshot;
   try { snapshot = structuredClone(value); }
   catch { return Promise.resolve(storageResult('idb:' + key, false)); }
@@ -202,10 +235,10 @@ async function idbEntries() {
   try {
     const d = await db();
     return await new Promise((resolve, reject) => {
-      const out = {};
+      const out = Object.create(null);
       const t = d.transaction('kv', 'readonly');
       const req = t.objectStore('kv').openCursor();
-      req.onsuccess = () => { const c = req.result; if (c) { out[c.key] = c.value; c.continue(); } };
+      req.onsuccess = () => { const c = req.result; if (c) { if (c.key !== RESTORE_JOURNAL) out[c.key] = c.value; c.continue(); } };
       t.oncomplete = () => resolve(out);
       t.onerror = () => reject(t.error);
       t.onabort = () => reject(t.error || new Error('Transaction aborted'));
@@ -222,6 +255,10 @@ const BACKUP_APP = 'konspekt-diktor';
 
 /** Все данные одним объектом: настройки и ключи, предметы, конспекты, прогресс. */
 export async function makeBackup() {
+  if (restoring) throw new Error('Restore in progress; reload required');
+  return captureBackup();
+}
+async function captureBackup() {
   await Promise.all([...writes.values()]);
   const ls = {};
   for (let i = 0; i < localStorage.length; i++) {
@@ -239,16 +276,45 @@ export async function makeBackup() {
 
 /** Заменяет все данные приложения содержимым копии. */
 export async function restoreBackup(data) {
-  if (data?.app !== BACKUP_APP || !data.localStorage || typeof data.localStorage !== 'object') {
+  const record = (v) => v && typeof v === 'object' && !Array.isArray(v);
+  if (data?.app !== BACKUP_APP || data.version !== 1 || !record(data.localStorage) || !record(data.idb) ||
+      Object.entries(data.localStorage).some(([k, v]) => !k.startsWith('kd.') || typeof v !== 'string') ||
+      Object.hasOwn(data.idb, RESTORE_JOURNAL)) {
     throw new Error('Это не резервная копия Помощника по учёбе');
   }
-  try { await tx('readwrite', (s) => s.clear()); } catch { /* ignore */ }
-  for (const k of Object.keys(localStorage)) if (k.startsWith('kd.') && k !== 'kd.backupAt') localStorage.removeItem(k);
-  for (const [k, v] of Object.entries(data.localStorage)) localStorage.setItem(k, String(v));
-  for (const [k, v] of Object.entries(data.idb || {})) await idbSet(k, v);
+  if (restoring) throw new Error('Restore in progress; reload required');
+  const incoming = structuredClone(data);
+  // Legacy backups may contain fallback records newer than their IDB counterparts.
+  for (const [key, value] of Object.entries(incoming.localStorage)) {
+    if (key.startsWith('kd.idb.')) {
+      Object.defineProperty(incoming.idb, key.slice('kd.idb.'.length), {
+        value: JSON.parse(value), enumerable: true, configurable: true, writable: true,
+      });
+      delete incoming.localStorage[key];
+    }
+  }
+  if (Object.hasOwn(incoming.idb, RESTORE_JOURNAL)) throw new Error('Invalid backup');
+  restoring = true;
+  let d;
+  try {
+    const previous = await captureBackup();
+    d = await db();
+    // clear + all puts + old snapshot form one atomic transaction.
+    await replaceIDB(d, incoming.idb, previous);
+    replaceLocal(incoming.localStorage);
+    await transaction(d, 'readwrite', (s) => s.delete(RESTORE_JOURNAL));
+    storageResult('restore', true);
+    // Keep old-page background writes blocked until the UI reloads.
+  } catch (err) {
+    try { if (d) await recoverRestore(d); restoring = false; }
+    catch { /* Journal remains durable; retry recovery on the next open. */ }
+    storageResult('restore', false);
+    throw err;
+  }
 }
 
 export async function idbDel(key) {
+  if (restoring || key === RESTORE_JOURNAL) return false;
   try { await tx('readwrite', (s) => s.delete(key)); } catch { /* ignore */ }
   try { localStorage.removeItem('kd.idb.' + key); } catch { /* ignore */ }
 }

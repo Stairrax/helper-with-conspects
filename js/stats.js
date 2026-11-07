@@ -1,6 +1,8 @@
 // Статистика занятий: сколько минут занимались по дням, серия дней подряд, результаты экзаменов.
 // Общая для всех предметов, хранится в localStorage (kd.stats) — только на этом устройстве.
 
+import { storageLocked } from './storage.js';
+
 const KEY = 'kd.stats';
 const DAY = 86400000;
 
@@ -17,6 +19,7 @@ function load() {
 }
 
 function save() {
+  if (storageLocked()) return;
   unsaved = 0;
   try { localStorage.setItem(KEY, JSON.stringify(data)); } catch { /* ignore */ }
 }
