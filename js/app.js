@@ -2,7 +2,7 @@
 
 import {
   loadSettings, saveSettings, loadProgress, saveProgress, clearProgress, idbGet, idbSet, idbDel, loadSubjects, saveSubjects,
-  makeBackup, restoreBackup,
+  makeBackup, restoreBackup, storageFailures,
 } from './storage.js';
 import { fileToSource } from './extract.js';
 import {
@@ -65,22 +65,31 @@ function freshProgress(projectId) {
 // ---------- Сохранение ----------
 
 let saveProjectTimer = null;
-let pendingSave = null;
+const unsavedProjects = new Map();
 function saveProject() {
   clearTimeout(saveProjectTimer);
   const id = cur(), p = project;
-  pendingSave = p && id ? { id, p } : null;
+  if (p && id) unsavedProjects.set(id, { id, p });
   saveProjectTimer = setTimeout(flushProject, 400);
 }
 /** Записать конспект немедленно: при закрытии приложения и смене предмета отложенная запись пропала бы. */
-function flushProject() {
+async function flushProject() {
   clearTimeout(saveProjectTimer);
-  const s = pendingSave;
-  pendingSave = null;
-  if (s) idbSet('project:' + s.id, s.p).catch(() => {});
+  const results = await Promise.all([...unsavedProjects.values()].map(async (s) => {
+    const ok = await idbSet('project:' + s.id, s.p);
+    if (ok && unsavedProjects.get(s.id) === s) unsavedProjects.delete(s.id);
+    return ok;
+  }));
+  return results.every(Boolean);
 }
 const saveSources = () => idbSet('sources:' + cur(), sources);
 const persistProgress = () => { if (progress) { saveProgress(progress, cur()); syncDueSoon(); } };
+
+function showStorageState() {
+  $('storageWarning').classList.toggle('hidden', !storageFailures.size);
+}
+window.addEventListener('kd-storage-state', showStorageState);
+showStorageState();
 
 // ---------- Утилиты ----------
 
@@ -2150,16 +2159,29 @@ function renderBackupInfo() {
 }
 
 $('backupBtn').addEventListener('click', async () => {
-  // сначала записываем всё несохранённое
-  persistProgress();
-  if (project) await idbSet('project:' + cur(), project);
-  await saveSources();
-  const data = await makeBackup();
-  const day = new Date().toISOString().slice(0, 10);
-  const file = new File([JSON.stringify(data)], `diktor-backup-${day}.json`, { type: 'application/json' });
-  if (await shareOrDownload(file)) {
-    try { localStorage.setItem('kd.backupAt', String(Date.now())); } catch { /* ignore */ }
-    renderBackupInfo();
+  try {
+    // сначала записываем всё несохранённое
+    persistProgress();
+    if (project) await idbSet('project:' + cur(), project);
+    await saveSources();
+    const data = await makeBackup();
+    // If disk writes failed, the download must still include the live projects.
+    for (const { id, p } of unsavedProjects.values()) data.idb['project:' + id] = p;
+    if (project) data.idb['project:' + cur()] = project;
+    data.idb['sources:' + cur()] = sources;
+    data.localStorage['kd.subjects'] = JSON.stringify(subjects);
+    data.localStorage['kd.settings'] = JSON.stringify(settings);
+    if (progress) data.localStorage['kd.progress:' + cur()] = JSON.stringify(progress);
+    // Fallbacks are already consolidated in data.idb; stale duplicates must not override it on restore.
+    for (const key of Object.keys(data.localStorage)) if (key.startsWith('kd.idb.')) delete data.localStorage[key];
+    const day = new Date().toISOString().slice(0, 10);
+    const file = new File([JSON.stringify(data)], `diktor-backup-${day}.json`, { type: 'application/json' });
+    if (await shareOrDownload(file)) {
+      try { localStorage.setItem('kd.backupAt', String(Date.now())); } catch { /* ignore */ }
+      renderBackupInfo();
+    }
+  } catch {
+    toast(T('Не удалось прочитать все данные для резервной копии. Не закрывайте приложение и попробуйте снова.'), 6000);
   }
 });
 
@@ -2226,9 +2248,12 @@ async function importKonspekt(data) {
   if (subjects.list.some((x) => x.title === title)) title = `${title.slice(0, 36)} (2)`;
   const id = 's' + uid();
   subjects.list.push({ id, title });
-  saveSubjects(subjects);
-  await idbSet('project:' + id, proj);
-  await idbSet('sources:' + id, [{ id: uid(), name: `${title} — готовый конспект`, kind: 'text', text: proj.fullText || topics.map((t) => t.text).join('\n\n') }]);
+  const saved = await idbSet('project:' + id, proj) &&
+    await idbSet('sources:' + id, [{ id: uid(), name: `${title} — готовый конспект`, kind: 'text', text: proj.fullText || topics.map((t) => t.text).join('\n\n') }]);
+  if (!saved || !saveSubjects(subjects)) {
+    subjects.list = subjects.list.filter((x) => x.id !== id);
+    throw new Error(T('Не удалось сохранить конспект. Исходный файл можно открыть повторно после освобождения места.'));
+  }
   await openSubject(id);
   switchTab('plan');
   const ready = topics.filter((t) => t.status === 'ready').length;
@@ -2539,10 +2564,12 @@ async function loadOrMigrateSubjects() {
   const oldProgress = loadProgress();
   const name = oldProject?.sources?.[0]?.name || oldSources?.[0]?.name;
   subjects = { list: [{ id, title: name ? name.replace(/\.[a-z0-9]+$/i, '').slice(0, 40) : T('Предмет 1') }], current: id };
-  if (oldProject) await idbSet('project:' + id, oldProject);
-  if (oldSources) await idbSet('sources:' + id, oldSources);
-  if (oldProgress) saveProgress(oldProgress, id);
-  saveSubjects(subjects);
+  if (oldProject && !await idbSet('project:' + id, oldProject) ||
+      oldSources && !await idbSet('sources:' + id, oldSources) ||
+      oldProgress && !saveProgress(oldProgress, id) || !saveSubjects(subjects)) {
+    // Keep legacy entries until every replacement is durable.
+    throw new Error(T('Не удалось перенести сохранённые данные. Исходные записи сохранены.'));
+  }
   if (oldProject) await idbDel('project');
   if (oldSources) await idbDel('sources');
   clearProgress();
