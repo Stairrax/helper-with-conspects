@@ -7,6 +7,9 @@ const pl = (n, one, many) => `${n} ${+n === 1 ? one : many}`;
 const VOICE = { Бая: 'Baya', Ксения: 'Xenia', Ксюша: 'Ksyusha', Айдар: 'Aidar', Евгений: 'Evgeny', Ирина: 'Irina', Дмитрий: 'Dmitri', Денис: 'Denis', Руслан: 'Ruslan' };
 
 export const EXACT = {
+  'Материалы изменились. Составьте план заново.': 'The materials have changed. Build the plan again.',
+  'Не удалось сохранить план. Освободите место и попробуйте снова.': 'The plan could not be saved. Free up space and try again.',
+  'Не удалось открыть предмет. Попробуйте снова.': 'The subject could not be opened. Please try again.',
   'Нейросеть слишком долго не отвечает. Попробуйте снова.': 'The AI is taking too long to respond. Please try again.',
   'Не удалось сохранить текущие данные. Восстановление не начато.': 'Current data could not be saved. Backup restoration has not started.',
   'Не удалось прочитать все данные для резервной копии. Не закрывайте приложение и попробуйте снова.': 'Some data could not be read for the backup. Keep the app open and try again.',

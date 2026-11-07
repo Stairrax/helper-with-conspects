@@ -100,6 +100,7 @@ export class Dictation {
     this.state = 'idle';
     this.mode = 'dictate';      // 'dictate' | 'review'
     this.token = 0;
+    this.commandEpoch = 0;
     this.resumePos = null;
     this.lastSpoken = null;
     this.announced = null;
@@ -309,12 +310,15 @@ export class Dictation {
 
   /** Вопрос или просьба? Команды узнаём сразу, просьбы своими словами («сделай паузы подольше») разбирает нейросеть. */
   async tryCommand(text) {
+    const commandEpoch = ++this.commandEpoch;
     const local = matchAppCommand(text);
     if (local) { await this.appCommand(local); return true; }
     if (!looksLikeRequest(text)) return false;
     const prev = this.state;
+    const token = this.token, project = this.project;
     this.set('thinking');
     const c = await aiCommand(text, this.settings);
+    if (token !== this.token || project !== this.project || commandEpoch !== this.commandEpoch) return true;
     if (this.state === 'thinking') this.set(prev);
     if (!c) return false;
     await this.appCommand(c);
@@ -1581,7 +1585,10 @@ ${prevQa ? `\nПРЕДЫДУЩИЕ ВОПРОСЫ В ЭТОЙ СЕССИИ:\n${p
     question = question.trim();
     if (!question) return;
     this.clearQuestion();
-    if (await this.tryCommand(question)) { this.heard = ''; this.h.emit(); return; }
+    const project = this.project, commandEpoch = this.commandEpoch + 1;
+    const handled = await this.tryCommand(question);
+    if (project !== this.project || commandEpoch !== this.commandEpoch) return;
+    if (handled) { this.heard = ''; this.h.emit(); return; }
     this.resolveWaiter(null);
     if (DICTATING.includes(this.state) || this.state === 'topicEnd' || this.state === 'reviewing') this.interrupt('question');
     stopSpeaking();
