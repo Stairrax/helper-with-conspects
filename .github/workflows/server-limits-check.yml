@@ -1,0 +1,51 @@
+name: Server limits integration
+on:
+  pull_request:
+    paths: ['server/**', '.github/workflows/server-limits-check.yml']
+  push:
+    branches: ['fix/server-request-limits']
+    paths: ['server/**', '.github/workflows/server-limits-check.yml']
+permissions:
+  contents: read
+jobs:
+  local-worker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run local Worker with a fake AI service
+        working-directory: server
+        shell: bash
+        run: |
+          cat > /tmp/fake-ai.cjs <<'EOF'
+          const http = require('node:http');
+          http.createServer((req, res) => {
+            req.resume();
+            res.writeHead(200, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }));
+          }).listen(8790, '127.0.0.1');
+          EOF
+          node /tmp/fake-ai.cjs &
+          npx -y wrangler@4.148.0 dev --local --ip 127.0.0.1 --port 8789 \
+            --var OPENROUTER_KEY:fake --var MODELS:demo --var UPSTREAM:http://127.0.0.1:8790 \
+            --var DAILY_TOTAL:3 --var DAILY_PER_DEVICE:2 --var DAILY_PER_IP:5 \
+            > /tmp/worker.log 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid" 2>/dev/null || true; cat /tmp/worker.log' EXIT
+          for i in {1..60}; do
+            if curl -sf http://127.0.0.1:8789/ >/dev/null; then break; fi
+            sleep 2
+          done
+          request() {
+            curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8789/v1/chat/completions \
+              -H 'Origin: https://stairrax.github.io' -H "Authorization: Bearer $1" \
+              -H 'Content-Type: application/json' -d '{"messages":[{"role":"user","content":"hello"}]}'
+          }
+          test "$(request device-a)" = 200
+          test "$(request device-a)" = 200
+          test "$(request device-a)" = 429
+          test "$(request device-b)" = 200
+          test "$(request device-c)" = 429
