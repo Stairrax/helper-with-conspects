@@ -9,7 +9,8 @@
     "test": "node tests/run.mjs",
     "backup:lab": "node server/backup-lab.mjs",
     "backup:check": "node server/backup-lab-check.mjs",
-    "test:backup": "node --test server/backup-lab.test.mjs"
+    "test:backup": "node --test server/backup-lab.test.mjs",
+    "test:backup:ollama": "node server/backup-browser-ollama.mjs"
   },
   "devDependencies": {
     "lamejs": "^1.2.1",
