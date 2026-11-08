@@ -376,24 +376,37 @@ $('lectureCancel').addEventListener('click', () => {
   $('lecturePanel').classList.add('hidden');
 });
 $('lectureDone').addEventListener('click', async () => {
+  $('lectureDone').disabled = true;
+  $('lecturePause').disabled = true;
+  $('lectureCancel').disabled = true;
+  $('lectureTitle').disabled = true;
+  $('addLectureBtn').disabled = true;
+  try {
   const epoch = subjectEpoch;
   const title = $('lectureTitle').value.trim() || `Лекция ${new Date().toLocaleDateString('ru-RU')}`;
   const raw = lecture.finish();
-  $('lecturePanel').classList.add('hidden');
   if (!raw) return toast('Запись пустая');
   let text = roughParagraphs(raw);
   invalidateAnalysis();
   // Save the raw transcript before asking the AI: changing subjects must not lose the recording.
   const source = { id: uid(), name: title, kind: 'text', text };
   sources.push(source);
-  if (!await saveSources()) return;
+  if (!await saveSources()) {
+    sources = sources.filter((s) => s !== source);
+    return;
+  }
+  lecture.discard();
+  $('lecturePanel').classList.add('hidden');
   renderSources();
   if (epoch !== subjectEpoch || switchingSubject) return;
   if ($('lectureTidy').checked && hasAI(settings)) {
-    try { text = await tidyTranscript(raw, settings, (m) => { if (epoch === subjectEpoch) toast(m, 8000); }); } catch (e) {
+    $('lectureWork').classList.remove('hidden');
+    try { text = await tidyTranscript(raw, settings,
+      (m) => { if (epoch === subjectEpoch) $('lectureWorkStatus').textContent = T(m); },
+      (done, total) => { $('lectureWorkBar').max = total; $('lectureWorkBar').value = done; }); } catch (e) {
       if (epoch !== subjectEpoch) return;
       toast('Не получилось навести порядок — сохраняю расшифровку как есть: ' + (e.message || e), 6000);
-    }
+    } finally { $('lectureWork').classList.add('hidden'); }
   }
   if (epoch !== subjectEpoch || switchingSubject) return;
   invalidateAnalysis();
@@ -401,6 +414,13 @@ $('lectureDone').addEventListener('click', async () => {
   saveSources();
   renderSources();
   toast(`Лекция «${title}» добавлена в материал — можно составлять план.`, 5000);
+  } finally {
+    $('lectureDone').disabled = false;
+    $('lecturePause').disabled = false;
+    $('lectureCancel').disabled = false;
+    $('lectureTitle').disabled = false;
+    $('addLectureBtn').disabled = false;
+  }
 });
 // незаконченная запись (закрыли приложение посреди пары) — показываем, чтобы продолжить или сохранить
 if (lecture.hasDraft) openLecture(false);
@@ -408,14 +428,23 @@ if (lecture.hasDraft) openLecture(false);
 $('addFileBtn').addEventListener('click', () => $('fileInput').click());
 $('addPhotoBtn').addEventListener('click', () => $('photoInput').click());
 
+let fileWorkId = 0;
+function showFileWork(id, msg) {
+  if (id !== fileWorkId) return;
+  $('fileWorkStatus').textContent = T(msg);
+  $('fileWork').classList.remove('hidden');
+}
+function endFileWork(id) { if (id === fileWorkId) $('fileWork').classList.add('hidden'); }
 $('fileInput').addEventListener('change', async (e) => {
+  const work = ++fileWorkId;
+  try {
   const epoch = subjectEpoch;
   const files = [...e.target.files];
   e.target.value = '';
   for (const f of files) {
     try {
-      toast(`Читаю «${f.name}»…`, 8000);
-      const src = await fileToSource(f, (m) => toast(m, 8000));
+      showFileWork(work, `Читаю «${f.name}»…`);
+      const src = await fileToSource(f, (m) => showFileWork(work, m));
       if (epoch !== subjectEpoch || switchingSubject) return;
       if (src.kind === 'text' && !src.text.trim()) { toast(`«${f.name}»: текст не найден`); continue; }
       invalidateAnalysis();
@@ -427,16 +456,19 @@ $('fileInput').addEventListener('change', async (e) => {
       toast(`Ошибка «${f.name}»: ${err.message}`, 5000);
     }
   }
+  } finally { endFileWork(work); }
 });
 
 $('photoInput').addEventListener('change', async (e) => {
+  const work = ++fileWorkId;
+  try {
   const epoch = subjectEpoch;
   const files = [...e.target.files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   e.target.value = '';
   if (!files.length) return;
   const images = [];
   for (let i = 0; i < files.length; i++) {
-    toast(`Обрабатываю фото ${i + 1} из ${files.length}…`, 8000);
+    showFileWork(work, `Обрабатываю фото ${i + 1} из ${files.length}…`);
     try {
       const src = await fileToSource(files[i]);
       if (epoch !== subjectEpoch || switchingSubject) return;
@@ -451,6 +483,7 @@ $('photoInput').addEventListener('change', async (e) => {
   saveSources();
   renderSources();
   toast(`Добавлено фото: ${images.length}`);
+  } finally { endFileWork(work); }
 });
 
 // ---------- Время и приоритет ----------

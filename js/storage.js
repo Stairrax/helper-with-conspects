@@ -17,6 +17,12 @@ function writeLocal(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); return storageResult(key, true); }
   catch { return storageResult(key, false); }
 }
+export function saveLectureDraft(value) { return writeLocal('kd.lectureDraft', value); }
+export function clearLectureDraft() {
+  if (restoring) return storageResult('kd.lectureDraft', false);
+  try { localStorage.removeItem('kd.lectureDraft'); return storageResult('kd.lectureDraft', true); }
+  catch { return storageResult('kd.lectureDraft', false); }
+}
 
 export const DEFAULT_SETTINGS = {
   provider: 'openrouter', // см. PROVIDERS в ai.js
