@@ -7,6 +7,8 @@ const pl = (n, one, many) => `${n} ${+n === 1 ? one : many}`;
 const VOICE = { Бая: 'Baya', Ксения: 'Xenia', Ксюша: 'Ksyusha', Айдар: 'Aidar', Евгений: 'Evgeny', Ирина: 'Irina', Дмитрий: 'Dmitri', Денис: 'Denis', Руслан: 'Ruslan' };
 
 export const EXACT = {
+  'Не удалось прочитать DOCX. Проверьте файл или сохраните его заново.': 'Could not read the DOCX. Check the file or save it again.',
+  'DOCX слишком большой после распаковки. Разделите файл на части.': 'The unpacked DOCX is too large. Split it into smaller files.',
   'За один раз можно добавить не более 20 фотографий.': 'You can add up to 20 photos at a time.',
   'Файл слишком большой. Максимальный размер — 25 МБ.': 'The file is too large. The maximum size is 25 MB.',
   'Изображение слишком большое. Уменьшите его разрешение и попробуйте снова.': 'The image is too large. Reduce its resolution and try again.',
