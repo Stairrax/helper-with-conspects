@@ -7,6 +7,11 @@ const pl = (n, one, many) => `${n} ${+n === 1 ? one : many}`;
 const VOICE = { Бая: 'Baya', Ксения: 'Xenia', Ксюша: 'Ksyusha', Айдар: 'Aidar', Евгений: 'Evgeny', Ирина: 'Irina', Дмитрий: 'Dmitri', Денис: 'Denis', Руслан: 'Ruslan' };
 
 export const EXACT = {
+  'За один раз можно добавить не более 20 фотографий.': 'You can add up to 20 photos at a time.',
+  'Файл слишком большой. Максимальный размер — 25 МБ.': 'The file is too large. The maximum size is 25 MB.',
+  'Изображение слишком большое. Уменьшите его разрешение и попробуйте снова.': 'The image is too large. Reduce its resolution and try again.',
+  'В PDF слишком много страниц. Разделите файл на части до 200 страниц.': 'The PDF has too many pages. Split it into parts of up to 200 pages.',
+  'В отсканированном PDF слишком много страниц. Разделите его на части до 20 страниц.': 'The scanned PDF has too many pages. Split it into parts of up to 20 pages.',
   'Материалы изменились. Составьте план заново.': 'The materials have changed. Build the plan again.',
   'Не удалось сохранить план. Освободите место и попробуйте снова.': 'The plan could not be saved. Free up space and try again.',
   'Не удалось открыть предмет. Попробуйте снова.': 'The subject could not be opened. Please try again.',
