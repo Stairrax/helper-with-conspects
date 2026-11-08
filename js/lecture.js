@@ -151,7 +151,7 @@ export async function tidyTranscript(text, settings, onStatus = () => {}, onProg
   for (let i = 0; i < ps.length; i++) {
     onStatus(ps.length > 1 ? `Навожу порядок в расшифровке: часть ${i + 1} из ${ps.length}` : 'Навожу порядок в расшифровке');
     const res = await generate({
-      ...conn(settings),
+      ...conn(settings, 'notes'),
       system: 'Ты редактор расшифровок лекций на русском языке. Отвечай только готовым текстом, без пояснений и markdown.',
       parts: [{ text:
 `Это кусок автоматической расшифровки лекции: без знаков препинания, с ошибками распознавания речи.

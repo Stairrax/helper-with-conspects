@@ -96,7 +96,7 @@ const SYS_DICTATION = 'Ты готовишь учебный конспект к 
 
 export async function ocrImage(img, settings, onStatus, signal) {
   return generate({
-    ...conn(settings), onStatus, signal, temperature: 0.1,
+    ...conn(settings, 'notes'), onStatus, signal, temperature: 0.1,
     system: 'Ты точно переписываешь учебные материалы с фотографий.',
     parts: [
       { text: 'Перепиши ВЕСЬ текст с этой страницы конспекта дословно, сохраняя структуру: заголовки начинай с «# », списки с «- ». ' +
@@ -128,7 +128,7 @@ ${numbered}`;
   if (segCache.has(key)) return normalizeRanges(segCache.get(key), n, blocks);
   let topics = [];
   try {
-    const res = await generateJSON({ ...conn(settings), signal, system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.2 });
+    const res = await generateJSON({ ...conn(settings, 'notes'), signal, system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.2 });
     topics = Array.isArray(res.topics) ? res.topics : [];
     segCache.set(key, topics);
   } catch (e) {
@@ -183,7 +183,7 @@ async function planTopics(topics, settings, onStatus, signal) {
 
 ${JSON.stringify(list)}`;
   try {
-    const res = await generateJSON({ ...conn(settings), signal, system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.2 });
+    const res = await generateJSON({ ...conn(settings, 'notes'), signal, system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.2 });
     const map = new Map((res.topics || []).map((x) => [x.id, x]));
     const ids = new Set(topics.map((t) => t.id));
     for (const t of topics) {
@@ -421,7 +421,7 @@ ${text}
 6. "quiz": 1–2 вопроса для самопроверки по самому важному в этом тексте, с краткими правильными ответами "a" (одно-два предложения). Вопросы — такие, на которые можно ответить устно.
 7. ${FX_ITEM}${fxRule}
 Ответ JSON: {"points":[{"p":"…","c":[0]}],"chunks":[{"t":"…","k":"content","s":"…"}],"recap":"…","quiz":[{"q":"…","a":"…"}],"formulas":[{"n":"…","f":"…","d":"…"}]${typeof fx === 'number' ? ',"apart":false' : ''}}`;
-  const res = await generateJSON({ ...conn(settings), system: SYS_DICTATION, parts: [{ text: prompt }], onStatus, temperature: 0.3 });
+  const res = await generateJSON({ ...conn(settings, 'notes'), system: SYS_DICTATION, parts: [{ text: prompt }], onStatus, temperature: 0.3 });
   const chunks = (res.chunks || []).map((c) => withSpoken({ t: String(c.t || c.text || '').trim(), k: ['explain', 'example'].includes(c.k) ? c.k : 'content' }, c.s)).filter((c) => c.t);
   const points = (res.points || []).map((p) => ({ p: String(p.p || p.point || '').trim(), c: (p.c || []).map(Number).filter((n) => n >= 0 && n < chunks.length) })).filter((p) => p.p);
   if (!chunks.length) throw new GeminiError('Нейросеть не вернула куски для темы', { code: 'EMPTY' });
@@ -464,7 +464,7 @@ ${topic.text.slice(0, 20000)}
 >>>
 ${FX_ITEM}
 Ответ JSON: {"formulas":[{"n":"…","f":"…","d":"…"}]}`;
-  const res = await generateJSON({ ...conn(settings), system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.1 });
+  const res = await generateJSON({ ...conn(settings, 'notes'), system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.1 });
   return cleanFormulas(res.formulas);
 }
 
@@ -493,7 +493,7 @@ ${topic.text.slice(0, 12000)}
 1. "recap": 2–4 предложения — самое главное из темы для быстрого повторения перед экзаменом, для устной речи (формулы словами).
 2. "quiz": 3 вопроса для самопроверки по самому важному в теме, с краткими правильными ответами "a". Вопросы — такие, на которые можно ответить устно.
 Ответ JSON: {"recap":"…","quiz":[{"q":"…","a":"…"}]}`;
-  const res = await generateJSON({ ...conn(settings), system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.3 });
+  const res = await generateJSON({ ...conn(settings, 'notes'), system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.3 });
   topic.recap = String(res.recap || '').trim();
   topic.quiz = cleanQuiz(res.quiz).slice(0, 3);
 }
@@ -513,7 +513,7 @@ ${points.map((p, i) => `(${i}) ${p.p}`).join('\n')}
 1. "checks": для каждого пункта i укажи "c" — номера кусков, где он передан ПОЛНОСТЬЮ и верно (пустой список, если не передан или искажён).
 2. "missing": информация из исходного текста, которой нет ни в одном пункте списка (каждый элемент — короткий пункт). Пустой список, если всё учтено.${apart ? '\nФормулы вынесены в отдельный блок, в кусках они пересказаны словами — это не пропуск; в "missing" формулы не включай.' : ''}
 Ответ JSON: {"checks":[{"i":0,"c":[0,1]}],"missing":["…"]}`;
-  const res = await generateJSON({ ...conn(settings), system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.1 });
+  const res = await generateJSON({ ...conn(settings, 'notes'), system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.1 });
   const checks = new Map((res.checks || []).map((x) => [Number(x.i), (x.c || []).map(Number).filter((n) => n >= 0 && n < chunks.length)]));
   points.forEach((p, i) => { if (checks.has(i)) p.c = checks.get(i); });
   const missing = (res.missing || []).map((m) => String(m).trim()).filter(Boolean);
@@ -536,7 +536,7 @@ ${chunks.map((c, i) => `[${i}] ${c.t}`).join('\n')}
 Для каждого куска укажи "after" — номер существующего куска, после которого его вставить по смыслу (-1 — в самое начало), и "p" — номера пунктов, которые он покрывает.
 Если в куске есть цифры — "s": тот же кусок для озвучки, числа полностью словами в нужном падеже.
 Ответ JSON: {"chunks":[{"t":"…","k":"content","s":"…","after":3,"p":[0]}]}`;
-  const res = await generateJSON({ ...conn(settings), system: SYS_DICTATION, parts: [{ text: prompt }], onStatus, temperature: 0.3 });
+  const res = await generateJSON({ ...conn(settings, 'notes'), system: SYS_DICTATION, parts: [{ text: prompt }], onStatus, temperature: 0.3 });
   return (res.chunks || []).map((c) => withSpoken({
     t: String(c.t || '').trim(),
     k: ['explain', 'example'].includes(c.k) ? c.k : 'content',

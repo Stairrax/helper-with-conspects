@@ -78,11 +78,11 @@ export const PROVIDERS = {
 };
 
 /** Параметры подключения из настроек: передаются в generate/stream. */
-export function conn(settings) {
+export function conn(settings, purpose = 'question') {
   const p = PROVIDERS[settings.provider] || PROVIDERS.gemini;
   const base = (settings.baseUrl || '').trim();
   // модель выбирает сервер; вместо ключа — номер устройства для дневного лимита
-  if (p.noKey) return { kind: 'openai', apiKey: deviceId(), model: 'auto', baseUrl: p.base, fallbacks: [], lang: settings.contentLang === 'en' ? 'en' : 'ru' };
+  if (p.noKey) return { kind: 'openai', apiKey: deviceId(), model: 'auto', baseUrl: p.base, purpose, fallbacks: [], lang: settings.contentLang === 'en' ? 'en' : 'ru' };
   return {
     kind: p.kind,
     apiKey: settings.apiKey,

@@ -2,8 +2,8 @@
 // Так пользователю не нужен свой ключ. Ключ лежит в секрете OPENROUTER_KEY и в браузер не попадает.
 //
 // Нейросеть — OpenRouter или любой сервис с OpenAI-совместимым API (UPSTREAM).
-// MODELS = "free" — бесплатные модели OpenRouter, их сервер подбирает сам: платить не нужно,
-// но у ключа без пополнения общий лимит — около 50 запросов в день на всё приложение.
+// MODELS = "free" — бесплатные модели OpenRouter. Платная модель для конспектов
+// включается отдельно и только при наличии специального ключа с месячным лимитом.
 //
 // Чтобы ключ не потратили чужие:
 //  - запросы принимаются только со страниц из ALLOWED_ORIGINS (сайт приложения);
@@ -41,7 +41,7 @@ function opt(env, name, def) {
 }
 
 const upstream = (env) => String(opt(env, 'UPSTREAM', OPENROUTER)).replace(/\/+$/, '');
-const isOpenRouter = (env) => upstream(env).startsWith(OPENROUTER);
+const isOpenRouter = (env) => upstream(env) === OPENROUTER;
 
 function cors(req, env) {
   const origin = req.headers.get('Origin') || '';
@@ -76,34 +76,50 @@ const DOWN_TEXT = 'Бесплатный режим сейчас недоступ
 export class RequestLimits {
   constructor(state) { this.storage = state.storage; }
   async fetch(request) {
-    const { device, ip, limits } = await request.json();
-    const accepted = await this.storage.transaction(async (tx) => {
+    const { device, ip, limits, purpose } = await request.json();
+    const result = await this.storage.transaction(async (tx) => {
       const keys = ['total', 'device:' + device, 'ip:' + ip];
+      if (purpose === 'notes' || purpose === 'question') keys.push('purpose:' + purpose + ':' + device);
       const values = await Promise.all(keys.map((key) => tx.get(key)));
-      if (values.some((v, i) => (v || 0) >= limits[i])) return false;
+      const blocked = values.findIndex((v, i) => (v || 0) >= limits[i]);
+      if (blocked >= 0) return { accepted: false, category: blocked === 3 };
       for (let i = 0; i < keys.length; i++) await tx.put(keys[i], (values[i] || 0) + 1);
-      return true;
+      return { accepted: true };
     });
     if (!await this.storage.getAlarm()) await this.storage.setAlarm(Date.now() + 48 * 3600e3);
-    return Response.json({ accepted });
+    return Response.json(result);
   }
   async alarm() { await this.storage.deleteAll(); }
 }
 
 const positiveLimit = (v, fallback) => Number.isSafeInteger(+v) && +v > 0 ? +v : fallback;
-async function countRequest(env, device, ip) {
+async function countRequest(env, device, ip, purpose) {
   const ns = env.REQUEST_LIMITS;
   if (!ns) throw new Error('Request limits unavailable');
   const stub = ns.get(ns.idFromName('daily:' + new Date().toISOString().slice(0, 10)));
   const response = await stub.fetch('https://limits.internal/', {
-    method: 'POST', body: JSON.stringify({ device, ip, limits: [
+    method: 'POST', body: JSON.stringify({ device, ip, purpose, limits: [
       positiveLimit(opt(env, 'DAILY_TOTAL', 900), 900),
-      positiveLimit(opt(env, 'DAILY_PER_DEVICE', 30), 30),
-      positiveLimit(opt(env, 'DAILY_PER_IP', 100), 100),
+      positiveLimit(opt(env, 'DAILY_PER_DEVICE', 170), 170),
+      positiveLimit(opt(env, 'DAILY_PER_IP', 500), 500),
+      purpose === 'notes' ? positiveLimit(opt(env, 'DAILY_NOTES', 100), 100) : positiveLimit(opt(env, 'DAILY_QUESTIONS', 70), 70),
     ] }),
   });
   if (!response.ok) throw new Error('Request limits unavailable');
-  return (await response.json()).accepted === true;
+  const result = await response.json();
+  if (typeof result.accepted !== 'boolean') throw new Error('Invalid limits response');
+  return result;
+}
+
+// Платный режим включается только отдельным ключом с ограничением в OpenRouter.
+async function paidKeyReady(env) {
+  if (String(opt(env, 'PAID_NOTES_ENABLED', 'false')) !== 'true' || !env.OPENROUTER_PAID_KEY || env.OPENROUTER_PAID_KEY === env.OPENROUTER_KEY || !isOpenRouter(env)) return false;
+  try {
+    const r = await fetch(OPENROUTER + '/key', { headers: { ...FETCH_HEADERS, Authorization: 'Bearer ' + env.OPENROUTER_PAID_KEY }, signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return false;
+    const d = (await r.json()).data;
+    return d?.limit_reset === 'monthly' && typeof d.limit === 'number' && d.limit > 0 && d.limit <= 20 && typeof d.limit_remaining === 'number' && d.limit_remaining > 0;
+  } catch { return false; }
 }
 
 // ---------- бесплатные модели OpenRouter ----------
@@ -339,18 +355,29 @@ export default {
     // кто прислал: устройство (случайный номер из приложения) и IP-адрес
     const device = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').slice(0, 64) || 'none';
     const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
-    let allowed;
-    try { allowed = await countRequest(env, device, ip); }
+    const purpose = body.kd_purpose === 'question' ? 'question' : 'notes';
+    let quota;
+    try { quota = await countRequest(env, device, ip, purpose); }
     catch { return fail(503, 'unavailable', DOWN_TEXT, c.headers, 'limits-unavailable'); }
-    if (!allowed) {
-      return fail(429, 'daily_limit', LIMIT_TEXT, c.headers);
+    if (!quota.accepted) {
+      const msg = quota.category ? (purpose === 'notes' ? 'На сегодня лимит подготовки конспектов исчерпан. Продолжите завтра.' : 'На сегодня лимит вопросов исчерпан. Продолжите завтра.') : LIMIT_TEXT;
+      return fail(429, 'daily_limit', msg, c.headers);
+    }
+
+    const maxTokens = +opt(env, 'MAX_TOKENS', 16000);
+    // Вопросы сначала отправляем в Cloudflare. Для изображений viaAI возвращает null.
+    const backup = () => viaAI(env, body, Math.min(+body.max_tokens || maxTokens, maxTokens), c.headers);
+    if (body.kd_purpose === 'question') {
+      const answer = await backup();
+      if (answer) return answer;
     }
 
     let list;
     try { list = await models(env); } catch { list = []; }
-    const maxTokens = +opt(env, 'MAX_TOKENS', 16000);
-    // запасной ИИ: если основной не может ответить — отвечаем через него, а не «недоступно»
-    const backup = () => viaAI(env, body, Math.min(+body.max_tokens || maxTokens, maxTokens), c.headers);
+    // Платные модели разрешены только через отдельный проверенный ключ и явный маршрут.
+    if (isOpenRouter(env)) list = list.filter((id) => id.endsWith(':free'));
+    const paid = body.kd_purpose === 'notes' && await paidKeyReady(env);
+    if (paid) list = ['google/gemini-2.5-flash-lite', ...list].slice(0, 3);
     if (!list.length) return (await backup()) || fail(503, 'unavailable', DOWN_TEXT, c.headers, modelsError || 'models-empty');
     const out = {
       model: list[0],
@@ -359,9 +386,10 @@ export default {
       max_tokens: Math.min(+body.max_tokens || maxTokens, maxTokens),
       stream: body.stream === true,
     };
-    const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + env.OPENROUTER_KEY };
+    const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (paid ? env.OPENROUTER_PAID_KEY : env.OPENROUTER_KEY) };
     if (isOpenRouter(env)) {
       if (list.length > 1) out.models = list.slice(0, 3); // запасные модели, если основная занята
+      if (paid) out.provider = { max_price: { prompt: 0.15, completion: 0.60 } };
       out.reasoning = { effort: 'low', exclude: true }; // если модель «думающая» — думать поменьше и рассуждения не присылать
       headers['HTTP-Referer'] = opt(env, 'APP_URL', 'https://stairrax.github.io/helper-with-conspects/');
       headers['X-Title'] = 'Konspekt Diktor';
