@@ -6,7 +6,10 @@
   "type": "module",
   "scripts": {
     "start": "node tests/serve.mjs",
-    "test": "node tests/run.mjs"
+    "test": "node tests/run.mjs",
+    "backup:lab": "node server/backup-lab.mjs",
+    "backup:check": "node server/backup-lab-check.mjs",
+    "test:backup": "node --test server/backup-lab.test.mjs"
   },
   "devDependencies": {
     "lamejs": "^1.2.1",
