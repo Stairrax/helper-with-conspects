@@ -31,7 +31,7 @@ jobs:
           node /tmp/fake-ai.cjs &
           npx -y wrangler@4.148.0 dev --local --ip 127.0.0.1 --port 8789 \
             --var OPENROUTER_KEY:fake --var MODELS:demo --var UPSTREAM:http://127.0.0.1:8790 \
-            --var DAILY_TOTAL:3 --var DAILY_PER_DEVICE:2 --var DAILY_PER_IP:5 \
+            --var DAILY_TOTAL:5 --var DAILY_PER_DEVICE:3 --var DAILY_PER_IP:10 --var DAILY_NOTES:2 --var DAILY_QUESTIONS:1 \
             > /tmp/worker.log 2>&1 &
           worker_pid=$!
           trap 'kill "$worker_pid" 2>/dev/null || true; cat /tmp/worker.log' EXIT
@@ -42,10 +42,13 @@ jobs:
           request() {
             curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8789/v1/chat/completions \
               -H 'Origin: https://stairrax.github.io' -H "Authorization: Bearer $1" \
-              -H 'Content-Type: application/json' -d '{"messages":[{"role":"user","content":"hello"}]}'
+              -H 'Content-Type: application/json' -d "{\"kd_purpose\":\"$2\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}"
           }
-          test "$(request device-a)" = 200
-          test "$(request device-a)" = 200
-          test "$(request device-a)" = 429
-          test "$(request device-b)" = 200
-          test "$(request device-c)" = 429
+          test "$(request device-a notes)" = 200
+          test "$(request device-a notes)" = 200
+          test "$(request device-a notes)" = 429
+          test "$(request device-a question)" = 200
+          test "$(request device-a question)" = 429
+          test "$(request device-b notes)" = 200
+          test "$(request device-c notes)" = 200
+          test "$(request device-d notes)" = 429

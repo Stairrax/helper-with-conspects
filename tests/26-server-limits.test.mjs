@@ -31,4 +31,11 @@ export default async ({ ok }) => {
   ok(alarm !== null, 'устаревшие счётчики запланированы к удалению');
   await limiter.alarm();
   ok(records.size === 0, 'счётчики удаляются после срока хранения');
+  const category = async (purpose) => (await (await limiter.fetch(new Request('https://internal/', {
+    method: 'POST', body: JSON.stringify({ device: 'student', ip: 'ip', purpose, limits: [20, 20, 20, purpose === 'notes' ? 2 : 1] }),
+  }))).json());
+  const n1 = await category('notes'), n2 = await category('notes'), n3 = await category('notes');
+  const q1 = await category('question'), q2 = await category('question');
+  ok(n1.accepted && n2.accepted && !n3.accepted && n3.category, 'лимит подготовки применяется отдельно');
+  ok(q1.accepted && !q2.accepted && q2.category, 'после исчерпания подготовки остаются отдельные вопросы');
 };

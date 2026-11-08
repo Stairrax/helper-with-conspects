@@ -13,7 +13,7 @@ const REQUEST_LIMITS = {
     return Response.json({ accepted });
   } }),
 };
-const ENV = { REQUEST_LIMITS, OPENROUTER_KEY: 'sk-or-SECRET', MODELS: 'google/gemini-2.5-flash,google/gemini-2.5-flash-lite', DAILY_PER_DEVICE: '3', MAX_TOKENS: '1000' };
+const ENV = { REQUEST_LIMITS, OPENROUTER_KEY: 'sk-or-SECRET', MODELS: 'google/gemini-2.5-flash:free,google/gemini-2.5-flash-lite:free', DAILY_PER_DEVICE: '3', MAX_TOKENS: '1000' };
 const APP = 'https://stairrax.github.io';
 const call = (path, { origin = APP, body, device = 'kd-test', method = body ? 'POST' : 'GET', ip = '1.1.1.1' } = {}) => worker.fetch(new Request('https://w.test' + path, {
   method, headers: { Origin: origin, Authorization: 'Bearer ' + device, 'CF-Connecting-IP': ip, 'Content-Type': 'application/json' }, body: body && JSON.stringify(body),
@@ -34,11 +34,11 @@ export default async ({ open, prepare, FINANCE, ok }) => {
     let r = await call('/chat/completions', { body: msg });
     ok(r.status === 200 && r.headers.get('Access-Control-Allow-Origin') === APP, 'запрос с сайта приложения проходит');
     ok(sent.headers.Authorization === 'Bearer sk-or-SECRET', 'в OpenRouter уходит ключ с сервера');
-    ok(sent.body.model === 'google/gemini-2.5-flash' && sent.body.models.length === 2 && sent.body.max_tokens === 1000, 'модель и длину ответа выбирает сервер, а не запрос');
+    ok(sent.body.model === 'google/gemini-2.5-flash:free' && sent.body.models.length === 2 && sent.body.max_tokens === 1000, 'модель и длину ответа выбирает сервер, а не запрос');
     r = await call('/chat/completions', { body: msg, origin: 'https://evil.example' });
     ok(r.status === 403, 'с чужого сайта — отказ');
     r = await call('/v1/models');
-    ok((await r.json()).data[0].id === 'google/gemini-2.5-flash', 'список моделей — только свои');
+    ok((await r.json()).data[0].id === 'google/gemini-2.5-flash:free', 'список моделей — только свои');
     await call('/chat/completions', { body: msg }); await call('/chat/completions', { body: msg });
     r = await call('/chat/completions', { body: msg });
     const e = (await r.json()).error;
@@ -91,7 +91,7 @@ export default async ({ open, prepare, FINANCE, ok }) => {
       }), { REQUEST_LIMITS, ...env });
     };
     globalThis.fetch = async () => new Response('{}', { status: 401 });
-    r = await (await cold())({ OPENROUTER_KEY: 'k', MODELS: 'gpt-x' }, 'kd-401');
+    r = await (await cold())({ OPENROUTER_KEY: 'k', MODELS: 'gpt-x:free' }, 'kd-401');
     let e2 = (await r.json()).error;
     ok(r.status === 503 && e2.code === 'unavailable' && e2.reason === 'upstream-401', 'ключ отозван (401) — «недоступно» с кодом upstream-401');
     globalThis.fetch = async (url) => (String(url).endsWith('/models') ? new Response('<html>challenge</html>', { status: 403 }) : new Response('{}'));
@@ -134,7 +134,7 @@ export default async ({ open, prepare, FINANCE, ok }) => {
       const w = (await import('../server/worker.js?ai=' + ++inst)).default;
       return w.fetch(new Request('https://w.test/v1/chat/completions', {
         method: 'POST', headers: { Origin: APP, Authorization: 'Bearer kd-ai' + inst, 'Content-Type': 'application/json' }, body: JSON.stringify({ ...msg, ...bodyOver }),
-      }), { REQUEST_LIMITS, OPENROUTER_KEY: 'k', MODELS: 'gpt-x', MAX_TOKENS: '1000', AI: makeAI(impl), ...over });
+      }), { REQUEST_LIMITS, OPENROUTER_KEY: 'k', MODELS: 'gpt-x:free', MAX_TOKENS: '1000', AI: makeAI(impl), ...over });
     };
     globalThis.fetch = async () => dailyLimit();
     r = await withAI(() => ({ response: 'Привет из запасного' }), {}, { stream: false });
@@ -161,7 +161,7 @@ export default async ({ open, prepare, FINANCE, ok }) => {
     {
       const w = (await import('../server/worker.js?ai=skip' + ++inst)).default;
       const seen = [];
-      const env = { REQUEST_LIMITS, OPENROUTER_KEY: 'k', MODELS: 'gpt-x', MAX_TOKENS: '1000', AI: makeAI((model) => { seen.push(model); if (model.includes('mistral')) throw new Error('5018: This account is not allowed to access ' + model); return { response: 'ответил ' + model }; }) };
+      const env = { REQUEST_LIMITS, OPENROUTER_KEY: 'k', MODELS: 'gpt-x:free', MAX_TOKENS: '1000', AI: makeAI((model) => { seen.push(model); if (model.includes('mistral')) throw new Error('5018: This account is not allowed to access ' + model); return { response: 'ответил ' + model }; }) };
       const ask = (dev) => w.fetch(new Request('https://w.test/v1/chat/completions', { method: 'POST', headers: { Origin: APP, Authorization: 'Bearer ' + dev, 'Content-Type': 'application/json' }, body: JSON.stringify({ ...msg, stream: false }) }), env);
       await ask('kd-s1'); await ask('kd-s2');
       ok(seen.filter((m) => m.includes('mistral')).length === 1 && seen.length === 3, 'модель, к которой нет доступа, пробуется один раз, дальше пропускается: ' + seen.join(' → '));
@@ -182,7 +182,7 @@ export default async ({ open, prepare, FINANCE, ok }) => {
     ok(r.status === 200 && budgets.join() === '16000,4096', 'у модели ниже потолок длины ответа — повтор с меньшим: ' + budgets.join());
     // без привязки AI всё как раньше
     globalThis.fetch = async () => dailyLimit();
-    r = await (await cold())({ OPENROUTER_KEY: 'k', MODELS: 'gpt-x' }, 'kd-noai');
+    r = await (await cold())({ OPENROUTER_KEY: 'k', MODELS: 'gpt-x:free' }, 'kd-noai');
     ok(r.status === 429, 'без запасного ИИ — как раньше');
     // /health показывает запасной; ?test=1 проверяет его
     const hw = (await import('../server/worker.js?ai=h' + ++inst)).default;
