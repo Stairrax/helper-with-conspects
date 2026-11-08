@@ -14,6 +14,13 @@ export default async ({ open, ok }) => {
     const result = {};
     const huge = { name: 'huge.pdf', type: 'application/pdf', size: 26 * 1024 * 1024, arrayBuffer() { throw Error('read'); } };
     try { await fileToSource(huge); } catch (e) { result.file = e.message; }
+    const zip = new ArrayBuffer(68), view = new DataView(zip);
+    view.setUint32(0, 0x02014b50, true);
+    view.setUint32(24, 81 * 1024 * 1024, true);
+    view.setUint32(46, 0x06054b50, true);
+    view.setUint16(54, 1, true); view.setUint16(56, 1, true);
+    view.setUint32(58, 46, true);
+    try { await fileToSource(new File([zip], 'huge.docx')); } catch (e) { result.docx = e.message; }
     window.testPdfPages = 201;
     const pdf = new File(['test'], 'test.pdf', { type: 'application/pdf' });
     try { await fileToSource(pdf); } catch (e) { result.pdf = e.message; }
@@ -34,6 +41,7 @@ export default async ({ open, ok }) => {
     return result;
   });
   ok(results.file?.includes('25 МБ'), 'крупный файл отклоняется до чтения в память');
+  ok(results.docx?.includes('распаковки'), 'слишком большой распакованный DOCX отклоняется до загрузки библиотеки');
   ok(results.pdf?.includes('200 страниц') && results.destroyed, 'большой PDF отклоняется и освобождается: ' + results.pdf);
   ok(results.scan?.includes('20 страниц') && results.scanDestroyed, 'длинный скан отклоняется до рендеринга и освобождается: ' + results.scan);
   ok(results.image?.includes('разрешение') && results.closed, 'слишком большое изображение отклоняется и освобождается');
