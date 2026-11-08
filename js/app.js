@@ -466,6 +466,7 @@ $('photoInput').addEventListener('change', async (e) => {
   const files = [...e.target.files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   e.target.value = '';
   if (!files.length) return;
+  if (files.length > 20) return toast(T('За один раз можно добавить не более 20 фотографий.'), 6000);
   const images = [];
   for (let i = 0; i < files.length; i++) {
     showFileWork(work, `Обрабатываю фото ${i + 1} из ${files.length}…`);

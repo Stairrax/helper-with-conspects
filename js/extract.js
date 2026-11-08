@@ -1,5 +1,38 @@
 // Извлечение текста из файлов: txt/md, pdf (pdf.js), docx (mammoth), фото (для Gemini).
 
+import { T } from './i18n.js';
+
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const MAX_PDF_PAGES = 200;
+const MAX_SCANNED_PAGES = 20;
+const MAX_IMAGE_PIXELS = 40_000_000;
+const MAX_DOCX_UNPACKED = 80 * 1024 * 1024;
+
+// DOCX is a ZIP archive. Check the declared unpacked size before handing it to Mammoth.
+// Archive metadata is not trusted as a complete defence against malformed ZIP files.
+function checkDocxSize(buffer) {
+  const d = new DataView(buffer);
+  let end = -1;
+  for (let i = d.byteLength - 22, min = Math.max(0, d.byteLength - 65557); i >= min; i--) {
+    if (d.getUint32(i, true) === 0x06054b50 && i + 22 + d.getUint16(i + 20, true) === d.byteLength) { end = i; break; }
+  }
+  const invalid = () => { throw new Error(T('Не удалось прочитать DOCX. Проверьте файл или сохраните его заново.')); };
+  if (end < 0) return invalid();
+  const count = d.getUint16(end + 10, true), size = d.getUint32(end + 12, true), offset = d.getUint32(end + 16, true);
+  if (d.getUint16(end + 4, true) || d.getUint16(end + 6, true) || count === 0xffff || size === 0xffffffff || offset === 0xffffffff || offset + size > end || count > 10000) return invalid();
+  let pos = offset, total = 0;
+  for (let i = 0; i < count; i++) {
+    if (pos + 46 > end || d.getUint32(pos, true) !== 0x02014b50) return invalid();
+    const n = d.getUint32(pos + 24, true);
+    if (n === 0xffffffff) return invalid();
+    total += n;
+    if (total > MAX_DOCX_UNPACKED) throw new Error(T('DOCX слишком большой после распаковки. Разделите файл на части.'));
+    pos += 46 + d.getUint16(pos + 28, true) + d.getUint16(pos + 30, true) + d.getUint16(pos + 32, true);
+    if (pos > offset + size) return invalid();
+  }
+  if (pos !== offset + size) return invalid();
+}
+
 const PDFJS = [
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
   'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js',
@@ -56,6 +89,7 @@ async function getMammoth() {
 
 /** Сжимает изображение до maxSide и возвращает {mime, data(base64)}. */
 export async function imageToBase64(blob, maxSide = 2000) {
+  if (blob.size > MAX_FILE_BYTES) throw new Error(T('Файл слишком большой. Максимальный размер — 25 МБ.'));
   const bmp = await createImageBitmap(blob).catch(() => null);
   let w, h, src, url = '';
   if (bmp) { w = bmp.width; h = bmp.height; src = bmp; } else {
@@ -65,6 +99,7 @@ export async function imageToBase64(blob, maxSide = 2000) {
     w = img.naturalWidth; h = img.naturalHeight; src = img;
   }
   try {
+    if (w * h > MAX_IMAGE_PIXELS) throw new Error(T('Изображение слишком большое. Уменьшите его разрешение и попробуйте снова.'));
     const k = Math.min(1, maxSide / Math.max(w, h));
     const c = document.createElement('canvas');
     c.width = Math.round(w * k); c.height = Math.round(h * k);
@@ -85,6 +120,8 @@ function canvasToB64(c) {
 async function pdfExtract(file, onStatus) {
   const pdfjs = await getPdfJs();
   const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+  try {
+  if (!doc.numPages || doc.numPages > MAX_PDF_PAGES) throw new Error(T('В PDF слишком много страниц. Разделите файл на части до 200 страниц.'));
   const pages = [];
   for (let i = 1; i <= doc.numPages; i++) {
     onStatus?.(`PDF: страница ${i} из ${doc.numPages}`);
@@ -96,6 +133,7 @@ async function pdfExtract(file, onStatus) {
   }
   const chars = pages.join('').replace(/\s/g, '').length;
   if (chars / doc.numPages >= 40) return { kind: 'text', text: pages.join('\n\n') };
+  if (doc.numPages > MAX_SCANNED_PAGES) throw new Error(T('В отсканированном PDF слишком много страниц. Разделите его на части до 20 страниц.'));
   // Скан без текстового слоя — рендерим страницы в картинки для Gemini.
   const images = [];
   for (let i = 1; i <= doc.numPages; i++) {
@@ -110,6 +148,7 @@ async function pdfExtract(file, onStatus) {
     images.push(canvasToB64(c));
   }
   return { kind: 'images', images };
+  } finally { await doc.destroy(); }
 }
 
 function htmlToText(html) {
@@ -132,8 +171,9 @@ function htmlToText(html) {
 }
 
 async function docxExtract(file) {
-  const mammoth = await getMammoth();
   const ab = await file.arrayBuffer();
+  checkDocxSize(ab);
+  const mammoth = await getMammoth();
   try {
     const { value } = await mammoth.convertToHtml({ arrayBuffer: ab });
     const t = htmlToText(value);
@@ -147,6 +187,7 @@ async function docxExtract(file) {
  * Превращает файл в источник: {name, kind:'text', text} или {name, kind:'images', images:[{mime,data}]}.
  */
 export async function fileToSource(file, onStatus) {
+  if (file.size > MAX_FILE_BYTES) throw new Error(T('Файл слишком большой. Максимальный размер — 25 МБ.'));
   const name = file.name || 'Файл';
   const ext = (name.split('.').pop() || '').toLowerCase();
   if (file.type.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'].includes(ext)) {
