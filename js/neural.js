@@ -82,6 +82,7 @@ let worker = null;
 let seq = 0;
 const pending = new Map();      // id -> {resolve, reject}
 const cache = new Map();        // ключ -> Promise<AudioBuffer>
+const inFlight = new Set();
 let progressCb = null;
 let ctx = null;
 
@@ -89,6 +90,7 @@ function getWorker() {
   if (!worker) {
     // та же версия, что у приложения (?v=…), — чтобы не смешались файлы разных версий
     worker = new Worker(new URL('./neural-worker.js' + new URL(import.meta.url).search, import.meta.url));
+    const active = worker;
     worker.onmessage = (e) => {
       const m = e.data;
       if (m.type === 'progress') { progressCb?.(m); return; }
@@ -99,6 +101,7 @@ function getWorker() {
       else p.resolve(m);
     };
     worker.onerror = (e) => {
+      if (worker !== active) return;
       // модуль упал (например, не хватило памяти) — пересоздадим его при следующей фразе
       for (const p of pending.values()) p.reject(new Error(e.message || 'Ошибка голосового модуля'));
       pending.clear();
@@ -112,9 +115,26 @@ function getWorker() {
 function call(msg) {
   const id = ++seq;
   return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject });
+    pending.set(id, { resolve, reject, type: msg.type });
     getWorker().postMessage({ ...msg, id });
   });
+}
+
+/** Останавливает синтез и очередь заготовок, не прерывая отдельную загрузку голоса. */
+export function cancelSynthesis() {
+  if (!worker || ![...pending.values()].some((p) => p.type === 'synth')) return;
+  const error = new DOMException('Synthesis cancelled', 'AbortError');
+  for (const [key, promise] of cache) if (inFlight.has(promise)) cache.delete(key);
+  if (pending.values().next().value?.type === 'init') {
+    worker.postMessage({ type: 'cancel' });
+    for (const [id, p] of pending) if (p.type === 'synth') { pending.delete(id); p.reject(error); }
+    return;
+  }
+  const oldWorker = worker;
+  worker = null;
+  oldWorker.terminate();
+  for (const p of pending.values()) p.reject(error);
+  pending.clear();
 }
 
 export function audioContext() {
@@ -144,7 +164,8 @@ export function synth(text, { voice = 'irina', rate = 1, expressive = false } = 
       buf.copyToChannel(m.pcm, 0);
       return buf;
     });
-    p.catch(() => cache.delete(key));
+    inFlight.add(p);
+    p.then(() => inFlight.delete(p), () => { inFlight.delete(p); if (cache.get(key) === p) cache.delete(key); });
     cache.set(key, p);
     while (cache.size > 16) cache.delete(cache.keys().next().value);
   }

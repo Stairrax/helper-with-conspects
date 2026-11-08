@@ -212,6 +212,7 @@ export function stopSpeaking() {
   current = null;
   now = null;
   if (ttsSupported) synth.cancel();
+  neural.cancelSynthesis();
   lastCancelAt = Date.now();
   if (c) c.fin('cancel');
   keepAlive = null;

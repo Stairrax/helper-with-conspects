@@ -214,8 +214,11 @@ const post = (m, transfer) => self.postMessage(m, transfer || []);
 // чтобы не перезагружать модели туда-обратно.
 let wantedVoice = null;
 let chain = Promise.resolve();
+let synthesisEpoch = 0;
 self.onmessage = (e) => {
   const m = e.data;
+  if (m.type === 'cancel') { synthesisEpoch++; return; }
+  const epoch = synthesisEpoch;
   if (m.type === 'init' || !wantedVoice) wantedVoice = m.voice.id;
   if (m.type === 'synth' && m.voice.id !== wantedVoice && keyOf(m.voice) !== loadedKey) {
     post({ type: 'error', id: m.id, message: 'stale', stale: true });
@@ -227,8 +230,10 @@ self.onmessage = (e) => {
         await init(m.voice);
         post({ type: 'ready', id: m.id });
       } else if (m.type === 'synth') {
+        if (epoch !== synthesisEpoch) return;
         if (m.voice.id !== wantedVoice) { post({ type: 'error', id: m.id, message: 'stale', stale: true }); return; }
         await init(m.voice);
+        if (epoch !== synthesisEpoch) return;
         const isSilero = m.voice.kind === 'silero';
         const pcm = isSilero ? await synthSilero(m.voice, m.text, m.rate, m.expressive) : await synth(m.text, m.rate);
         post({ type: 'audio', id: m.id, pcm, sampleRate: isSilero ? silero.frontend.tts.sample_rate : config.audio.sample_rate }, [pcm.buffer]);
