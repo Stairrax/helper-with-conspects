@@ -548,14 +548,18 @@ $('analyzeBtn').addEventListener('click', async () => {
     const savedParts = await idbGet(cacheKey);
     if (!current()) return;
     const segmentCache = new Map(Array.isArray(savedParts?.entries) ? savedParts.entries.filter((entry) => Array.isArray(entry) && typeof entry[0] === 'string' && Array.isArray(entry[1])) : []);
+    const ocrCache = new Map(Array.isArray(savedParts?.ocrEntries) ? savedParts.ocrEntries.filter((entry) => Array.isArray(entry) && typeof entry[0] === 'string' && typeof entry[1] === 'string') : []);
+    const saveCheckpoint = async (entries, ocrEntries) => {
+      if (!current()) throw new DOMException('Analysis cancelled', 'AbortError');
+      if (!await idbSet(cacheKey, { entries, ocrEntries })) throw new Error(T('Не удалось сохранить промежуточные результаты. Освободите место и попробуйте снова.'));
+    };
     const p = await analyze({
       sources: input, budgetMin, priority: getPriority(), settings: structuredClone(settings), signal: controller.signal,
-      segmentCache,
+      segmentCache, ocrCache,
       saveSegment: async (key, topics) => {
-        if (!current()) throw new DOMException('Analysis cancelled', 'AbortError');
-        const entries = [...segmentCache.entries(), [key, topics]];
-        if (!await idbSet(cacheKey, { entries })) throw new Error(T('Не удалось сохранить промежуточные результаты. Освободите место и попробуйте снова.'));
+        await saveCheckpoint([...segmentCache.entries(), [key, topics]], [...ocrCache.entries()]);
       },
+      saveOcr: async (key, text) => saveCheckpoint([...segmentCache.entries()], [...ocrCache.entries(), [key, text]]),
       log: (msg, frac) => {
         if (!current()) return;
         if (frac !== undefined) {
@@ -593,7 +597,7 @@ $('analyzeBtn').addEventListener('click', async () => {
     if (!current() || e.name === 'AbortError') return;
     logLine('Ошибка: ' + (e.message || e), 'err');
     $('analyzeStatus').innerHTML = `<span style="color:var(--danger)">${esc(e.message || e)}</span>` + (e.code === 'DAILY_LIMIT'
-      ? `<br><span class="muted small">${esc(T('Разобранные текстовые части сохраняются для следующей попытки. Или подключите свой ключ.'))}</span> <button class="btn text" data-own-key>${esc(T('Подключить свой ключ'))}</button>`
+      ? `<br><span class="muted small">${esc(T('Сохранённые результаты распознавания и разбора можно использовать при следующей попытке. Или подключите свой ключ.'))}</span> <button class="btn text" data-own-key>${esc(T('Подключить свой ключ'))}</button>`
       : '');
   } finally {
     if (my === analysisEpoch) {
