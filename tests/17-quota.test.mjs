@@ -74,7 +74,7 @@ export default async ({ open, ok }) => {
     await addText(page, textOf(330)); // ≈ 3 части по 12 тыс. знаков
     await page.click('#analyzeBtn');
     await page.waitForFunction(() => /закончились/.test(document.getElementById('analyzeStatus').textContent), null, { timeout: 20000 });
-    ok(await page.isVisible('#analyzeStatus [data-own-key]') && /Уже разобранные части сохранены/.test(await page.textContent('#analyzeStatus')), 'лимит кончился: сообщение, «части сохранены» и кнопка «Подключить свой ключ»');
+    ok(await page.isVisible('#analyzeStatus [data-own-key]') && /Разобранные текстовые части сохраняются/.test(await page.textContent('#analyzeStatus')), 'лимит кончился: сообщение, «части сохранены» и кнопка «Подключить свой ключ»');
     const done = ai.segment;
     blocked = false;
     await page.click('#analyzeBtn');
