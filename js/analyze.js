@@ -320,7 +320,7 @@ export function activeSeq(project) {
  * sources: [{id,name,kind,text?,images?}] -> project
  * log(msg, fraction)
  */
-export async function analyze({ sources, budgetMin, priority, settings, log, signal, segmentCache = new Map(), saveSegment = async () => {} }) {
+export async function analyze({ sources, budgetMin, priority, settings, log, signal, segmentCache = new Map(), saveSegment = async () => {}, ocrCache = new Map(), saveOcr = async () => {} }) {
   const active = () => { if (signal?.aborted) throw new DOMException('Analysis cancelled', 'AbortError'); };
   active();
   const status = (m) => log(m);
@@ -331,9 +331,20 @@ export async function analyze({ sources, budgetMin, priority, settings, log, sig
     if (s.kind !== 'images' || s.text) continue;
     const texts = [];
     for (const img of s.images) {
-      log(`Распознаю фото: «${s.name}» (${++imgDone}/${imgTotal})`, 0.05 + 0.25 * (imgDone / Math.max(1, imgTotal)));
-      texts.push(await ocrImage(img, settings, status, signal));
       active();
+      // Do not store raw image data in the checkpoint if secure hashing is unavailable.
+      const key = globalThis.crypto?.subtle ? await segmentKey('ocr-v1\n' + (settings.contentLang || 'ru') + '\n' + img.mime + '\n' + img.data) : null;
+      active();
+      const cached = key && ocrCache.has(key);
+      log(`${cached ? 'Восстанавливаю распознанное фото' : 'Распознаю фото'}: «${s.name}» (${++imgDone}/${imgTotal})`, 0.05 + 0.25 * (imgDone / Math.max(1, imgTotal)));
+      const text = cached ? ocrCache.get(key) : await ocrImage(img, settings, status, signal);
+      active();
+      if (key && !cached && typeof text === 'string' && text.trim()) {
+        await saveOcr(key, text);
+        active();
+        ocrCache.set(key, text);
+      }
+      texts.push(text);
     }
     s.text = texts.join('\n\n');
   }
