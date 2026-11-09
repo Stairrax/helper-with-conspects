@@ -14,9 +14,12 @@ export function estimatePlanRequests(sources) {
   return n;
 }
 
-// Разбитые на темы части текста запоминаем: если лимит кончился на середине, повторное «Составить план» продолжит с того же места
-const segCache = new Map();
-const hash = (str) => { let h = 5381; for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0; return h + ':' + str.length; };
+// Use a collision-resistant key: a mismatched cached range can silently change the plan.
+async function segmentKey(text) {
+  if (!globalThis.crypto?.subtle) return 'text:' + text;
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return 'sha256:' + [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
 const SECTION_CHARS = 5000;   // размер секции для генерации кусков
 export const CHARS_PER_SEC = 13; // скорость русской речи TTS при rate=1
 const SPOKEN_FACTOR = 1.35;   // устный текст длиннее исходного (пояснения, формулы словами)
@@ -110,7 +113,7 @@ export async function ocrImage(img, settings, onStatus, signal) {
 
 // ---------- Разбиение на темы ----------
 
-async function segmentPart(blocks, sourceName, prevTitle, settings, onStatus, signal) {
+async function segmentPart(blocks, sourceName, prevTitle, settings, onStatus, signal, segmentCache, saveSegment) {
   const numbered = blocks.map((b, i) => `[${i + 1}] ${b}`).join('\n\n');
   const n = blocks.length;
   if (n === 1) return [{ title: guessTitle(blocks), from: 1, to: 1, continues: !!prevTitle }];
@@ -124,13 +127,15 @@ ${prevTitle ? `Предыдущий фрагмент закончился тем
 Ответ JSON: {"topics":[{"title":"…","from":1,"to":4,"continues":false}]}
 
 ${numbered}`;
-  const key = hash(prompt);
-  if (segCache.has(key)) return normalizeRanges(segCache.get(key), n, blocks);
+  const key = await segmentKey('segment-v1\n' + (settings.contentLang || 'ru') + '\n' + prompt);
+  if (segmentCache.has(key)) return normalizeRanges(segmentCache.get(key), n, blocks);
   let topics = [];
   try {
     const res = await generateJSON({ ...conn(settings, 'notes'), signal, system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.2 });
     topics = Array.isArray(res.topics) ? res.topics : [];
-    segCache.set(key, topics);
+    if (signal?.aborted) throw new DOMException('Analysis cancelled', 'AbortError');
+    await saveSegment(key, topics);
+    segmentCache.set(key, topics);
   } catch (e) {
     if (!(e instanceof GeminiError) || e.code !== 'BAD_JSON') throw e;
   }
@@ -315,7 +320,7 @@ export function activeSeq(project) {
  * sources: [{id,name,kind,text?,images?}] -> project
  * log(msg, fraction)
  */
-export async function analyze({ sources, budgetMin, priority, settings, log, signal }) {
+export async function analyze({ sources, budgetMin, priority, settings, log, signal, segmentCache = new Map(), saveSegment = async () => {} }) {
   const active = () => { if (signal?.aborted) throw new DOMException('Analysis cancelled', 'AbortError'); };
   active();
   const status = (m) => log(m);
@@ -348,7 +353,7 @@ export async function analyze({ sources, budgetMin, priority, settings, log, sig
     log(`Разбиваю на темы: часть ${i + 1} из ${parts.length}`, 0.3 + 0.45 * (i / parts.length));
     const sameSource = prevSource === source;
     active();
-    const ranges = await segmentPart(blocks, source.name, sameSource ? prevTitle : null, settings, status, signal);
+    const ranges = await segmentPart(blocks, source.name, sameSource ? prevTitle : null, settings, status, signal, segmentCache, saveSegment);
     active();
     ranges.forEach((r, j) => {
       const text = blocks.slice(r.from - 1, r.to).join('\n\n');
