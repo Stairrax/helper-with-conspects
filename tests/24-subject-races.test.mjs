@@ -224,7 +224,7 @@ export default async ({ open, prepare, FINANCE, ok }) => {
     let requests = 0, release;
     const gate = new Promise(r => { release = r; });
     await page.route(/chat\/completions/, async (route) => {
-      if (++requests >= 2) await gate;
+      if ((route.request().postData() || '').includes('ИСХОДНЫЙ ТЕКСТ')) { requests++; await gate; }
       try { await route.fallback(); } catch { /* page may close after the assertion */ }
     });
     await page.evaluate(() => {
@@ -235,7 +235,8 @@ export default async ({ open, prepare, FINANCE, ok }) => {
     });
     await page.waitForFunction(async (old) => {
       const s = await import('./js/storage.js');
-      return (await s.idbGet('project:' + s.loadSubjects().current))?.id !== old;
+      const current = await s.idbGet('project:' + s.loadSubjects().current);
+      return !!current?.id && current.id !== old;
     }, previous);
     await page.waitForTimeout(800);
     const saved = await page.evaluate(async () => {
@@ -243,6 +244,6 @@ export default async ({ open, prepare, FINANCE, ok }) => {
       return (await s.idbGet('project:' + s.loadSubjects().current)).id;
     });
     release();
-    ok(saved !== previous, 'отложенное сохранение старого плана не перезаписывает новый план');
+    ok(requests >= 1 && saved !== previous, 'отложенное сохранение старого плана не перезаписывает новый план во время генерации');
   }
 };
