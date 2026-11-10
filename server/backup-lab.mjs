@@ -26,16 +26,16 @@ function sseText(text, model) {
     choices: [{ index: 0, delta: { content: text }, finish_reason: null }],
   }) + '\n\n';
 }
-function sseDone(model) {
+function sseDone(model, reason = 'stop') {
   return 'data: ' + JSON.stringify({
     id: 'local-backup-lab', object: 'chat.completion.chunk', model,
-    choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+    choices: [{ index: 0, delta: {}, finish_reason: reason }],
   }) + '\n\ndata: [DONE]\n\n';
 }
-function replyJson(text, model) {
+function replyJson(text, model, reason = 'stop') {
   return {
     id: 'local-backup-lab', object: 'chat.completion', model,
-    choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }],
+    choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: reason }],
   };
 }
 function validTextMessages(messages) {
@@ -78,7 +78,7 @@ async function simulatedAnswer(res, stream, model) {
   if (!res.destroyed) res.end(sseDone(model));
 }
 
-async function ollamaAnswer(res, body, model) {
+async function ollamaAnswer(res, body, model, maxOutputTokens = 512) {
   // Hardcoded loopback endpoint: a user cannot make this server proxy arbitrary URLs.
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 180_000);
@@ -90,7 +90,7 @@ async function ollamaAnswer(res, body, model) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         model, stream: body.stream === true, messages: body.messages,
-        options: { num_predict: Math.min(Number.isSafeInteger(body.max_tokens) && body.max_tokens > 0 ? body.max_tokens : 512, 512) },
+        options: { num_predict: Math.min(Number.isSafeInteger(body.max_tokens) && body.max_tokens > 0 ? body.max_tokens : maxOutputTokens, maxOutputTokens) },
       }),
       signal: controller.signal,
     });
@@ -99,14 +99,14 @@ async function ollamaAnswer(res, body, model) {
     }
     if (body.stream !== true) {
       const data = await response.json();
-      return sendJson(res, 200, replyJson(String(data.message?.content || ''), model));
+      return sendJson(res, 200, replyJson(String(data.message?.content || ''), model, data.done_reason === 'length' ? 'length' : 'stop'));
     }
     if (!response.body) throw new Error('Ollama не вернула поток');
     res.writeHead(200, sseHeaders);
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let pending = '';
-    let completed = false;
+    let completed = false, finishReason = 'stop';
     try {
       while (!completed && !controller.signal.aborted) {
         const { done, value } = await reader.read();
@@ -123,7 +123,10 @@ async function ollamaAnswer(res, body, model) {
           if (typeof event.message?.content === 'string' && event.message.content) {
             res.write(sseText(event.message.content, model));
           }
-          if (event.done === true) completed = true;
+          if (event.done === true) {
+             completed = true;
+             if (event.done_reason === 'length') finishReason = 'length';
+           }
         }
       }
     } finally {
@@ -131,7 +134,7 @@ async function ollamaAnswer(res, body, model) {
       reader.releaseLock();
     }
     if (!res.destroyed) {
-      if (completed) res.end(sseDone(model));
+      if (completed) res.end(sseDone(model, finishReason));
       else res.destroy(); // Never pretend that a truncated AI generation succeeded.
     }
   } catch {
@@ -145,10 +148,13 @@ async function ollamaAnswer(res, body, model) {
 }
 
 /** Start an isolated loopback API. Nothing gets deployed or sent to a cloud. */
-export async function startBackupLab({ port = DEFAULT_PORT, mode = 'mock', model = 'qwen2.5:0.5b' } = {}) {
+export async function startBackupLab({ port = DEFAULT_PORT, mode = 'mock', model = 'qwen2.5:0.5b', maxOutputTokens = 512, perDeviceLimit = PER_DEVICE_LIMIT, totalLimit = TOTAL_LIMIT } = {}) {
   if (!Number.isSafeInteger(port) || port < 0 || port > 65535) throw new RangeError('Invalid port');
   if (!['mock', 'ollama'].includes(mode)) throw new Error('BACKUP_LAB_MODE must be mock or ollama');
   if (typeof model !== 'string' || !model || model.length > 100) throw new Error('Invalid model name');
+  if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 64 || maxOutputTokens > 2048) throw new RangeError('Invalid maxOutputTokens');
+  if (!Number.isSafeInteger(perDeviceLimit) || perDeviceLimit < 1 || perDeviceLimit > 30) throw new RangeError('Invalid perDeviceLimit');
+  if (!Number.isSafeInteger(totalLimit) || totalLimit < perDeviceLimit || totalLimit > 60) throw new RangeError('Invalid totalLimit');
   const devices = new Map();
   let acceptedRequests = 0;
   const server = createServer(async (req, res) => {
@@ -192,14 +198,14 @@ export async function startBackupLab({ port = DEFAULT_PORT, mode = 'mock', model
     // Strict limits for a demo, not a production rate-limiter or authorization.
     const device = (req.headers.authorization || 'no-device').slice(0, 80);
     const count = devices.get(device) || 0;
-    if (acceptedRequests >= TOTAL_LIMIT || count >= PER_DEVICE_LIMIT) {
+    if (acceptedRequests >= totalLimit || count >= perDeviceLimit) {
       return sendJson(res, 429, errorBody('daily_limit', 'Локальный тестовый лимит исчерпан. Перезапустите сервер.'));
     }
     acceptedRequests++;
     devices.set(device, count + 1);
     try {
       if (mode === 'mock') await simulatedAnswer(res, body.stream === true, 'backup-lab-mock');
-      else await ollamaAnswer(res, body, model);
+      else await ollamaAnswer(res, body, model, maxOutputTokens);
     } catch {
       if (!res.headersSent) sendJson(res, 500, errorBody('internal', 'Ошибка тестового сервера.'));
       else if (!res.destroyed) res.destroy();

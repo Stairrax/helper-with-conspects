@@ -18,6 +18,8 @@ jobs:
       - run: npm ci
       - name: Проверить синтаксис необязательного локального теста с Ollama
         run: node --check server/backup-browser-ollama.mjs
+      - name: Синтаксис сценария проверки конспектов (без Ollama в CI)
+        run: node --check server/ollama-quality-browser.mjs
       - name: Локальный резервный сервер — без облака и ключей
         run: npm run test:backup
       - run: npx playwright install --with-deps chromium
