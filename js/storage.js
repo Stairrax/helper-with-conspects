@@ -259,19 +259,27 @@ async function idbEntries() {
 
 const BACKUP_APP = 'konspekt-diktor';
 
+/** Copy settings for an exported backup without mutating the user's live credentials. */
+export function settingsForBackup(source) {
+  const settings = JSON.parse(JSON.stringify(source || {}));
+  settings.apiKey = '';
+  delete settings.cloudKey;
+  for (const profile of Object.values(settings.profiles || {})) {
+    if (profile && typeof profile === 'object') {
+      profile.apiKey = '';
+      delete profile.cloudKey;
+    }
+  }
+  return settings;
+}
+
 /** Экспорт данных: настройки без API-ключей, предметы, конспекты, прогресс. */
 export async function makeBackup() {
   if (restoring) throw new Error('Restore in progress; reload required');
   const backup = await captureBackup();
   // Keep the private rollback snapshot intact; redact only the exported copy.
   const raw = backup.localStorage['kd.settings'];
-  if (raw) {
-    const settings = JSON.parse(raw);
-    settings.apiKey = '';
-    delete settings.cloudKey;
-    for (const profile of Object.values(settings.profiles || {})) if (profile && typeof profile === 'object') profile.apiKey = '';
-    backup.localStorage['kd.settings'] = JSON.stringify(settings);
-  }
+  if (raw) backup.localStorage['kd.settings'] = JSON.stringify(settingsForBackup(JSON.parse(raw)));
   return backup;
 }
 async function captureBackup() {

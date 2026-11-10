@@ -218,24 +218,43 @@ function aiResponse(res, model, stream, headers, budget) {
   const h = { ...headers, 'Cache-Control': 'no-store', 'X-Answered-By': 'workers-ai' };
   if (stream && res instanceof ReadableStream) {
     const enc = new TextEncoder(), dec = new TextDecoder();
-    let buf = '';
+    let buf = '', upstreamDone = false;
+    // A closed transport is NOT a completed generation. Only forward a real upstream [DONE].
+    const handleLine = (line, ctrl) => {
+      if (!line.startsWith('data:') || upstreamDone) return;
+      const payload = line.slice(5).trim();
+      if (!payload) return;
+      if (payload === '[DONE]') {
+        upstreamDone = true;
+        ctrl.enqueue(enc.encode('data: [DONE]\n\n'));
+        return;
+      }
+      let event;
+      try { event = JSON.parse(payload); }
+      catch { throw new Error('Workers AI sent malformed SSE'); }
+      if (event?.error) throw new Error('Workers AI returned an SSE error');
+      const text = event?.response ?? event?.choices?.[0]?.delta?.content ?? '';
+      if (text) ctrl.enqueue(enc.encode('data: ' + JSON.stringify({ choices: [{ delta: { content: text } }] }) + '\n\n'));
+      // Preserve truncation metadata so the browser cannot treat an output limit as success.
+      const finish = event?.choices?.[0]?.finish_reason;
+      if (finish) ctrl.enqueue(enc.encode('data: ' + JSON.stringify({ choices: [{ finish_reason: finish }] }) + '\n\n'));
+    };
     const toOpenAI = new TransformStream({
       transform(chunk, ctrl) {
         buf += typeof chunk === 'string' ? chunk : dec.decode(chunk, { stream: true });
         let i;
         while ((i = buf.indexOf('\n')) >= 0) {
-          const line = buf.slice(0, i).trim();
+          handleLine(buf.slice(0, i).trim(), ctrl);
           buf = buf.slice(i + 1);
-          if (!line.startsWith('data:')) continue;
-          const p = line.slice(5).trim();
-          if (!p || p === '[DONE]') continue;
-          let j;
-          try { j = JSON.parse(p); } catch { continue; }
-          const t = j.response ?? j.choices?.[0]?.delta?.content ?? '';
-          if (t) ctrl.enqueue(enc.encode('data: ' + JSON.stringify({ choices: [{ delta: { content: t } }] }) + '\n\n'));
         }
+        if (buf.length > 1024 * 1024) throw new Error('Workers AI SSE event too large');
       },
-      flush(ctrl) { ctrl.enqueue(enc.encode('data: [DONE]\n\n')); },
+      flush(ctrl) {
+        buf += dec.decode();
+        if (buf.trim()) handleLine(buf.trim(), ctrl);
+        // Throwing errors the response stream: partial text stays partial, no synthetic [DONE].
+        if (!upstreamDone) throw new Error('Workers AI stream ended without [DONE]');
+      },
     });
     return new Response(res.pipeThrough(toOpenAI), { headers: { ...h, 'Content-Type': 'text/event-stream' } });
   }
