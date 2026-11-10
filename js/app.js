@@ -2,7 +2,7 @@
 
 import {
   loadSettings, saveSettings, loadProgress, saveProgress, clearProgress, idbGet, idbSet, idbDel, loadSubjects, saveSubjects,
-  makeBackup, restoreBackup, storageFailures,
+  makeBackup, restoreBackup, settingsForBackup, storageFailures,
 } from './storage.js';
 import { fileToSource } from './extract.js';
 import {
@@ -2286,7 +2286,8 @@ $('backupBtn').addEventListener('click', async () => {
     if (project) data.idb['project:' + cur()] = project;
     data.idb['sources:' + cur()] = sources;
     data.localStorage['kd.subjects'] = JSON.stringify(subjects);
-    data.localStorage['kd.settings'] = JSON.stringify(settings);
+    // Do not reinsert live API keys after makeBackup() redacted stored settings.
+    data.localStorage['kd.settings'] = JSON.stringify(settingsForBackup(settings));
     if (progress) data.localStorage['kd.progress:' + cur()] = JSON.stringify(progress);
     // Fallbacks are already consolidated in data.idb; stale duplicates must not override it on restore.
     for (const key of Object.keys(data.localStorage)) if (key.startsWith('kd.idb.')) delete data.localStorage[key];
