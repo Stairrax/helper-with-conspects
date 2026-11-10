@@ -26,16 +26,16 @@ function sseText(text, model) {
     choices: [{ index: 0, delta: { content: text }, finish_reason: null }],
   }) + '\n\n';
 }
-function sseDone(model) {
+function sseDone(model, reason = 'stop') {
   return 'data: ' + JSON.stringify({
     id: 'local-backup-lab', object: 'chat.completion.chunk', model,
-    choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+    choices: [{ index: 0, delta: {}, finish_reason: reason }],
   }) + '\n\ndata: [DONE]\n\n';
 }
-function replyJson(text, model) {
+function replyJson(text, model, reason = 'stop') {
   return {
     id: 'local-backup-lab', object: 'chat.completion', model,
-    choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }],
+    choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: reason }],
   };
 }
 function validTextMessages(messages) {
@@ -99,14 +99,14 @@ async function ollamaAnswer(res, body, model, maxOutputTokens = 512) {
     }
     if (body.stream !== true) {
       const data = await response.json();
-      return sendJson(res, 200, replyJson(String(data.message?.content || ''), model));
+      return sendJson(res, 200, replyJson(String(data.message?.content || ''), model, data.done_reason === 'length' ? 'length' : 'stop'));
     }
     if (!response.body) throw new Error('Ollama не вернула поток');
     res.writeHead(200, sseHeaders);
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let pending = '';
-    let completed = false;
+    let completed = false, finishReason = 'stop';
     try {
       while (!completed && !controller.signal.aborted) {
         const { done, value } = await reader.read();
@@ -123,7 +123,10 @@ async function ollamaAnswer(res, body, model, maxOutputTokens = 512) {
           if (typeof event.message?.content === 'string' && event.message.content) {
             res.write(sseText(event.message.content, model));
           }
-          if (event.done === true) completed = true;
+          if (event.done === true) {
+             completed = true;
+             if (event.done_reason === 'length') finishReason = 'length';
+           }
         }
       }
     } finally {
@@ -131,7 +134,7 @@ async function ollamaAnswer(res, body, model, maxOutputTokens = 512) {
       reader.releaseLock();
     }
     if (!res.destroyed) {
-      if (completed) res.end(sseDone(model));
+      if (completed) res.end(sseDone(model, finishReason));
       else res.destroy(); // Never pretend that a truncated AI generation succeeded.
     }
   } catch {
