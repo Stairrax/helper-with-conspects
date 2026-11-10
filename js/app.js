@@ -544,8 +544,22 @@ $('analyzeBtn').addEventListener('click', async () => {
     // Finish autosaving the previous plan before its replacement can be committed.
     if (!await flushProject()) throw new Error(T('Не удалось сохранить план. Освободите место и попробуйте снова.'));
     if (!current()) return;
+    const cacheKey = 'analysis-cache:' + subject;
+    const savedParts = await idbGet(cacheKey);
+    if (!current()) return;
+    const segmentCache = new Map(Array.isArray(savedParts?.entries) ? savedParts.entries.filter((entry) => Array.isArray(entry) && typeof entry[0] === 'string' && Array.isArray(entry[1])) : []);
+    const ocrCache = new Map(Array.isArray(savedParts?.ocrEntries) ? savedParts.ocrEntries.filter((entry) => Array.isArray(entry) && typeof entry[0] === 'string' && typeof entry[1] === 'string') : []);
+    const saveCheckpoint = async (entries, ocrEntries) => {
+      if (!current()) throw new DOMException('Analysis cancelled', 'AbortError');
+      if (!await idbSet(cacheKey, { entries, ocrEntries })) throw new Error(T('Не удалось сохранить промежуточные результаты. Освободите место и попробуйте снова.'));
+    };
     const p = await analyze({
       sources: input, budgetMin, priority: getPriority(), settings: structuredClone(settings), signal: controller.signal,
+      segmentCache, ocrCache,
+      saveSegment: async (key, topics) => {
+        await saveCheckpoint([...segmentCache.entries(), [key, topics]], [...ocrCache.entries()]);
+      },
+      saveOcr: async (key, text) => saveCheckpoint([...segmentCache.entries()], [...ocrCache.entries(), [key, text]]),
       log: (msg, frac) => {
         if (!current()) return;
         if (frac !== undefined) {
@@ -562,6 +576,8 @@ $('analyzeBtn').addEventListener('click', async () => {
     if (!await idbSet('project:' + subject, p) || !await idbSet('sources:' + subject, input)) {
       throw new Error(T('Не удалось сохранить план. Освободите место и попробуйте снова.'));
     }
+    if (!current()) return;
+    await idbDel(cacheKey);
     if (!current()) return;
     resetDictation();
     sources = input; // распознанный текст фото сохраняется вместе с планом
@@ -581,7 +597,7 @@ $('analyzeBtn').addEventListener('click', async () => {
     if (!current() || e.name === 'AbortError') return;
     logLine('Ошибка: ' + (e.message || e), 'err');
     $('analyzeStatus').innerHTML = `<span style="color:var(--danger)">${esc(e.message || e)}</span>` + (e.code === 'DAILY_LIMIT'
-      ? `<br><span class="muted small">${esc(T('Уже разобранные части сохранены: завтра план достроится быстрее. Или подключите свой ключ.'))}</span> <button class="btn text" data-own-key>${esc(T('Подключить свой ключ'))}</button>`
+      ? `<br><span class="muted small">${esc(T('Сохранённые результаты распознавания и разбора можно использовать при следующей попытке. Или подключите свой ключ.'))}</span> <button class="btn text" data-own-key>${esc(T('Подключить свой ключ'))}</button>`
       : '');
   } finally {
     if (my === analysisEpoch) {
@@ -2654,8 +2670,11 @@ function renameSubject() {
 async function deleteSubject() {
   const s = curSubject();
   if (!s || !confirm(`Удалить предмет «${s.title}» вместе с планом, конспектами и прогрессом?`)) return;
+  invalidateAnalysis();
+  await idbGet('analysis-cache:' + s.id).catch(() => {});
   await idbDel('project:' + s.id);
   await idbDel('sources:' + s.id);
+  await idbDel('analysis-cache:' + s.id);
   clearProgress(s.id);
   subjects.list = subjects.list.filter((x) => x.id !== s.id);
   if (!subjects.list.length) subjects.list.push({ id: 's' + uid(), title: T('Предмет 1') });

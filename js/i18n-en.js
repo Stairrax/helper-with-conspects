@@ -7,6 +7,7 @@ const pl = (n, one, many) => `${n} ${+n === 1 ? one : many}`;
 const VOICE = { Бая: 'Baya', Ксения: 'Xenia', Ксюша: 'Ksyusha', Айдар: 'Aidar', Евгений: 'Evgeny', Ирина: 'Irina', Дмитрий: 'Dmitri', Денис: 'Denis', Руслан: 'Ruslan' };
 
 export const EXACT = {
+  'Не удалось сохранить промежуточные результаты. Освободите место и попробуйте снова.': 'Could not save intermediate results. Free up space and try again.',
   'На сегодня лимит подготовки конспектов исчерпан. Продолжите завтра.': 'The daily notes preparation limit has been reached. Continue tomorrow.',
   'На сегодня лимит вопросов исчерпан. Продолжите завтра.': 'The daily question limit has been reached. Continue tomorrow.',
   'Не удалось прочитать DOCX. Проверьте файл или сохраните его заново.': 'Could not read the DOCX. Check the file or save it again.',
@@ -100,7 +101,7 @@ export const EXACT = {
   'Подготовить все темы сразу': 'Prepare all topics now', 'Подключить свой ключ': 'Use my own key',
   'Бесплатные запросы на сегодня закончились. Готовые темы можно диктовать, остальные подготовятся позже.': 'Free requests are used up for today. Prepared topics can be dictated; the rest will be prepared later.',
   'Бесплатные запросы на сегодня закончились — эту тему подготовим позже. Выберите готовую тему в плане или подключите свой ключ (Настройки → Настроить заново).': 'Free requests are used up for today — this topic will be prepared later. Pick a prepared topic in the plan or use your own key (Settings → Set up again).',
-  'Уже разобранные части сохранены: завтра план достроится быстрее. Или подключите свой ключ.': 'The parts already analysed are saved: the plan will finish faster tomorrow. Or use your own key.',
+  'Сохранённые результаты распознавания и разбора можно использовать при следующей попытке. Или подключите свой ключ.': 'Saved recognition and analysis results can be used on the next attempt. Or use your own key.',
   'Проверить связь': 'Check connection', 'Проверяю…': 'Checking…', 'мс': 'ms', 'с': 's',
   'Сервер бесплатного режима отвечает': 'The free-mode server responds', 'Сервер бесплатного режима не отвечает': 'The free-mode server doesn’t respond',
   'OpenRouter открывается': 'OpenRouter opens', 'OpenRouter не открывается': 'OpenRouter doesn’t open',
@@ -469,6 +470,7 @@ export const PATTERNS = [
   [/^«(.+?)»(.*?): догенерирую (\d+) пропущенных пункт\(ов\)$/, (m, tr) => `“${m[1]}”${tr(m[2])}: generating ${m[3]} missed point(s)`],
   [/^ \(часть (\d+)\/(\d+)\)$/, ' (part $1/$2)'],
   [/^Распознаю фото: «(.+)» \((\d+)\/(\d+)\)$/, 'Reading photo: “$1” ($2/$3)'],
+  [/^Восстанавливаю распознанное фото: «(.+)» \((\d+)\/(\d+)\)$/, 'Restoring recognised photo: “$1” ($2/$3)'],
   [/^Разбиваю на темы: часть (\d+) из (\d+)$/, 'Splitting into topics: part $1 of $2'],
   [/^Оцениваю сложность и зависимости \((\d+) тем\)$/, 'Rating difficulty and dependencies ($1 topics)'],
   [/^PDF: страница (\d+) из (\d+)$/, 'PDF: page $1 of $2'],
