@@ -1538,6 +1538,7 @@ ${prevQa ? `\nПРЕДЫДУЩИЕ ВОПРОСЫ В ЭТОЙ СЕССИИ:\n${p
   }
 
   async streamAndSpeak(my, req, entry, onError) {
+    entry.state = 'streaming';
     const ctrl = new AbortController();
     this.answerCtrl = ctrl;
     const s = this.settings;
@@ -1573,7 +1574,13 @@ ${prevQa ? `\nПРЕДЫДУЩИЕ ВОПРОСЫ В ЭТОЙ СЕССИИ:\n${p
         onStatus: (m) => { this.message = m; this.h.emit(); },
       });
     } catch (e) {
-      if (e.name === 'AbortError' || my !== this.token) { streamDone = true; kick(); return; }
+      entry.error = true;
+      entry.state = e.name === 'AbortError' ? 'cancelled' : e.code === 'MAX_TOKENS' ? 'truncated' : e.code === 'STREAM_INTERRUPTED' || e.code === 'REQUEST_TIMEOUT' ? 'interrupted' : 'failed';
+      if (e.name === 'AbortError' || my !== this.token) {
+        entry.state = 'cancelled';
+        if (entry.a) entry.a += this.L('\n\n⚠ Ответ прерван.', '\n\n⚠ Answer interrupted.');
+        streamDone = true; kick(); return;
+      }
       streamDone = true;
       take(true);
       await speaker;
@@ -1581,6 +1588,7 @@ ${prevQa ? `\nПРЕДЫДУЩИЕ ВОПРОСЫ В ЭТОЙ СЕССИИ:\n${p
       if (this.answerCtrl === ctrl) this.answerCtrl = null;
       return;
     }
+    entry.state = 'complete';
     streamDone = true;
     take(true);
     await speaker;

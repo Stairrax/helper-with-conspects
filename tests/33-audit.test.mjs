@@ -79,6 +79,17 @@ export default async ({ open, ok }) => {
    seq:()=>[],pos:{done:{},chunk:0},resumePos:null,topicById:()=>null,lastSpokenText:()=>'',qa:[]
   }, 'What is Rareterm?');
   result.contextTail = context.includes('answer at end of textbook') && context.length < 18000;
+  const priorFetch = window.fetch;
+  const entry = {a:''};
+  const fake = { token:1, state:'answering', settings:{provider:'custom',apiKey:'fake',baseUrl:'https://fake.test',model:'m'}, h:{emit:()=>{}}, L:(ru)=>ru, say:async()=>{}, set:()=>{} };
+  window.fetch = async () => new Response(new ReadableStream({start(c){
+   c.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'));
+   setTimeout(()=>fake.answerCtrl.abort(),20);
+  }}));
+  try { await Dictation.prototype.streamAndSpeak.call(fake,1,{parts:[{text:'test'}]},entry,async()=>{}); }
+  finally { window.fetch = priorFetch; }
+  result.cancelledHistory = entry.error === true && entry.state === 'cancelled' && entry.a.includes('partial') && entry.a.includes('⚠');
+
   return result;
  });
  for (const [name, pass] of Object.entries(results)) ok(pass, 'audit: ' + name);
