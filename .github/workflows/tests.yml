@@ -16,5 +16,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Проверить синтаксис необязательного локального теста с Ollama
+        run: node --check server/backup-browser-ollama.mjs
+      - name: Локальный резервный сервер — без облака и ключей
+        run: npm run test:backup
       - run: npx playwright install --with-deps chromium
       - run: npm test
