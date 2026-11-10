@@ -1,0 +1,212 @@
+{
+  "schemaVersion": 1,
+  "source": "Original synthetic materials created for this project; no personal data.",
+  "cases": [
+    {
+      "id": "physics-ru",
+      "title": "Физика: формула и отрицание",
+      "lang": "ru",
+      "source": "Второй закон Ньютона: F = m·a. Тело массой 2 кг движется с ускорением 3 м/с², поэтому результирующая сила равна 6 Н. При нулевой результирующей силе ускорение равно нулю, но скорость не обязана быть нулевой. Единица силы — ньютон.",
+      "checkpoints": [
+        {
+          "id": "formula",
+          "type": "formula",
+          "question": "Сохранена связь силы, массы и ускорения?",
+          "evidenceAny": [
+            "f = m·a",
+            "f=m·a",
+            "f = ma",
+            "сила равна произведению массы на ускорение"
+          ]
+        },
+        {
+          "id": "mass",
+          "type": "number",
+          "question": "Сохранена масса 2 кг?",
+          "evidenceAny": [
+            "2 кг",
+            "2 kg"
+          ]
+        },
+        {
+          "id": "acceleration",
+          "type": "unit",
+          "question": "Сохранено ускорение 3 м/с²?",
+          "evidenceAny": [
+            "3 м/с²",
+            "3 м/с2"
+          ]
+        },
+        {
+          "id": "force",
+          "type": "number",
+          "question": "Результирующая сила 6 Н?",
+          "evidenceAny": [
+            "6 н",
+            "6 ньютон"
+          ]
+        },
+        {
+          "id": "negation",
+          "type": "logic",
+          "question": "Нулевая сила НЕ означает нулевую скорость?",
+          "evidenceAny": [
+            "скорость не обязана быть нулевой",
+            "скорость может быть ненулевой"
+          ]
+        }
+      ],
+      "exampleAnswer": "Второй закон Ньютона F = m·a. Масса 2 кг, ускорение 3 м/с², сила 6 Н. При нулевой результирующей силе скорость не обязана быть нулевой."
+    },
+    {
+      "id": "finance-ru",
+      "title": "Финансы: сложный и простой процент",
+      "lang": "ru",
+      "source": "Вклад 1000 рублей со ставкой 5% годовых. При ежегодной капитализации через год будет 1050 рублей, а через два — 1102,50 рубля. Если использовать простые проценты, через два года будет 1100 рублей. Эти способы начисления нельзя путать.",
+      "checkpoints": [
+        {
+          "id": "deposit",
+          "type": "number",
+          "question": "Вклад 1000 рублей?",
+          "evidenceAny": [
+            "1000 руб"
+          ]
+        },
+        {
+          "id": "rate",
+          "type": "number",
+          "question": "Ставка 5% годовых?",
+          "evidenceAny": [
+            "5% год",
+            "5 % год"
+          ]
+        },
+        {
+          "id": "year1",
+          "type": "number",
+          "question": "Сложный процент через год: 1050?",
+          "evidenceAny": [
+            "1050 руб"
+          ]
+        },
+        {
+          "id": "year2",
+          "type": "number",
+          "question": "Сложный процент через два года: 1102,50?",
+          "evidenceAny": [
+            "1102,50",
+            "1102.50"
+          ]
+        },
+        {
+          "id": "simple",
+          "type": "number",
+          "question": "Простой процент через два года: 1100?",
+          "evidenceAny": [
+            "1100 руб"
+          ]
+        }
+      ],
+      "exampleAnswer": "Вклад 1000 рублей под 5% годовых: через год 1050 рублей, через два года 1102,50 рубля с капитализацией. При простых процентах — 1100 рублей."
+    },
+    {
+      "id": "biology-ru",
+      "title": "Биология: митоз и мейоз",
+      "lang": "ru",
+      "source": "При митозе образуются две генетически идентичные дочерние клетки, число хромосом сохраняется. При мейозе после двух делений образуются четыре клетки с уменьшенным вдвое числом хромосом. Кроссинговер происходит в профазе I мейоза, а не при обычном митозе.",
+      "checkpoints": [
+        {
+          "id": "mitosis",
+          "type": "number",
+          "question": "Митоз даёт две дочерние клетки?",
+          "evidenceAny": [
+            "две дочерние клетки",
+            "2 дочерние клетки"
+          ]
+        },
+        {
+          "id": "identical",
+          "type": "fact",
+          "question": "Дочерние клетки генетически идентичны?",
+          "evidenceAny": [
+            "генетически идентичные",
+            "генетически одинаковые"
+          ]
+        },
+        {
+          "id": "chromosomes",
+          "type": "fact",
+          "question": "При митозе число хромосом сохраняется?",
+          "evidenceAny": [
+            "число хромосом сохраняется",
+            "сохраняется число хромосом"
+          ]
+        },
+        {
+          "id": "meiosis",
+          "type": "number",
+          "question": "Мейоз даёт четыре клетки?",
+          "evidenceAny": [
+            "четыре клетки",
+            "4 клетки"
+          ]
+        },
+        {
+          "id": "crossing",
+          "type": "logic",
+          "question": "Кроссинговер в профазе I мейоза?",
+          "evidenceAny": [
+            "профазе i мейоза",
+            "профазе 1 мейоза"
+          ]
+        }
+      ],
+      "exampleAnswer": "Митоз образует две дочерние клетки, генетически идентичные, число хромосом сохраняется. Мейоз — четыре клетки. Кроссинговер происходит в профазе I мейоза."
+    },
+    {
+      "id": "chemistry-en",
+      "title": "Chemistry: boiling is not decomposition",
+      "lang": "en",
+      "source": "At sea level, pure water boils at approximately 100°C. At lower atmospheric pressure, the boiling temperature decreases. Boiling turns liquid water into water vapour, but H2O does not split into H2 and O2 molecules.",
+      "checkpoints": [
+        {
+          "id": "temperature",
+          "type": "number",
+          "question": "Boiling point at sea level about 100°C?",
+          "evidenceAny": [
+            "100°c",
+            "100 c"
+          ]
+        },
+        {
+          "id": "pressure",
+          "type": "logic",
+          "question": "Lower pressure lowers boiling temperature?",
+          "evidenceAny": [
+            "boiling temperature decreases",
+            "boiling point decreases"
+          ]
+        },
+        {
+          "id": "state",
+          "type": "fact",
+          "question": "Liquid water becomes vapour?",
+          "evidenceAny": [
+            "water vapour",
+            "water vapor"
+          ]
+        },
+        {
+          "id": "not-splitting",
+          "type": "logic",
+          "question": "Boiling does NOT split H2O into H2 and O2?",
+          "evidenceAny": [
+            "h2o does not split into h2 and o2",
+            "h2o does not decompose into h2 and o2"
+          ]
+        }
+      ],
+      "exampleAnswer": "At sea level pure water boils at 100°C. At lower pressure the boiling temperature decreases. Water becomes water vapour, but H2O does not split into H2 and O2."
+    }
+  ]
+}
