@@ -12,7 +12,7 @@ async function addText(page, text) {
   await page.fill('#pasteTitle', 'Конспект');
   await page.click('#pasteAdd');
 }
-const ready = (page) => page.evaluate(() => document.querySelectorAll('#planList .pstate.ok').length);
+const ready = (page) => page.evaluate(() => document.querySelectorAll('#planList .pstate[data-ready="true"]').length);
 
 export default async ({ open, ok }) => {
   // ---- темы — по мере чтения
@@ -21,7 +21,7 @@ export default async ({ open, ok }) => {
     await addText(page, textOf(60));
     await page.click('#analyzeBtn');
     await page.waitForFunction(() => document.querySelectorAll('#planList li').length === 6, null, { timeout: 20000 });
-    await page.waitForFunction(() => document.querySelectorAll('#planList .pstate.ok').length >= 3, null, { timeout: 20000 });
+    await page.waitForFunction(() => document.querySelectorAll('#planList .pstate[data-ready="true"]').length >= 3, null, { timeout: 20000 });
     await page.waitForTimeout(1500); // дальше трёх тем готовиться не должно
     ok(await ready(page) === 3 && ai.generate === 3, 'бесплатный режим: сразу готовы только три темы — запросов на подготовку: ' + ai.generate);
     ok(/остальные темы — по мере чтения/.test(await page.textContent('#genStatus')) && await page.isVisible('#prepAllBtn'), 'в плане сказано, что остальные — по мере чтения, и есть «Подготовить все темы сразу»');
@@ -30,7 +30,7 @@ export default async ({ open, ok }) => {
     await page.click('#planList li:nth-child(4) [data-act=from]');
     await page.waitForTimeout(300);
     await page.click('[data-tab=plan]');
-    await page.waitForFunction(() => document.querySelectorAll('#planList .pstate.ok').length >= 4, null, { timeout: 20000 });
+    await page.waitForFunction(() => document.querySelectorAll('#planList .pstate[data-ready="true"]').length >= 4, null, { timeout: 20000 });
     ok(true, 'перешли на четвёртую тему — она и следующие готовятся');
   }
   // «Подготовить все темы сразу»
@@ -38,11 +38,11 @@ export default async ({ open, ok }) => {
     const { page } = await open({ settings: FREE, freeProxy: 'https://free-proxy.test', titles: TITLES });
     await addText(page, textOf(60));
     await page.click('#analyzeBtn');
-    await page.waitForFunction(() => document.querySelectorAll('#planList .pstate.ok').length >= 3, null, { timeout: 20000 });
+    await page.waitForFunction(() => document.querySelectorAll('#planList .pstate[data-ready="true"]').length >= 3, null, { timeout: 20000 });
     await page.waitForTimeout(800);
     page.once('dialog', (d) => d.accept());
     await page.click('#prepAllBtn');
-    await page.waitForFunction(() => document.querySelectorAll('#planList .pstate.ok').length === 6, null, { timeout: 20000 });
+    await page.waitForFunction(() => document.querySelectorAll('#planList .pstate[data-ready="true"]').length === 6, null, { timeout: 20000 });
     ok(!(await page.isVisible('#prepAllBtn')), '«Подготовить все темы сразу» — готовы все шесть');
   }
 
@@ -118,7 +118,7 @@ export default async ({ open, ok }) => {
     await page.fill('#apiKey', 'sk-or-test');
     await page.dispatchEvent('#apiKey', 'change');
     await page.click('[data-tab=plan]');
-    await page.waitForFunction(() => document.querySelectorAll('#planList .pstate.ok').length >= 2, null, { timeout: 20000 });
+    await page.waitForFunction(() => document.querySelectorAll('#planList .pstate[data-ready="true"]').length >= 2, null, { timeout: 20000 });
     ok(!/запросы на сегодня закончились/.test(await page.textContent('#genStatus')), 'со своим ключом чужой дневной лимит больше не держит подготовку');
   }
 

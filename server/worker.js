@@ -316,15 +316,10 @@ async function health(req, env) {
     }
     healthCache = { at: Date.now(), data: out };
   }
-  // запасной ИИ; ?test=1 — один крошечный запрос ему (тратит немного бесплатного запаса)
+  // Passive diagnostics: never spend inference quota here.
   const fallback = { binding: !!env.AI, models: env.AI ? aiModels(env) : [] };
   const skipped = [...aiBad].filter(([, until]) => until > Date.now()).map(([m]) => m);
   if (skipped.length) fallback.skippedForAnHour = skipped;
-  if (new URL(req.url).searchParams.get('test') === '1' && env.AI) {
-    const r = await viaAI(env, { messages: [{ role: 'user', content: 'Ответь одним словом: работает' }] }, 30, {});
-    fallback.test = r ? { ok: true, answeredBy: aiLast.replace(/^ok /, ''), text: String((await r.json()).choices?.[0]?.message?.content || '').slice(0, 40) } : { ok: false, error: aiLast || 'нет ответа' };
-    if (aiTried.length) fallback.test.refused = aiTried; // какие модели отказали до той, что ответила, и почему
-  }
   return new Response(JSON.stringify({ ...healthCache.data, fallback, where }, null, 2), { headers: h });
 }
 
@@ -345,11 +340,30 @@ export default {
       return json(200, { data: list.map((id) => ({ id })) }, c.headers);
     }
     if (req.method !== 'POST' || path !== '/chat/completions') return fail(404, 'not_found', 'Нет такого адреса.', c.headers);
-    if (!env.OPENROUTER_KEY) return fail(503, 'unavailable', 'Бесплатный режим не настроен на сервере.', c.headers);
+    if (!env.OPENROUTER_KEY && !env.AI) return fail(503, 'unavailable', 'Бесплатный режим не настроен на сервере.', c.headers);
 
     if (+(req.headers.get('Content-Length') || 0) > MAX_BODY) return fail(413, 'too_large', 'Запрос слишком большой.', c.headers);
     let body;
-    try { body = await req.json(); } catch { return fail(400, 'bad_request', 'Неверный запрос.', c.headers); }
+    try {
+      const reader = req.body?.getReader();
+      if (!reader) throw new Error('empty');
+      const chunks = []; let size = 0;
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          size += value.byteLength;
+          if (size > MAX_BODY) {
+            await reader.cancel();
+            return fail(413, 'too_large', 'Запрос слишком большой.', c.headers);
+          }
+          chunks.push(value);
+        }
+      } finally { reader.releaseLock(); }
+      const bytes = new Uint8Array(size); let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+      body = JSON.parse(new TextDecoder().decode(bytes));
+    } catch { return fail(400, 'bad_request', 'Неверный запрос.', c.headers); }
     if (!Array.isArray(body?.messages) || !body.messages.length) return fail(400, 'bad_request', 'Неверный запрос.', c.headers);
 
     // кто прислал: устройство (случайный номер из приложения) и IP-адрес
@@ -371,6 +385,8 @@ export default {
       const answer = await backup();
       if (answer) return answer;
     }
+
+    if (!env.OPENROUTER_KEY) return (await backup()) || fail(503, 'unavailable', DOWN_TEXT, c.headers);
 
     let list;
     try { list = await models(env); } catch { list = []; }

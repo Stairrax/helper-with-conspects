@@ -74,7 +74,7 @@ jobs:
           curl -s -m 30 -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/ai/models/search?task=Text%20Generation&per_page=100" \
             | jq -r 'if .success then "Модели запасного ИИ (Text Generation): " + ([.result[]?.name] | join(" ")) else "Список моделей не получен: " + ([.errors[]?.message] | join("; ")) end' 2>&1 | head -c 6000 || true
           # что сервер видит сам: ключ на месте, принимает ли его OpenRouter, какие модели
-          health=$(curl -s -m 60 "$URL/health?test=1" || true)
+          health=$(curl -s -m 60 "$URL/health" || true)
           echo "Health: $health"
           echo "### Сервер работает: $URL" >> "$GITHUB_STEP_SUMMARY"
           printf 'Диагностика (%s/health):\n```json\n%s\n```\n' "$URL" "$health" >> "$GITHUB_STEP_SUMMARY"

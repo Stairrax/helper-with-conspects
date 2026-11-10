@@ -311,12 +311,25 @@ function renderSources() {
       <svg><use href="#i-${s.kind === 'images' ? 'camera' : 'doc'}"/></svg>
       <span class="name" data-no-i18n>${esc(s.name)}</span>
       <span class="size">${s.kind === 'images' ? `${s.images.length} стр.` : fmtChars((s.text || '').length)}</span>
+      ${s.kind === 'images' ? `<button class="btn text" data-ocr="${esc(s.id)}">Распознать заново</button>` : ''}
       <button class="icon-btn small" data-del="${esc(s.id)}" aria-label="Удалить"><svg><use href="#i-close"/></svg></button>
     </li>`).join('');
   $('sourcesEmpty').classList.toggle('hidden', sources.length > 0);
 }
 
 $('sourceList').addEventListener('click', (e) => {
+  const retry = e.target.closest('[data-ocr]')?.dataset.ocr;
+  if (retry) {
+    const source = sources.find(s => s.id === retry);
+    if (!source) return;
+    invalidateAnalysis();
+    source.ocrRevision = (source.ocrRevision || 0) + 1;
+    delete source.text;
+    delete source.ocrSignature;
+    saveSources();
+    toast('Распознавание повторится при составлении плана.');
+    return;
+  }
   const id = e.target.closest('[data-del]')?.dataset.del;
   if (!id) return;
   invalidateAnalysis();
@@ -701,7 +714,8 @@ function renderPlan() {
     let st = '', stCls = '';
     if (t.status === 'ready') {
       const c = t.coverage || { total: 0, covered: 0 };
-      st = c.covered === c.total ? '✓' : '⚠'; stCls = c.covered === c.total ? 'ok' : 'err';
+      const passed = c.state === 'passed' && c.checked && c.total > 0 && c.covered === c.total;
+      st = passed ? '✓' : '⚠'; stCls = passed ? 'ok' : 'err';
     } else if (t.status === 'generating') st = '⏳';
     else if (t.status === 'error') { st = '⚠'; stCls = 'err'; }
     let detail = '';
@@ -746,7 +760,7 @@ function renderPlan() {
         <span class="pnum">${skipped ? '–' : done ? '✓' : n}</span>
         <span class="pbody"><span class="ptitle"><span data-no-i18n>${esc(t.title)}</span>${badges}</span>
           <span class="pmeta"><span class="dots">${dots(t.difficulty || 3)}</span> · ≈${fmtDur(est)}</span></span>
-        <span class="pstate ${stCls}">${st}</span>
+        <span data-ready="${t.status === 'ready'}" class="pstate ${stCls}">${st}</span>
       </button>
       ${detail}
     </li>`;

@@ -66,7 +66,7 @@ export default async ({ open, ok }) => {
   await pending.page.fill('#pasteTitle', 'Прерывание подготовки');
   await pending.page.click('#pasteAdd');
   await pending.page.click('#analyzeBtn');
-  await pending.page.waitForFunction(() => document.querySelectorAll('#planList .pstate.ok').length >= 1 && /⏳/.test(document.getElementById('planList').textContent), null, { timeout: 30000 });
+  await pending.page.waitForFunction(() => document.querySelectorAll('#planList .pstate[data-ready="true"]').length >= 1 && /⏳/.test(document.getElementById('planList').textContent), null, { timeout: 30000 });
   await pending.page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
   await pending.page.waitForFunction(async () => {
     const s = await import('./js/storage.js');
@@ -75,6 +75,6 @@ export default async ({ open, ok }) => {
   }, null, { timeout: 10000 });
   await pending.page.reload();
   release();
-  await pending.page.waitForFunction(() => document.querySelectorAll('#planList .pstate.ok').length === 3, null, { timeout: 30000 });
+  await pending.page.waitForFunction(() => document.querySelectorAll('#planList .pstate[data-ready="true"]').length === 3, null, { timeout: 30000 });
   ok(generationCalls >= 3, 'после перезагрузки прерванная тема готовится повторно, готовые темы сохраняются');
 };

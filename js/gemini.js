@@ -1,3 +1,4 @@
+import { withDeadline, sleep, waitOnline } from './request.js';
 // Клиент Gemini API (REST, без SDK): повторы, лимиты, JSON, потоковые ответы.
 
 const BASE = 'https://generativelanguage.googleapis.com/v1beta';
@@ -12,16 +13,12 @@ export class GeminiError extends Error {
   }
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function modelPath(model) {
   return 'models/' + String(model || '').trim().replace(/^models\//, '');
 }
 
-function waitOnline() {
-  if (navigator.onLine !== false) return Promise.resolve();
-  return new Promise((r) => window.addEventListener('online', () => r(), { once: true }));
-}
+
 
 function parseRetryDelay(err) {
   const details = err?.error?.details || [];
@@ -59,6 +56,7 @@ function buildBody({ system, parts, json, temperature, maxOutputTokens }) {
 }
 
 function extractText(data) {
+  if (data?.error) throw new GeminiError('Ответ прерван. Попробуйте снова.', { code: 'STREAM_INTERRUPTED' });
   const cand = data?.candidates?.[0];
   if (!cand) {
     const block = data?.promptFeedback?.blockReason;
@@ -73,7 +71,8 @@ function extractText(data) {
  * Одиночный запрос с повторами.
  * opts: apiKey, model, system, parts, json, temperature, maxOutputTokens, onStatus, retries, signal
  */
-export async function generate(opts) {
+export async function generate(opts) { return withDeadline(opts, 180000, generateRequest); }
+async function generateRequest(opts) {
   const { apiKey, model, onStatus = () => {}, retries = 5, signal, baseUrl } = opts;
   if (!apiKey) throw new GeminiError('Не задан ключ Gemini API (Настройки).', { code: 'NO_KEY' });
   const body = JSON.stringify(buildBody({ temperature: 0.3, ...opts }));
@@ -82,7 +81,7 @@ export async function generate(opts) {
     attempt++;
     let res, data;
     try {
-      await waitOnline();
+      await waitOnline(signal);
       res = await fetch(`${base(baseUrl)}/${modelPath(model)}:generateContent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
@@ -95,7 +94,7 @@ export async function generate(opts) {
       if (attempt > retries) throw new GeminiError('Нет связи с Gemini. Проверьте интернет.', { code: 'NETWORK', retryable: true });
       const wait = Math.min(2000 * 2 ** (attempt - 1), 30000);
       onStatus(`Нет сети, повтор через ${Math.round(wait / 1000)} с…`);
-      await sleep(wait);
+      await sleep(wait, signal);
       continue;
     }
     if (res.ok) {
@@ -104,7 +103,7 @@ export async function generate(opts) {
       if (!text) {
         if (attempt > retries) throw new GeminiError('Пустой ответ Gemini' + (finish ? ` (${finish})` : ''), { code: 'EMPTY' });
         onStatus('Пустой ответ, повторяю…');
-        await sleep(1500);
+        await sleep(1500, signal);
         continue;
       }
       return text;
@@ -118,7 +117,7 @@ export async function generate(opts) {
     onStatus(res.status === 429
       ? `Лимит запросов Gemini, жду ${Math.round(wait / 1000)} с…`
       : `Gemini недоступен (${res.status}), повтор через ${Math.round(wait / 1000)} с…`);
-    await sleep(wait);
+    await sleep(wait, signal);
   }
 }
 
@@ -147,12 +146,13 @@ export async function generateJSON(opts) {
  * Потоковый ответ (SSE). onText(delta) вызывается по мере поступления.
  * Если поток не удался до первого текста — откат на обычный запрос.
  */
-export async function stream(opts) {
+export async function stream(opts) { return withDeadline(opts, 180000, streamRequest); }
+async function streamRequest(opts) {
   const { apiKey, model, onText, signal, onStatus = () => {}, baseUrl } = opts;
   if (!apiKey) throw new GeminiError('Не задан ключ Gemini API (Настройки).', { code: 'NO_KEY' });
   let got = false;
   try {
-    await waitOnline();
+    await waitOnline(signal);
     const res = await fetch(`${base(baseUrl)}/${modelPath(model)}:streamGenerateContent?alt=sse`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
@@ -166,10 +166,14 @@ export async function stream(opts) {
       throw new GeminiError('stream failed', { status: res.status, retryable: true });
     }
     const reader = res.body.getReader();
+    const abortReader = () => { reader.cancel().catch(() => {}); };
+    signal.addEventListener('abort', abortReader, { once: true });
+    try {
     const dec = new TextDecoder();
-    let buf = '';
+    let buf = '', complete = false;
     for (;;) {
       const { value, done } = await reader.read();
+      if (signal.aborted) throw new DOMException('Request cancelled', 'AbortError');
       if (done) break;
       buf += dec.decode(value, { stream: true });
       let idx;
@@ -180,17 +184,26 @@ export async function stream(opts) {
         const payload = line.slice(5).trim();
         if (!payload || payload === '[DONE]') continue;
         try {
-          const { text } = extractText(JSON.parse(payload));
+          const { text, finish } = extractText(JSON.parse(payload));
+          if (finish === 'MAX_TOKENS') throw new GeminiError('Ответ обрезан по длине', { code: 'MAX_TOKENS' });
+          if (finish && finish !== 'STOP') throw new GeminiError('Ответ прерван. Попробуйте снова.', { code: 'STREAM_INTERRUPTED' });
+          if (finish === 'STOP') complete = true;
           if (text) { got = true; onText(text); }
         } catch (e) {
-          if (e instanceof GeminiError) throw e;
+          throw e instanceof GeminiError ? e : new GeminiError('Ответ прерван. Попробуйте снова.', { code: 'STREAM_INTERRUPTED' });
         }
       }
     }
+    if (!complete) throw new GeminiError('Ответ прерван. Попробуйте снова.', { code: 'STREAM_INTERRUPTED' });
     if (!got) throw new GeminiError('empty stream', { retryable: true });
+    } finally {
+      signal.removeEventListener('abort', abortReader);
+      reader.cancel().catch(() => {});
+      try { reader.releaseLock(); } catch {}
+    }
   } catch (e) {
     if (e.name === 'AbortError') throw e;
-    if (got) return; // часть ответа уже есть — не дублируем
+    if (got) throw e;
     if (e instanceof GeminiError && !e.retryable) throw e;
     onStatus('Повторяю запрос…');
     const text = await generate({ ...opts, retries: 3 });

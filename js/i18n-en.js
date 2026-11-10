@@ -7,6 +7,12 @@ const pl = (n, one, many) => `${n} ${+n === 1 ? one : many}`;
 const VOICE = { Бая: 'Baya', Ксения: 'Xenia', Ксюша: 'Ksyusha', Айдар: 'Aidar', Евгений: 'Evgeny', Ирина: 'Irina', Дмитрий: 'Dmitri', Денис: 'Denis', Руслан: 'Ruslan' };
 
 export const EXACT = {
+  'Ответ проверки неполный': 'The verification response is incomplete',
+  'Распознать заново': 'Recognise again',
+  'Распознавание повторится при составлении плана.': 'Recognition will run again when you create the plan.',
+  'дополнительная оценка ИИ, а не гарантия полноты; требует запросов': 'An additional AI assessment, not a completeness guarantee; uses requests',
+  'Резервная копия сохраняет настройки, конспекты и прогресс без API-ключей. После восстановления ключи нужно ввести заново. Файл содержит ваши учебные материалы — делитесь им осмотрительно.': 'Backups save settings, notes and progress without API keys. Enter your keys again after restoring. The file contains your study materials — share it with care.',
+  'Ответ прерван. Попробуйте снова.': 'The response was interrupted. Please try again.',
   'Не удалось сохранить промежуточные результаты. Освободите место и попробуйте снова.': 'Could not save intermediate results. Free up space and try again.',
   'На сегодня лимит подготовки конспектов исчерпан. Продолжите завтра.': 'The daily notes preparation limit has been reached. Continue tomorrow.',
   'На сегодня лимит вопросов исчерпан. Продолжите завтра.': 'The daily question limit has been reached. Continue tomorrow.',

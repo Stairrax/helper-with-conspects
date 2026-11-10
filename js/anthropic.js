@@ -1,3 +1,4 @@
+import { withDeadline, sleep, waitOnline } from './request.js';
 // Клиент Anthropic Messages API (Claude) прямо из браузера: повторы, лимиты, отказы, потоковые ответы.
 // Без SDK: приложение работает без сборки, поэтому запросы идут через fetch.
 // Принимает части в формате Gemini ({text} / {inline_data}) и сам переводит их в блоки content.
@@ -7,13 +8,9 @@ import { GeminiError as AIError } from './gemini.js';
 const API_VERSION = '2023-06-01';
 const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const trimBase = (u) => String(u || '').trim().replace(/\/+$/, '') || 'https://api.anthropic.com/v1';
 
-function waitOnline() {
-  if (navigator.onLine !== false) return Promise.resolve();
-  return new Promise((r) => window.addEventListener('online', () => r(), { once: true }));
-}
+
 
 // Модели пятого поколения: усилие задаётся через output_config.effort, temperature не принимается.
 const isGen5 = (m) => /^claude-(opus|sonnet|haiku|fable|mythos)-5/.test(m);
@@ -80,7 +77,8 @@ function extract(data) {
   return { text, finish: data.stop_reason || '' };
 }
 
-export async function generate(opts) {
+export async function generate(opts) { return withDeadline(opts, 180000, generateRequest); }
+async function generateRequest(opts) {
   const { apiKey, model, baseUrl, onStatus = () => {}, retries = 5, signal } = opts;
   if (!apiKey) throw new AIError('Не задан ключ Anthropic API (Настройки).', { code: 'NO_KEY' });
   const body = JSON.stringify(buildBody(opts, false));
@@ -89,7 +87,7 @@ export async function generate(opts) {
     attempt++;
     let res, data;
     try {
-      await waitOnline();
+      await waitOnline(signal);
       res = await fetch(`${trimBase(baseUrl)}/messages`, { method: 'POST', headers: headers(apiKey, model), body, signal });
       data = await res.json().catch(() => ({}));
     } catch (e) {
@@ -97,7 +95,7 @@ export async function generate(opts) {
       if (attempt > retries) throw new AIError('Нет связи с Anthropic API. Проверьте интернет.', { code: 'NETWORK', retryable: true });
       const wait = Math.min(2000 * 2 ** (attempt - 1), 30000);
       onStatus(`Нет сети, повтор через ${Math.round(wait / 1000)} с…`);
-      await sleep(wait);
+      await sleep(wait, signal);
       continue;
     }
     if (res.ok) {
@@ -106,7 +104,7 @@ export async function generate(opts) {
       if (text) return text;
       if (attempt > retries) throw new AIError('Пустой ответ Claude', { code: 'EMPTY' });
       onStatus('Пустой ответ, повторяю…');
-      await sleep(1500);
+      await sleep(1500, signal);
       continue;
     }
     const retryable = res.status === 429 || res.status >= 500;
@@ -114,16 +112,17 @@ export async function generate(opts) {
     let wait = res.status === 429 ? retryAfter(res) || 15000 * attempt : 2000 * 2 ** (attempt - 1);
     wait = Math.min(wait + 500, 65000);
     onStatus(res.status === 429 ? `Лимит запросов Claude, жду ${Math.round(wait / 1000)} с…` : `Claude недоступен (${res.status}), повтор через ${Math.round(wait / 1000)} с…`);
-    await sleep(wait);
+    await sleep(wait, signal);
   }
 }
 
-export async function stream(opts) {
+export async function stream(opts) { return withDeadline(opts, 180000, streamRequest); }
+async function streamRequest(opts) {
   const { apiKey, model, baseUrl, onText, signal, onStatus = () => {} } = opts;
   if (!apiKey) throw new AIError('Не задан ключ Anthropic API (Настройки).', { code: 'NO_KEY' });
   let got = false;
   try {
-    await waitOnline();
+    await waitOnline(signal);
     const res = await fetch(`${trimBase(baseUrl)}/messages`, {
       method: 'POST', headers: headers(apiKey, model), body: JSON.stringify(buildBody(opts, true)), signal,
     });
@@ -132,10 +131,14 @@ export async function stream(opts) {
       throw new AIError(humanError(res.status, data), { status: res.status, retryable: res.status === 429 || res.status >= 500 });
     }
     const reader = res.body.getReader();
+    const abortReader = () => { reader.cancel().catch(() => {}); };
+    signal.addEventListener('abort', abortReader, { once: true });
+    try {
     const dec = new TextDecoder();
-    let buf = '';
+    let buf = '', complete = false;
     for (;;) {
       const { value, done } = await reader.read();
+      if (signal.aborted) throw new DOMException('Request cancelled', 'AbortError');
       if (done) break;
       buf += dec.decode(value, { stream: true });
       let idx;
@@ -144,11 +147,13 @@ export async function stream(opts) {
         buf = buf.slice(idx + 1);
         if (!line.startsWith('data:')) continue;
         let ev;
-        try { ev = JSON.parse(line.slice(5).trim()); } catch { continue; }
+        try { ev = JSON.parse(line.slice(5).trim()); } catch { throw new AIError('Ответ прерван. Попробуйте снова.', { code: 'STREAM_INTERRUPTED' }); }
+        if (ev.type === 'message_stop') complete = true;
+        if (ev.type === 'message_delta' && ev.delta?.stop_reason === 'max_tokens') throw new AIError('Ответ обрезан по длине', { code: 'MAX_TOKENS' });
         if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta' && ev.delta.text) {
           got = true;
           onText(ev.delta.text);
-        } else if (ev.type === 'message_delta' && ev.delta?.stop_reason === 'refusal' && !got) {
+        } else if (ev.type === 'message_delta' && ev.delta?.stop_reason === 'refusal') {
           throw new AIError('Claude отказался отвечать на этот вопрос. Попробуйте переформулировать.', { code: 'REFUSAL' });
         } else if (ev.type === 'error') {
           const t = ev.error?.type;
@@ -156,10 +161,16 @@ export async function stream(opts) {
         }
       }
     }
+    if (!complete) throw new AIError('Ответ прерван. Попробуйте снова.', { code: 'STREAM_INTERRUPTED' });
     if (!got) throw new AIError('empty stream', { retryable: true });
+    } finally {
+      signal.removeEventListener('abort', abortReader);
+      reader.cancel().catch(() => {});
+      try { reader.releaseLock(); } catch {}
+    }
   } catch (e) {
     if (e.name === 'AbortError') throw e;
-    if (got) return;
+    if (got) throw e;
     if (e instanceof AIError && !e.retryable) throw e;
     onStatus('Повторяю запрос…');
     onText(await generate({ ...opts, retries: 3 }));

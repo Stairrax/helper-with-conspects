@@ -328,12 +328,14 @@ export async function analyze({ sources, budgetMin, priority, settings, log, sig
   const imgTotal = sources.reduce((s, x) => s + (x.kind === 'images' ? x.images.length : 0), 0);
   let imgDone = 0;
   for (const s of sources) {
-    if (s.kind !== 'images' || s.text) continue;
-    const texts = [];
+    if (s.kind !== 'images') continue;
+    const ocrSignature = JSON.stringify(((c) => [c.kind, c.baseUrl, c.model, c.fallbacks, c.lang, s.ocrRevision || 0])(conn(settings, 'notes')));
+    if (s.text && s.ocrSignature === ocrSignature) continue;
+    const texts = s.pages ? [...s.pages] : [];
     for (const img of s.images) {
       active();
       // Do not store raw image data in the checkpoint if secure hashing is unavailable.
-      const key = globalThis.crypto?.subtle ? await segmentKey('ocr-v1\n' + (settings.contentLang || 'ru') + '\n' + img.mime + '\n' + img.data) : null;
+      const key = globalThis.crypto?.subtle ? await segmentKey('ocr-v2\n' + ocrSignature + '\n' + img.mime + '\n' + img.data) : null;
       active();
       const cached = key && ocrCache.has(key);
       log(`${cached ? 'Восстанавливаю распознанное фото' : 'Распознаю фото'}: «${s.name}» (${++imgDone}/${imgTotal})`, 0.05 + 0.25 * (imgDone / Math.max(1, imgTotal)));
@@ -344,9 +346,11 @@ export async function analyze({ sources, budgetMin, priority, settings, log, sig
         active();
         ocrCache.set(key, text);
       }
-      texts.push(text);
+      if (s.pages && img.page) texts[img.page - 1] = text;
+      else texts.push(text);
     }
     s.text = texts.join('\n\n');
+    s.ocrSignature = ocrSignature;
   }
 
   // 2. Темы по частям
@@ -531,7 +535,8 @@ ${points.map((p, i) => `(${i}) ${p.p}`).join('\n')}
 Ответ JSON: {"checks":[{"i":0,"c":[0,1]}],"missing":["…"]}`;
   const res = await generateJSON({ ...conn(settings, 'notes'), system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.1 });
   const checks = new Map((res.checks || []).map((x) => [Number(x.i), (x.c || []).map(Number).filter((n) => n >= 0 && n < chunks.length)]));
-  points.forEach((p, i) => { if (checks.has(i)) p.c = checks.get(i); });
+  if (!Array.isArray(res.checks) || !Array.isArray(res.missing) || points.some((_, i) => !checks.has(i))) throw new GeminiError('Ответ проверки неполный', { code: 'BAD_JSON' });
+  points.forEach((p, i) => { p.c = checks.get(i); });
   const missing = (res.missing || []).map((m) => String(m).trim()).filter(Boolean);
   return missing;
 }
@@ -584,6 +589,7 @@ export async function generateTopicChunks(topic, settings, onStatus) {
   const formulas = [];
   const fxOn = settings.formulasApart !== false;
   let apart = false;
+  let splits = 0, checks = 0, checkFailed = false, supplemented = false;
   for (let si = 0; si < sections.length; si++) {
     const text = sections[si];
     const tag = sections.length > 1 ? ` (часть ${si + 1}/${sections.length})` : '';
@@ -596,7 +602,12 @@ export async function generateTopicChunks(topic, settings, onStatus) {
     } catch (e) {
       if (e.code !== 'MAX_TOKENS') throw e;
       // секция слишком большая для одного ответа — делим пополам
-      const half = groupBlocks(toBlocks(text), Math.ceil(text.length / 2) + 1).map((g) => g.join('\n\n'));
+      if (++splits > 16 || text.length < 200) throw e;
+      const middle = Math.floor(text.length / 2);
+      // Always make progress, even for a single unbroken paragraph.
+      let cut = text.lastIndexOf(' ', middle);
+      if (cut < middle / 2) cut = middle;
+      const half = [text.slice(0, cut), text.slice(cut)];
       sections.splice(si, 1, ...half);
       si--;
       continue;
@@ -610,12 +621,14 @@ export async function generateTopicChunks(topic, settings, onStatus) {
     if (settings.coverageCheck) {
       onStatus(`«${topic.title}»${tag}: проверяю полноту`);
       let missing = [];
-      try { missing = await verifySection(text, chunks, points, settings, onStatus, secApart); } catch (e) {
+      try { missing = await verifySection(text, chunks, points, settings, onStatus, secApart); checks++; } catch (e) {
+        checkFailed = true;
         if (e.code === 'NO_KEY') throw e;
       }
       missing.forEach((m) => points.push({ p: m, c: [] }));
       const uncoveredIdx = points.map((p, i) => (p.c.length ? -1 : i)).filter((i) => i >= 0);
       if (uncoveredIdx.length) {
+        supplemented = true;
         onStatus(`«${topic.title}»${tag}: догенерирую ${uncoveredIdx.length} пропущенных пункт(ов)`);
         try {
           const extra = await supplement(topic, text, chunks, uncoveredIdx.map((i) => points[i].p), settings, onStatus, secApart);
@@ -641,5 +654,5 @@ export async function generateTopicChunks(topic, settings, onStatus) {
   const rest = quizzes.flatMap((q) => q.slice(1));
   topic.quiz = [...first, ...rest].slice(0, 3);
   topic.formulas = formulas;
-  topic.coverage = { total: allPoints.length, covered: allPoints.filter((p) => p.c.length).length, checked: !!settings.coverageCheck };
+  topic.coverage = { total: allPoints.length, covered: allPoints.filter((p) => p.c.length).length, checked: !!settings.coverageCheck && !checkFailed && checks === sections.length && allPoints.length > 0 && !supplemented, state: !settings.coverageCheck ? 'not_checked' : checkFailed ? 'failed' : !supplemented && allPoints.length && allPoints.every(p => p.c.length) ? 'passed' : 'partial' };
 }
