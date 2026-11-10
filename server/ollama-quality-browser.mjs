@@ -83,7 +83,7 @@ async function runCase(item, open) {
     const notes = generated.topics.flatMap(t => [
       '# ' + t.title,
       ...(t.chunks || []).map(c => c.t),
-      ...(t.formulas || []).length ? 'Формулы:\n' +
+      (t.formulas || []).length ? 'Формулы:\n' +
         t.formulas.map(f => [f.f, f.d].filter(Boolean).join(' — ')).join('\n') : '',
     ]).filter(Boolean).join('\n\n');
     result = {
