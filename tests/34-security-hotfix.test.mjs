@@ -31,7 +31,7 @@ export default async ({ open, ok }) => {
     settings.profiles.anthropic.apiKey === '' && settings.profiles.gemini.model === 'gemini-test',
     'UI backup preserves non-secret settings and clears all provider keys');
   ok(original.apiKey === 'HOTFIX_ACTIVE_SECRET' && original.profiles.gemini.apiKey === 'HOTFIX_PROFILE_SECRET',
-    'export does not modify live credentials on the user's device');
+    'export does not modify live API credentials on device');
 
   // Test a complete upstream stream, a silent early EOF, malformed SSE and
   // the provider's "length" finish_reason. Do not fabricate a successful [DONE].
