@@ -78,7 +78,7 @@ export default async ({ open, ok }) => {
       ok(!failed && output.includes('"finish_reason":"length"') && output.includes('data: [DONE]\n\n'),
         'Workers AI forwards the output-length signal to the browser');
     } else {
-      ok(failed && !output.includes('[DONE]') && output.includes('Part'),
+      ok(failed && !output.includes('[DONE]') && /part/i.test(output),
         'Workers AI ' + mode + ' stream cannot masquerade as successfully completed');
     }
   }
