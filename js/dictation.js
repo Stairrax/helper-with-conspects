@@ -14,7 +14,7 @@ import { drawTicket, gradeOf, gradeScore, endOfAnswer } from './tickets.js';
 const DICTATING = ['speaking', 'gap', 'waiting'];
 const QA_STATES = ['thinking', 'answering'];
 const PAUSED = ['paused', 'listening', 'confirm', 'topicEnd', 'break', 'ticketEnd'];
-const MAX_CONTEXT = 400000;
+const MAX_CONTEXT = 16000;
 const DAY = 24 * 3600 * 1000;
 const BREAK_MS = 5 * 60 * 1000;
 const CMD_REPEAT_MS = 1500;    // одна и та же команда голосом чаще не выполняется (распознавание присылает её дважды)
@@ -1487,8 +1487,14 @@ export class Dictation {
     const curChunk = cur?.chunks[rp.chunk]?.t || this.lastSpokenText() || '';
     const prevQa = this.qa.slice(-5, -1).filter((x) => x.a && !x.error).map((x) => `В: ${x.q}\nО: ${x.a}`).join('\n\n');
     let full = p?.fullText || '';
-    if (full.length > MAX_CONTEXT) full = full.slice(0, MAX_CONTEXT) + '\n[…конспект обрезан…]';
-    return `ПОЛНЫЙ КОНСПЕКТ:
+    if (full.length > MAX_CONTEXT) {
+      const terms = [...new Set(question.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) || [])];
+      const blocks = full.match(/[\s\S]{1,1200}/g) || [];
+      const ranked = blocks.map((text, i) => ({ text, i, score: terms.reduce((n, term) => n + (text.toLowerCase().includes(term) ? 1 : 0), 0) }))
+        .sort((a, b) => b.score - a.score || a.i - b.i).slice(0, Math.floor(MAX_CONTEXT / 1200)).sort((a, b) => a.i - b.i);
+      full = '[Выбраны фрагменты по словам вопроса; это не весь материал.]\n' + ranked.map(b => b.text).join('\n[…]\n');
+    }
+    return `МАТЕРИАЛ ДЛЯ ОТВЕТА (может быть неполным):
 <<<
 ${full}
 >>>
@@ -1532,6 +1538,7 @@ ${prevQa ? `\nПРЕДЫДУЩИЕ ВОПРОСЫ В ЭТОЙ СЕССИИ:\n${p
   }
 
   async streamAndSpeak(my, req, entry, onError) {
+    entry.state = 'streaming';
     const ctrl = new AbortController();
     this.answerCtrl = ctrl;
     const s = this.settings;
@@ -1567,7 +1574,13 @@ ${prevQa ? `\nПРЕДЫДУЩИЕ ВОПРОСЫ В ЭТОЙ СЕССИИ:\n${p
         onStatus: (m) => { this.message = m; this.h.emit(); },
       });
     } catch (e) {
-      if (e.name === 'AbortError' || my !== this.token) { streamDone = true; kick(); return; }
+      entry.error = true;
+      entry.state = e.name === 'AbortError' ? 'cancelled' : e.code === 'MAX_TOKENS' ? 'truncated' : e.code === 'STREAM_INTERRUPTED' || e.code === 'REQUEST_TIMEOUT' ? 'interrupted' : 'failed';
+      if (e.name === 'AbortError' || my !== this.token) {
+        entry.state = 'cancelled';
+        if (entry.a) entry.a += this.L('\n\n⚠ Ответ прерван.', '\n\n⚠ Answer interrupted.');
+        streamDone = true; kick(); return;
+      }
       streamDone = true;
       take(true);
       await speaker;
@@ -1575,6 +1588,7 @@ ${prevQa ? `\nПРЕДЫДУЩИЕ ВОПРОСЫ В ЭТОЙ СЕССИИ:\n${p
       if (this.answerCtrl === ctrl) this.answerCtrl = null;
       return;
     }
+    entry.state = 'complete';
     streamDone = true;
     take(true);
     await speaker;
@@ -1612,7 +1626,7 @@ ${prevQa ? `\nПРЕДЫДУЩИЕ ВОПРОСЫ В ЭТОЙ СЕССИИ:\n${p
       parts: [{ text: this.buildContext(question) }],
     }, entry, async (e) => {
       entry.error = true;
-      entry.a = '⚠ ' + (e.message || 'Ошибка');
+      entry.a = (entry.a ? entry.a + '\n\n' : '') + '⚠ ' + (e.message || 'Ошибка');
       await this.say(this.L('Не получилось получить ответ. ' + (e.code === 'NETWORK' ? 'Нет интернета.' : ''), 'Couldn’t get an answer. ' + (e.code === 'NETWORK' ? 'No internet connection.' : '')));
     });
     if (my !== this.token) return;

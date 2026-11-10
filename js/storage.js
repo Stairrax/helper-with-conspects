@@ -259,10 +259,20 @@ async function idbEntries() {
 
 const BACKUP_APP = 'konspekt-diktor';
 
-/** Все данные одним объектом: настройки и ключи, предметы, конспекты, прогресс. */
+/** Экспорт данных: настройки без API-ключей, предметы, конспекты, прогресс. */
 export async function makeBackup() {
   if (restoring) throw new Error('Restore in progress; reload required');
-  return captureBackup();
+  const backup = await captureBackup();
+  // Keep the private rollback snapshot intact; redact only the exported copy.
+  const raw = backup.localStorage['kd.settings'];
+  if (raw) {
+    const settings = JSON.parse(raw);
+    settings.apiKey = '';
+    delete settings.cloudKey;
+    for (const profile of Object.values(settings.profiles || {})) if (profile && typeof profile === 'object') profile.apiKey = '';
+    backup.localStorage['kd.settings'] = JSON.stringify(settings);
+  }
+  return backup;
 }
 async function captureBackup() {
   await Promise.all([...writes.values()]);

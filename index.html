@@ -441,7 +441,7 @@
           <input id="breakEvery" type="range" min="0" max="90" step="5">
         </label>
         <label class="switch"><span>Кнопки наушников<small>пуск/пауза — стоп и продолжить, вперёд/назад — куски (экспериментально)</small></span><input id="headsetButtons" type="checkbox"><i></i></label>
-        <label class="switch"><span>Проверка полноты кусков<small>надёжнее, но вдвое больше запросов</small></span><input id="coverageCheck" type="checkbox"><i></i></label>
+        <label class="switch"><span>Проверка полноты кусков<small>дополнительная оценка ИИ, а не гарантия полноты; требует запросов</small></span><input id="coverageCheck" type="checkbox"><i></i></label>
         <details class="mini desk-only">
           <summary>Клавиши на компьютере</summary>
           <div class="keys">
@@ -517,7 +517,7 @@
         <div class="card-title">Данные</div>
         <p class="hint" id="appInfo"></p>
         <p class="hint">Открытый код — <a href="https://github.com/Stairrax/helper-with-conspects" target="_blank" rel="noopener">GitHub</a>, лицензия GNU GPL v3: приложение бесплатное, любую его версию можно изменять и распространять, только тоже с открытым кодом.</p>
-        <p class="hint">Резервная копия — один файл со всеми настройками, ключами и конспектами. Сохраните её, например, в Google Диск или Telegram «Избранное»: если данные пропадут, всё вернётся одним касанием. В файле ваши ключи API — никому его не отправляйте. <span id="backupInfo"></span></p>
+        <p class="hint">Резервная копия сохраняет настройки, конспекты и прогресс без API-ключей. После восстановления ключи нужно ввести заново. Файл содержит ваши учебные материалы — делитесь им осмотрительно. <span id="backupInfo"></span></p>
         <div class="row">
           <button id="backupBtn" class="btn tonal">Сохранить копию</button>
           <button id="restoreBtn" class="btn outline">Восстановить из копии</button>
@@ -782,33 +782,33 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/abbr.js": "./js/abbr.js?v=83",
-      "./js/ai.js": "./js/ai.js?v=83",
-      "./js/analyze.js": "./js/analyze.js?v=83",
-      "./js/anthropic.js": "./js/anthropic.js?v=83",
-      "./js/app.js": "./js/app.js?v=83",
-      "./js/commands.js": "./js/commands.js?v=83",
-      "./js/lecture.js": "./js/lecture.js?v=83",
-      "./js/config.js": "./js/config.js?v=83",
-      "./js/stats.js": "./js/stats.js?v=83",
-      "./js/cheatsheet.js": "./js/cheatsheet.js?v=83",
-      "./js/calendar.js": "./js/calendar.js?v=83",
-      "./js/mcq.js": "./js/mcq.js?v=83",
-      "./js/audiobook.js": "./js/audiobook.js?v=83",
-      "./js/tickets.js": "./js/tickets.js?v=83",
-      "./js/i18n.js": "./js/i18n.js?v=83",
-      "./js/i18n-en.js": "./js/i18n-en.js?v=83",
-      "./js/platform.js": "./js/platform.js?v=83",
-      "./js/dictation.js": "./js/dictation.js?v=83",
-      "./js/extract.js": "./js/extract.js?v=83",
-      "./js/gemini.js": "./js/gemini.js?v=83",
-      "./js/media.js": "./js/media.js?v=83",
-      "./js/neural.js": "./js/neural.js?v=83",
-      "./js/onboarding.js": "./js/onboarding.js?v=83",
-      "./js/openai.js": "./js/openai.js?v=83",
-      "./js/ripple.js": "./js/ripple.js?v=83",
-      "./js/speech.js": "./js/speech.js?v=83",
-      "./js/storage.js": "./js/storage.js?v=83"
+      "./js/abbr.js": "./js/abbr.js?v=84",
+      "./js/ai.js": "./js/ai.js?v=84",
+      "./js/analyze.js": "./js/analyze.js?v=84",
+      "./js/anthropic.js": "./js/anthropic.js?v=84",
+      "./js/app.js": "./js/app.js?v=84",
+      "./js/commands.js": "./js/commands.js?v=84",
+      "./js/lecture.js": "./js/lecture.js?v=84",
+      "./js/config.js": "./js/config.js?v=84",
+      "./js/stats.js": "./js/stats.js?v=84",
+      "./js/cheatsheet.js": "./js/cheatsheet.js?v=84",
+      "./js/calendar.js": "./js/calendar.js?v=84",
+      "./js/mcq.js": "./js/mcq.js?v=84",
+      "./js/audiobook.js": "./js/audiobook.js?v=84",
+      "./js/tickets.js": "./js/tickets.js?v=84",
+      "./js/i18n.js": "./js/i18n.js?v=84",
+      "./js/i18n-en.js": "./js/i18n-en.js?v=84",
+      "./js/platform.js": "./js/platform.js?v=84",
+      "./js/dictation.js": "./js/dictation.js?v=84",
+      "./js/extract.js": "./js/extract.js?v=84",
+      "./js/gemini.js": "./js/gemini.js?v=84",
+      "./js/media.js": "./js/media.js?v=84",
+      "./js/neural.js": "./js/neural.js?v=84",
+      "./js/onboarding.js": "./js/onboarding.js?v=84",
+      "./js/openai.js": "./js/openai.js?v=84",
+      "./js/ripple.js": "./js/ripple.js?v=84",
+      "./js/speech.js": "./js/speech.js?v=84",
+      "./js/storage.js": "./js/storage.js?v=84"
     }
   }
   </script>
@@ -842,7 +842,7 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=83"></script>
+  <script type="module" src="js/app.js?v=84"></script>
   <div id="printArea" class="cheatsheet" data-no-i18n></div>
 </body>
 </html>

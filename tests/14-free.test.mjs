@@ -184,13 +184,11 @@ export default async ({ open, prepare, FINANCE, ok }) => {
     globalThis.fetch = async () => dailyLimit();
     r = await (await cold())({ OPENROUTER_KEY: 'k', MODELS: 'gpt-x:free' }, 'kd-noai');
     ok(r.status === 429, 'без запасного ИИ — как раньше');
-    // /health показывает запасной; ?test=1 проверяет его
     const hw = (await import('../server/worker.js?ai=h' + ++inst)).default;
+    let healthCalls = 0;
     globalThis.fetch = async (url) => new Response(JSON.stringify(String(url).endsWith('/key') ? { data: { is_free_tier: true } } : catalog));
-    let hh = await (await hw.fetch(new Request('https://w.test/health?test=1', { headers: { 'CF-Connecting-IP': '8.8.8.8' } }), { OPENROUTER_KEY: 'k', MODELS: 'free', AI: makeAI(() => ({ response: 'работает' })) })).json();
-    ok(hh.fallback.binding === true && hh.fallback.test.ok === true && hh.fallback.test.text === 'работает', '/health?test=1: запасной ИИ отвечает');
-    hh = await (await hw.fetch(new Request('https://w.test/health?test=1', { headers: { 'CF-Connecting-IP': '8.8.8.9' } }), { OPENROUTER_KEY: 'k', MODELS: 'free', AI: makeAI(() => { throw new Error('no access'); }) })).json();
-    ok(hh.fallback.test.ok === false && /no access/.test(hh.fallback.test.error), '/health?test=1: если запасной не работает — видна причина');
+    const hh = await (await hw.fetch(new Request('https://w.test/health?test=1'), { OPENROUTER_KEY: 'k', MODELS: 'free', AI: makeAI(() => { healthCalls++; return { response: 'unexpected' }; }) })).json();
+    ok(hh.fallback.binding === true && !hh.fallback.test && healthCalls === 0, '/health?test=1 never invokes AI');
 
     // /health: открывается без «Origin» (прямо в браузере), ключ не раскрывает
     globalThis.fetch = async (url) => {

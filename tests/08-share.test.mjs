@@ -29,7 +29,7 @@ export default async ({ open, prepare, FINANCE, ok }) => {
   const before = other.ai.prompts.length;
   const [chooser] = await Promise.all([other.page.waitForEvent('filechooser'), other.page.click('#obImport')]);
   await chooser.setFiles(file);
-  await other.page.waitForFunction(() => document.querySelectorAll('#planList .pstate.ok').length === 2, null, { timeout: 10000 });
+  await other.page.waitForFunction(() => document.querySelectorAll('#planList .pstate[data-ready="true"]').length === 2, null, { timeout: 10000 });
   ok((await other.page.textContent('#subjectName')) === 'Финансы', 'у получателя — новый предмет «Финансы»');
   ok((await other.page.$$('#planList .badge.fx')).length === 1, 'формулы на месте');
   await other.page.click('#startBtn');

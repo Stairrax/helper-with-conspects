@@ -101,7 +101,7 @@ export async function mockAI(page, ai) {
         : ['Потому что проценты начисляются и на уже начисленные проценты. ', 'Поэтому сумма растёт всё быстрее.'];
       const sse = isA ? 'event: message_start\ndata: {"type":"message_start","message":{}}\n\n' + parts.map((t) => 'event: content_block_delta\ndata: ' + JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: t } }) + '\n\n').join('') + 'event: message_stop\ndata: {"type":"message_stop"}\n\n'
         : isO ? parts.map((t) => 'data: ' + JSON.stringify({ choices: [{ delta: { content: t } }] }) + '\n\n').join('') + 'data: [DONE]\n\n'
-          : parts.map((t) => 'data: ' + JSON.stringify({ candidates: [{ content: { parts: [{ text: t }] } }] }) + '\n\n').join('');
+          : parts.map((t) => 'data: ' + JSON.stringify({ candidates: [{ content: { parts: [{ text: t }] } }] }) + '\n\n').join('') + 'data: {"candidates":[{"finishReason":"STOP"}]}\n\n';
       return route.fulfill({ status: 200, contentType: 'text/event-stream', body: sse });
     }
     if (text.includes('пронумерованные блоки')) {
@@ -226,7 +226,7 @@ export async function prepare(page, text, title = 'Конспект') {
   await page.click('#analyzeBtn');
   await page.waitForFunction(() => {
     const li = document.querySelectorAll('#planList li');
-    return li.length > 0 && document.querySelectorAll('#planList .pstate.ok').length === li.length;
+    return li.length > 0 && document.querySelectorAll('#planList .pstate[data-ready="true"]').length === li.length;
   }, null, { timeout: 20000 });
 }
 

@@ -236,13 +236,15 @@ async function streamRequest(opts) {
             return;
           }
           let j;
-          try { j = JSON.parse(payload); } catch { continue; }
+          try { j = JSON.parse(payload); } catch { throw new AIError('Ответ прерван. Попробуйте снова.', { code: 'STREAM_INTERRUPTED' }); }
           if (j.error) throw new AIError(humanError(+j.error.code || 0, j), { status: +j.error.code || 0 });
+          if (j.choices?.[0]?.finish_reason === 'length') throw new AIError('Ответ обрезан по длине', { code: 'MAX_TOKENS' });
+          if (j.choices?.[0]?.finish_reason && !['stop', 'length'].includes(j.choices[0].finish_reason)) throw new AIError('Ответ прерван. Попробуйте снова.', { code: 'STREAM_INTERRUPTED' });
           const d = j.choices?.[0]?.delta?.content;
           if (d) { got = true; onText(d); }
         }
       }
-      if (!got) throw new AIError('empty stream', { retryable: true });
+      throw new AIError('Ответ прерван. Попробуйте снова.', { code: 'STREAM_INTERRUPTED' });
     } finally {
       signal.removeEventListener('abort', abortReader);
       reader.cancel().catch(() => {});
@@ -250,7 +252,7 @@ async function streamRequest(opts) {
     }
   } catch (e) {
     if (e.name === 'AbortError') throw e;
-    if (got) return;
+    if (got) throw e;
     if (e instanceof AIError && !e.retryable) throw e;
     onStatus('Повторяю запрос…');
     onText(await generate({ ...opts, retries: 3 }));

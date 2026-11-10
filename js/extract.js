@@ -48,12 +48,21 @@ const MAMMOTH = [
   'https://unpkg.com/mammoth@1.8.0/mammoth.browser.min.js',
 ];
 
+const SCRIPT_INTEGRITY = {
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js": "sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e",
+  "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js": "sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e",
+  "https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js": "sha384-/cXAMbzovUIKbBERjPmR3SnPTh8siWr5lsvFYj1Uq4XP0yaJUZJmsh0YXyGv5P0y",
+  "https://unpkg.com/mammoth@1.8.0/mammoth.browser.min.js": "sha384-/cXAMbzovUIKbBERjPmR3SnPTh8siWr5lsvFYj1Uq4XP0yaJUZJmsh0YXyGv5P0y"
+};
+
 const loaded = {};
 function loadScript(url) {
   if (!loaded[url]) {
     loaded[url] = new Promise((resolve, reject) => {
       const s = document.createElement('script');
       s.src = url;
+      s.integrity = SCRIPT_INTEGRITY[url];
+      s.crossOrigin = 'anonymous';
       s.async = true;
       s.onload = () => resolve(url);
       s.onerror = () => { delete loaded[url]; s.remove(); reject(new Error('Не удалось загрузить ' + url)); };
@@ -131,12 +140,13 @@ async function pdfExtract(file, onStatus) {
     for (const it of tc.items) s += (it.str || '') + (it.hasEOL ? '\n' : ' ');
     pages.push(s.replace(/[ \t]+\n/g, '\n').trim());
   }
-  const chars = pages.join('').replace(/\s/g, '').length;
-  if (chars / doc.numPages >= 40) return { kind: 'text', text: pages.join('\n\n') };
-  if (doc.numPages > MAX_SCANNED_PAGES) throw new Error(T('В отсканированном PDF слишком много страниц. Разделите его на части до 20 страниц.'));
+  const scans = pages.map((text, i) => text.replace(/\s/g, '').length < 40 ? i : -1).filter(i => i >= 0);
+  if (!scans.length) return { kind: 'text', text: pages.join('\n\n') };
+  if (scans.length > MAX_SCANNED_PAGES) throw new Error(T('В отсканированном PDF слишком много страниц. Разделите его на части до 20 страниц.'));
   // Скан без текстового слоя — рендерим страницы в картинки для Gemini.
   const images = [];
-  for (let i = 1; i <= doc.numPages; i++) {
+  for (const index of scans) {
+    const i = index + 1;
     onStatus?.(`PDF без текста (скан): рендер страницы ${i} из ${doc.numPages}`);
     const page = await doc.getPage(i);
     const vp0 = page.getViewport({ scale: 1 });
@@ -145,9 +155,10 @@ async function pdfExtract(file, onStatus) {
     const c = document.createElement('canvas');
     c.width = Math.round(vp.width); c.height = Math.round(vp.height);
     await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
-    images.push(canvasToB64(c));
+    images.push({ ...canvasToB64(c), page: i });
+    c.width = c.height = 0;
   }
-  return { kind: 'images', images };
+  return { kind: 'images', images, pages: pages.map((text, i) => scans.includes(i) ? null : text) };
   } finally { await doc.destroy(); }
 }
 
