@@ -69,4 +69,14 @@ export default async ({ open, prepare, FINANCE, ok }) => {
   await page.click('#testStart');
   await page.waitForFunction(() => !document.getElementById('testRun').classList.contains('hidden'), null, { timeout: 15000 });
   ok(ai.prompts.length === before2, 'повторный тест не стоит ни одного запроса');
+  const totalBeforeClose = await page.evaluate(() => {
+    const k = Object.keys(localStorage).find((x) => x.startsWith('kd.progress'));
+    return Object.values(JSON.parse(localStorage.getItem(k)).stats || {}).reduce((n, s) => n + s.total, 0);
+  });
+  await page.click(`#testOpts .test-opt:nth-child(${(await correctIdx()) + 1})`);
+  await page.locator('#testSheet .sheet-scrim').dispatchEvent('click');
+  ok(await page.evaluate(() => {
+    const k = Object.keys(localStorage).find((x) => x.startsWith('kd.progress'));
+    return Object.values(JSON.parse(localStorage.getItem(k)).stats || {}).reduce((n, s) => n + s.total, 0);
+  }) === totalBeforeClose + 1, 'ответ сохраняется и при закрытии теста крестиком');
 };

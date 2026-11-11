@@ -5,6 +5,7 @@ import {
   makeBackup, restoreBackup, settingsForBackup, storageFailures,
 } from './storage.js';
 import { fileToSource } from './extract.js';
+import { preserveTopicIdentity } from './topic-identity.js';
 import {
   analyze, estimatePlanRequests, generateTopicChunks, generateExtras, extractFormulas, FX_MIN, orderTopics, activeSeq, estimateTopicSec, allocateBudget, fitPause,
   pauseFor, CHARS_PER_SEC,
@@ -584,6 +585,7 @@ $('analyzeBtn').addEventListener('click', async () => {
     });
     if (!current()) return;
     // новый план: список билетов и дата экзамена остаются, ответы на билеты подготовятся заново — по новым темам
+    const preservedStats = preserveTopicIdentity(p, project, progress);
     if (project?.tickets?.length) p.tickets = project.tickets.map((t) => ({ id: t.id, q: t.q, a: '', topics: [], status: 'pending' }));
     if (project?.examDate) p.examDate = project.examDate;
     if (!await idbSet('project:' + subject, p) || !await idbSet('sources:' + subject, input)) {
@@ -596,6 +598,7 @@ $('analyzeBtn').addEventListener('click', async () => {
     sources = input; // распознанный текст фото сохраняется вместе с планом
     project = p;
     progress = freshProgress(p.id);
+    progress.stats = preservedStats;
     persistProgress();
     const subj = curSubject();
     if (subj && /^(Предмет|Новый предмет)/.test(subj.title) && sources[0]) {
@@ -734,7 +737,7 @@ function renderPlan() {
       else if (t.status === 'error') stLong = `<span class="bad">${esc(t.error)}</span>`;
       else stLong = 'В очереди на подготовку';
       const points = openPoints.has(id) && t.points?.length
-        ? `<ol class="points">${t.points.map((p) => `<li class="${p.c.length ? '' : 'miss'}"><span data-no-i18n>${esc(p.p)}</span> <i>${p.c.length ? '→ ' + p.c.map((x) => x + 1).join(', ') : '— не покрыт'}</i></li>`).join('')}</ol>`
+        ? `<ol class="points">${t.points.map((p) => `<li class="${p.c.length ? '' : 'miss'}"><span data-no-i18n>${esc(p.p)}</span> <i>${p.c.length ? '→ ' + p.c.map((x) => x + 1).join(', ') : '— не покрыт'}</i>${p.citation && t.text.slice(p.citation.start, p.citation.end) === p.citation.quote ? `<details><summary>Цитата из оригинала</summary><blockquote data-no-i18n>${esc(t.text.slice(Math.max(0, p.citation.start - 80), Math.min(t.text.length, p.citation.end + 80)))}</blockquote></details>` : '<small class="muted">Источник не подтверждён — сверьте с оригиналом</small>'}</li>`).join('')}</ol>`
         : '';
       detail = `<div class="pdetail">
         ${t.summary ? `<p data-no-i18n>${esc(t.summary)}</p>` : ''}
@@ -928,7 +931,7 @@ function showTestStep(step) {
   $('testRun').classList.toggle('hidden', step !== 'run');
   $('testDone').classList.toggle('hidden', step !== 'done');
 }
-function closeTest() { $('testSheet').classList.add('hidden'); quiz = null; }
+function closeTest() { saveTestAnswer(); $('testSheet').classList.add('hidden'); quiz = null; }
 
 function renderTestHint() {
   const pool = testPool();
@@ -971,9 +974,12 @@ function renderQuestion() {
   $('testScore').textContent = quiz.i ? `${right} / ${quiz.i}` : '';
   $('testQ').textContent = q.q;
   $('testOpts').innerHTML = q.options.map((o, i) => `<button class="test-opt" data-opt="${i}" data-no-i18n>${esc(o)}</button>`).join('');
+  $('testConfidence')?.remove();
   $('testNext').classList.add('hidden');
   $('testNext').textContent = quiz.i + 1 < quiz.items.length ? 'Дальше' : 'Итог';
   quiz.locked = false;
+  quiz.saved = false;
+  quiz.confidence = null;
 }
 
 $('testOpts').addEventListener('click', (e) => {
@@ -989,20 +995,35 @@ $('testOpts').addEventListener('click', (e) => {
     else if (i === chosen) b.classList.add('wrong');
     b.disabled = true;
   });
-  // ответ сразу идёт в статистику темы: слабые места попадут в «Повторение»
-  dict.scoreTopic(q.topicId, chosen === q.correct ? 1 : 0);
+  $('testOpts').insertAdjacentHTML('afterend', `<div id="testConfidence" class="card"><span>${T('Насколько вы были уверены?')}</span> <button class="btn text" data-conf="sure" aria-pressed="false">${T('Знал')}</button> <button class="btn text" data-conf="unsure" aria-pressed="false">${T('Сомневался')}</button> <button class="btn text" data-conf="guessed" aria-pressed="false">${T('Угадал')}</button></div>`);
   $('testNext').classList.remove('hidden');
 });
 
+$('testRun').addEventListener('click', (e) => {
+  const choice = e.target.closest('[data-conf]');
+  if (!choice || !quiz?.locked) return;
+  quiz.confidence = choice.dataset.conf;
+  $('testConfidence').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b === choice)));
+});
+
+function saveTestAnswer() {
+  if (!quiz?.locked || quiz.saved) return;
+  const q = quiz.items[quiz.i];
+  dict.scoreTopic(q.topicId, quiz.answers[quiz.i] === q.correct ? 1 : 0, quiz.confidence || 'unsure');
+  quiz.saved = true;
+}
+
 $('testNext').addEventListener('click', () => {
   if (!quiz) return;
+  saveTestAnswer();
   if (quiz.i + 1 < quiz.items.length) { quiz.i++; renderQuestion(); return; }
   finishTest();
 });
-$('testStop').addEventListener('click', () => (quiz?.answers.length ? finishTest() : closeTest()));
+$('testStop').addEventListener('click', () => { saveTestAnswer(); return quiz?.answers.length ? finishTest() : closeTest(); });
 $('testAgain').addEventListener('click', () => { showTestStep('setup'); renderTestHint(); $('testStatus').textContent = ''; $('testStart').disabled = false; });
 
 function finishTest() {
+  saveTestAnswer();
   const answered = quiz.items.slice(0, quiz.answers.length);
   const r = testResult(answered, quiz.answers);
   $('testResultText').textContent = T(`Верно ${r.right} из ${r.total} — это ${r.pct} %.`);
@@ -1717,6 +1738,7 @@ function renderFormulas() {
     ${f.n ? `<div class="fx-name">${esc(f.n)}</div>` : ''}
     <div class="fx-f">${esc(f.f)}</div>
     ${f.d ? `<div class="fx-d">${esc(f.d)}</div>` : ''}
+    ${f.citation && t.text.slice(f.citation.start, f.citation.end) === f.citation.quote ? `<details><summary>Цитата из оригинала</summary><blockquote data-no-i18n>${esc(t.text.slice(Math.max(0, f.citation.start - 80), Math.min(t.text.length, f.citation.end + 80)))}</blockquote></details>` : '<small class="muted">Источник не подтверждён — сверьте с оригиналом</small>'}
   </div>`).join('');
 }
 
@@ -2307,7 +2329,7 @@ $('backupBtn').addEventListener('click', async () => {
 // Личного в нём нет: ни прогресса, ни вопросов, ни настроек и ключей.
 
 const SHARE_FORMAT = 'konspekt-diktor';
-const TOPIC_KEYS = ['id', 'title', 'text', 'chars', 'source', 'origIndex', 'difficulty', 'prereq', 'summary', 'chunks', 'points', 'recap', 'quiz', 'formulas', 'coverage'];
+const TOPIC_KEYS = ['id', 'title', 'text', 'chars', 'source', 'sourceId', 'origIndex', 'difficulty', 'prereq', 'summary', 'chunks', 'points', 'recap', 'quiz', 'formulas', 'coverage'];
 
 function buildShare() {
   const title = curSubject()?.title || 'Конспект';
