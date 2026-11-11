@@ -15,14 +15,18 @@ export function sourceSpan(source, quote) {
   }
   const needle = fold(quote.trim());
   if (!needle) return null;
-  const at = chars.join('').indexOf(needle);
-  if (at < 0) return null;
-  const start = offsets[at], end = offsets[at + needle.length - 1] + 1;
+  const haystack = chars.join('');
   // A short fuzzy match ('е' vs 'ё', typography, case or whitespace) can
   // accidentally label a model-generated claim as verified. Require 20+
   // normalized characters unless the original source contains the exact quote.
-  if (needle.length < MIN_QUOTE && source.slice(start, end) !== quote.trim()) return null;
-  return { start, end };
+  // Continue searching for an exact later occurrence if the first is only fuzzy.
+  for (let at = haystack.indexOf(needle); at >= 0; at = haystack.indexOf(needle, at + 1)) {
+    const start = offsets[at], end = offsets[at + needle.length - 1] + 1;
+    if (needle.length >= MIN_QUOTE || source.slice(start, end) === quote.trim()) {
+      return { start, end };
+    }
+  }
+  return null;
 }
 
 export function traceClaim(source, quote) {
