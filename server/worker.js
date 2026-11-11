@@ -76,11 +76,27 @@ const DOWN_TEXT = 'Бесплатный режим сейчас недоступ
 export class RequestLimits {
   constructor(state) { this.storage = state.storage; }
   async fetch(request) {
-    const { device, ip, limits, purpose, requestId, fingerprint } = await request.json();
+    const { action, device, ip, limits, purpose, requestId, fingerprint, token } = await request.json();
+    const dedupKey = requestId ? 'request:' + device + ':' + ip + ':' + requestId : null;
+    if (action === 'release') {
+      // Only the exact reservation owner can roll back an explicitly rejected
+      // request. The token prevents an old failure from erasing a newer claim.
+      if (!dedupKey || !token) return Response.json({ released: false });
+      const released = await this.storage.transaction(async (tx) => {
+        const existing = await tx.get(dedupKey);
+        if (!existing || existing.token !== token || existing.fingerprint !== fingerprint) return false;
+        for (const key of existing.keys) {
+          const count = await tx.get(key) || 0;
+          await tx.put(key, Math.max(0, count - 1));
+        }
+        await tx.delete(dedupKey);
+        return true;
+      });
+      return Response.json({ released });
+    }
     const result = await this.storage.transaction(async (tx) => {
       // Reserve a logical request before quota increments or any upstream call.
       // Retry with a different body is an explicit conflict, never a free bypass.
-      const dedupKey = requestId ? 'request:' + device + ':' + ip + ':' + requestId : null;
       if (dedupKey) {
         const existing = await tx.get(dedupKey);
         if (existing) return { accepted: false, duplicate: true, conflict: existing.fingerprint !== fingerprint };
@@ -91,8 +107,8 @@ export class RequestLimits {
       const blocked = values.findIndex((v, i) => (v || 0) >= limits[i]);
       if (blocked >= 0) return { accepted: false, category: blocked === 3 };
       for (let i = 0; i < keys.length; i++) await tx.put(keys[i], (values[i] || 0) + 1);
-      if (dedupKey) await tx.put(dedupKey, { fingerprint });
-      return { accepted: true };
+      if (dedupKey) await tx.put(dedupKey, { fingerprint, token, keys });
+      return { accepted: true, ...(dedupKey ? { token } : {}) };
     });
     if (!await this.storage.getAlarm()) await this.storage.setAlarm(Date.now() + 48 * 3600e3);
     return Response.json(result);
@@ -101,12 +117,12 @@ export class RequestLimits {
 }
 
 const positiveLimit = (v, fallback) => Number.isSafeInteger(+v) && +v > 0 ? +v : fallback;
-async function countRequest(env, device, ip, purpose, requestId = '', fingerprint = '') {
+async function countRequest(env, device, ip, purpose, requestId = '', fingerprint = '', token = '', day = new Date().toISOString().slice(0, 10)) {
   const ns = env.REQUEST_LIMITS;
   if (!ns) throw new Error('Request limits unavailable');
-  const stub = ns.get(ns.idFromName('daily:' + new Date().toISOString().slice(0, 10)));
+  const stub = ns.get(ns.idFromName('daily:' + day));
   const response = await stub.fetch('https://limits.internal/', {
-    method: 'POST', body: JSON.stringify({ device, ip, purpose, requestId, fingerprint, limits: [
+    method: 'POST', body: JSON.stringify({ device, ip, purpose, requestId, fingerprint, token, limits: [
       positiveLimit(opt(env, 'DAILY_TOTAL', 900), 900),
       positiveLimit(opt(env, 'DAILY_PER_DEVICE', 170), 170),
       positiveLimit(opt(env, 'DAILY_PER_IP', 500), 500),
@@ -117,6 +133,23 @@ async function countRequest(env, device, ip, purpose, requestId = '', fingerprin
   const result = await response.json();
   if (typeof result.accepted !== 'boolean') throw new Error('Invalid limits response');
   return result;
+}
+
+// Roll back the dedup key AND all counters in the same Durable Object transaction.
+// Never call this after an ambiguous network failure: upstream may have billed
+// even when fetch() could not return a response.
+async function releaseRequest(env, device, ip, requestId, fingerprint, token, day) {
+  if (!requestId || !token) return false;
+  const ns = env.REQUEST_LIMITS;
+  if (!ns) throw new Error('Request limits unavailable');
+  const stub = ns.get(ns.idFromName('daily:' + day));
+  const response = await stub.fetch('https://limits.internal/', {
+    method: 'POST', body: JSON.stringify({ action: 'release', device, ip, requestId, fingerprint, token }),
+  });
+  if (!response.ok) throw new Error('Request release unavailable');
+  const result = await response.json();
+  if (typeof result.released !== 'boolean') throw new Error('Invalid release response');
+  return result.released;
 }
 
 // Платный режим включается только отдельным ключом с ограничением в OpenRouter.
@@ -408,8 +441,11 @@ export default {
       const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bodyBytes));
       fingerprint = Array.from(hash, b => b.toString(16).padStart(2, '0')).join('');
     }
+    // Bind the release to the original day's Durable Object, even across UTC midnight.
+    const reservationDay = new Date().toISOString().slice(0, 10);
+    const reservationToken = requestId ? crypto.randomUUID() : '';
     let quota;
-    try { quota = await countRequest(env, device, ip, purpose, requestId, fingerprint); }
+    try { quota = await countRequest(env, device, ip, purpose, requestId, fingerprint, reservationToken, reservationDay); }
     catch { return fail(503, 'unavailable', DOWN_TEXT, c.headers, 'limits-unavailable'); }
     if (!quota.accepted) {
       if (quota.duplicate) {
@@ -425,6 +461,17 @@ export default {
       return fail(429, 'daily_limit', msg, c.headers);
     }
 
+    const failedBeforeAnswer = async (response) => {
+      // Only explicit upstream rejections are safe to release automatically.
+      // A fetch exception or interrupted 200/stream is ambiguous: retain dedup.
+      if (requestId && quota.token) {
+        try {
+          const released = await releaseRequest(env, device, ip, requestId, fingerprint, quota.token, reservationDay);
+          if (!released) console.warn('Could not match request reservation for release');
+        } catch (e) { console.warn('Failed to release request reservation', e); }
+      }
+      return response;
+    };
     const maxTokens = +opt(env, 'MAX_TOKENS', 16000);
     // Вопросы сначала отправляем в Cloudflare. Для изображений viaAI возвращает null.
     const backup = () => viaAI(env, body, Math.min(+body.max_tokens || maxTokens, maxTokens), c.headers);
@@ -433,7 +480,7 @@ export default {
       if (answer) return answer;
     }
 
-    if (!env.OPENROUTER_KEY) return (await backup()) || fail(503, 'unavailable', DOWN_TEXT, c.headers);
+    if (!env.OPENROUTER_KEY) return (await backup()) || failedBeforeAnswer(fail(503, 'unavailable', DOWN_TEXT, c.headers));
 
     let list;
     try { list = await models(env); } catch { list = []; }
@@ -441,7 +488,7 @@ export default {
     if (isOpenRouter(env)) list = list.filter((id) => id.endsWith(':free'));
     const paid = body.kd_purpose === 'notes' && await paidKeyReady(env);
     if (paid) list = ['google/gemini-2.5-flash-lite', ...list].slice(0, 3);
-    if (!list.length) return (await backup()) || fail(503, 'unavailable', DOWN_TEXT, c.headers, modelsError || 'models-empty');
+    if (!list.length) return (await backup()) || failedBeforeAnswer(fail(503, 'unavailable', DOWN_TEXT, c.headers, modelsError || 'models-empty'));
     const out = {
       model: list[0],
       messages: body.messages,
@@ -465,15 +512,20 @@ export default {
       return (await backup()) || fail(502, 'upstream', 'Сервер нейросети не отвечает. Попробуйте ещё раз.', c.headers, 'upstream-unreachable');
     }
     // кончились деньги или лимит на ключе, ключ отозван — это забота владельца сервера, а не пользователя
-    if ([401, 402, 403].includes(up.status)) return (await backup()) || fail(503, 'unavailable', DOWN_TEXT, c.headers, 'upstream-' + up.status);
+    if ([401, 402, 403].includes(up.status)) return (await backup()) || failedBeforeAnswer(fail(503, 'unavailable', DOWN_TEXT, c.headers, 'upstream-' + up.status));
     // у бесплатных моделей дневной лимит на весь ключ — когда он кончился, повторять бессмысленно
     if (up.status === 429) {
       const text = await up.text();
-      if (/per-day|daily/i.test(text)) return (await backup()) || fail(429, 'daily_limit', LIMIT_TEXT, c.headers);
-      return new Response(text, { status: 429, headers: { ...c.headers, 'Content-Type': 'application/json', 'Retry-After': up.headers.get('Retry-After') || '20' } });
+      if (/per-day|daily/i.test(text)) return (await backup()) || failedBeforeAnswer(fail(429, 'daily_limit', LIMIT_TEXT, c.headers));
+      return failedBeforeAnswer(new Response(text, { status: 429, headers: { ...c.headers, 'Content-Type': 'application/json', 'Retry-After': up.headers.get('Retry-After') || '20' } }));
     }
     // сбой на стороне нейросети — пробуем запасную
     if (up.status >= 500) { const alt = await backup(); if (alt) return alt; }
+    // Explicitly rejected upstream requests free the logical request and its quota.
+    // A successful response remains reserved, including while a stream is in flight.
+    if (up.status >= 400) {
+      await failedBeforeAnswer(null);
+    }
     // ответ (и потоковый тоже) отдаём как есть
     return new Response(up.body, {
       status: up.status,
