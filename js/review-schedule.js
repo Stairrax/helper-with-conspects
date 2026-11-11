@@ -28,7 +28,7 @@ export function reviewResult(previous, score, confidence = 'unsure', now = Date.
     st.ease = Math.max(MIN_EASE, st.ease - 0.2);
     st.lapses += 1;
     st.recentLapses = Math.min(LEECH_LAPSES, st.recentLapses + 1);
-    st.reviewStatus = st.recentLapses >= LEECH_LAPSES ? 'leech' : 'learning';
+    st.reviewStatus = (st.reviewStatus === 'leech' && st.recentLapses > 0) || st.recentLapses >= LEECH_LAPSES ? 'leech' : 'learning';
     st.due = now + TEN_MINUTES;
   } else {
     const factor = confidence === 'sure' ? 1 : confidence === 'guessed' ? 0.6 : 0.8;
@@ -37,7 +37,8 @@ export function reviewResult(previous, score, confidence = 'unsure', now = Date.
     if (score === 1 && confidence === 'sure') {
       st.recentLapses = Math.max(0, st.recentLapses - LEECH_RECOVERY_PER_SURE);
     }
-    st.reviewStatus = st.recentLapses >= LEECH_LAPSES ? 'leech' : st.interval < 21 ? 'young' : 'mature';
+    st.reviewStatus = (st.reviewStatus === 'leech' && st.recentLapses > 0) || st.recentLapses >= LEECH_LAPSES
+      ? 'leech' : st.interval < 21 ? 'young' : 'mature';
     st.due = now + st.interval * DAY;
   }
   if (score === 1) st.best_conf = confidence === 'sure' ? 'sure' : st.best_conf || confidence;
