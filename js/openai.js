@@ -25,8 +25,11 @@ function waitOnline(signal) {
 
 const trimBase = (u) => String(u || '').trim().replace(/\/+$/, '');
 
-function headers(apiKey, baseUrl) {
+const newRequestId = () => 'kd_' + Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
+function headers(apiKey, baseUrl, requestId) {
   const h = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey };
+  // Only the app's own free proxy understands idempotency keys.
+  if (requestId && isFreeProxy(baseUrl)) h['Idempotency-Key'] = requestId;
   // необязательные заголовки атрибуции OpenRouter; другим API их не шлём, чтобы не сломать CORS
   if (/openrouter\.ai/.test(baseUrl)) { h['HTTP-Referer'] = location.origin; h['X-Title'] = 'Konspekt Diktor'; }
   return h;
@@ -107,6 +110,7 @@ async function generateRequest(opts) {
   const payload = buildBody({ temperature: 0.3, ...opts }, false);
   let body = JSON.stringify(payload);
   let url = baseUrl;
+  let requestId = opts.requestId || newRequestId(); // stable across retries and alternate URLs
   let switched = 0; // сколько раз уже перешли на запасной адрес: каждый пробуем не больше одного раза
   let attempt = 0;
   for (;;) {
@@ -114,7 +118,7 @@ async function generateRequest(opts) {
     let res, data;
     try {
       await waitOnline(signal);
-      res = await fetch(`${trimBase(url)}/chat/completions`, { method: 'POST', headers: headers(apiKey, url), body, signal });
+      res = await fetch(`${trimBase(url)}/chat/completions`, { method: 'POST', headers: headers(apiKey, url, requestId), body, signal });
       data = await res.json().catch(() => ({}));
       checkAbort(signal);
     } catch (e) {
@@ -150,6 +154,8 @@ async function generateRequest(opts) {
       // сервис не принял список запасных моделей — повторяем без него
       delete payload.models;
       body = JSON.stringify(payload);
+      // Changed request content: a fresh logical attempt needs a fresh key.
+      requestId = newRequestId();
       attempt--;
       continue;
     } else {
@@ -177,12 +183,13 @@ export async function stream(opts) {
 }
 async function streamRequest(opts) {
   const { apiKey, baseUrl, onText, signal, onStatus = () => {} } = opts;
+  const requestId = opts.requestId || newRequestId();
   if (!apiKey) throw new AIError('Не задан API-ключ (Настройки).', { code: 'NO_KEY' });
   let got = false;
   try {
     await waitOnline(signal);
     const res = await fetch(`${trimBase(baseUrl)}/chat/completions`, {
-      method: 'POST', headers: headers(apiKey, baseUrl), body: JSON.stringify(buildBody({ temperature: 0.4, ...opts }, true)), signal,
+      method: 'POST', headers: headers(apiKey, baseUrl, requestId), body: JSON.stringify(buildBody({ temperature: 0.4, ...opts }, true)), signal,
     });
     if (!res.ok || !res.body) {
       const data = await res.json().catch(() => ({}));
@@ -191,7 +198,9 @@ async function streamRequest(opts) {
         const alt = freeProxyFailed(baseUrl);
         if (alt) {
           onStatus('Сервер недоступен, переключаюсь на запасной…');
-          onText(await generate({ ...opts, baseUrl: alt, retries: 0 }));
+          // Reuse the key: if the first worker may have billed inference, the
+          // second cannot silently repeat it on the same Durable Object.
+          onText(await generate({ ...opts, baseUrl: alt, requestId, retries: 0 }));
           return;
         }
       }
@@ -240,7 +249,7 @@ async function streamRequest(opts) {
     if (got) throw e;
     if (e instanceof AIError && !e.retryable) throw e;
     onStatus('Повторяю запрос…');
-    onText(await generate({ ...opts, retries: 3 }));
+    onText(await generate({ ...opts, requestId, retries: 3 }));
   }
 }
 

@@ -52,7 +52,7 @@ function cors(req, env) {
     headers: {
       'Access-Control-Allow-Origin': ok ? origin || '*' : 'null',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Idempotency-Key',
       'Access-Control-Max-Age': '86400',
       Vary: 'Origin',
     },
@@ -76,14 +76,22 @@ const DOWN_TEXT = 'Бесплатный режим сейчас недоступ
 export class RequestLimits {
   constructor(state) { this.storage = state.storage; }
   async fetch(request) {
-    const { device, ip, limits, purpose } = await request.json();
+    const { device, ip, limits, purpose, requestId, fingerprint } = await request.json();
     const result = await this.storage.transaction(async (tx) => {
+      // Reserve a logical request before quota increments or any upstream call.
+      // Retry with a different body is an explicit conflict, never a free bypass.
+      const dedupKey = requestId ? 'request:' + device + ':' + ip + ':' + requestId : null;
+      if (dedupKey) {
+        const existing = await tx.get(dedupKey);
+        if (existing) return { accepted: false, duplicate: true, conflict: existing.fingerprint !== fingerprint };
+      }
       const keys = ['total', 'device:' + device, 'ip:' + ip];
       if (purpose === 'notes' || purpose === 'question') keys.push('purpose:' + purpose + ':' + device);
       const values = await Promise.all(keys.map((key) => tx.get(key)));
       const blocked = values.findIndex((v, i) => (v || 0) >= limits[i]);
       if (blocked >= 0) return { accepted: false, category: blocked === 3 };
       for (let i = 0; i < keys.length; i++) await tx.put(keys[i], (values[i] || 0) + 1);
+      if (dedupKey) await tx.put(dedupKey, { fingerprint });
       return { accepted: true };
     });
     if (!await this.storage.getAlarm()) await this.storage.setAlarm(Date.now() + 48 * 3600e3);
@@ -93,12 +101,12 @@ export class RequestLimits {
 }
 
 const positiveLimit = (v, fallback) => Number.isSafeInteger(+v) && +v > 0 ? +v : fallback;
-async function countRequest(env, device, ip, purpose) {
+async function countRequest(env, device, ip, purpose, requestId = '', fingerprint = '') {
   const ns = env.REQUEST_LIMITS;
   if (!ns) throw new Error('Request limits unavailable');
   const stub = ns.get(ns.idFromName('daily:' + new Date().toISOString().slice(0, 10)));
   const response = await stub.fetch('https://limits.internal/', {
-    method: 'POST', body: JSON.stringify({ device, ip, purpose, limits: [
+    method: 'POST', body: JSON.stringify({ device, ip, purpose, requestId, fingerprint, limits: [
       positiveLimit(opt(env, 'DAILY_TOTAL', 900), 900),
       positiveLimit(opt(env, 'DAILY_PER_DEVICE', 170), 170),
       positiveLimit(opt(env, 'DAILY_PER_IP', 500), 500),
@@ -389,10 +397,29 @@ export default {
     const device = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').slice(0, 64) || 'none';
     const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
     const purpose = body.kd_purpose === 'question' ? 'question' : 'notes';
+    const requestId = req.headers.get('Idempotency-Key') || '';
+    if (requestId && !/^[a-zA-Z0-9_-]{16,100}$/.test(requestId))
+      return fail(400, 'invalid_request_id', 'Некорректный идентификатор запроса.', c.headers);
+    // Hash the exact request bytes only when deduplication is requested. Hashes
+    // don't store study text or API keys inside the quota Durable Object.
+    let fingerprint = '';
+    if (requestId) {
+      const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+      fingerprint = Array.from(hash, b => b.toString(16).padStart(2, '0')).join('');
+    }
     let quota;
-    try { quota = await countRequest(env, device, ip, purpose); }
+    try { quota = await countRequest(env, device, ip, purpose, requestId, fingerprint); }
     catch { return fail(503, 'unavailable', DOWN_TEXT, c.headers, 'limits-unavailable'); }
     if (!quota.accepted) {
+      if (quota.duplicate) {
+        // Replaying a request could spend a second provider quota or payment.
+        // Respond explicitly rather than re-send: the previous request may still
+        // be running or have completed while the connection was interrupted.
+        return fail(409, quota.conflict ? 'idempotency_conflict' : 'duplicate_request',
+          quota.conflict ? 'Идентификатор уже использован для другого запроса.' :
+            'Повторный запрос не отправлен: предыдущая попытка могла уже выполниться. Проверьте результат и при необходимости повторите действие вручную.',
+          c.headers);
+      }
       const msg = quota.category ? (purpose === 'notes' ? 'На сегодня лимит подготовки конспектов исчерпан. Продолжите завтра.' : 'На сегодня лимит вопросов исчерпан. Продолжите завтра.') : LIMIT_TEXT;
       return fail(429, 'daily_limit', msg, c.headers);
     }
