@@ -18,6 +18,7 @@ export function reviewResult(previous, score, confidence = 'unsure', now = Date.
   st.lapses = Number.isSafeInteger(lapses) && lapses >= 0 ? lapses : 0;
   // Keep all-time lapses for statistics, but age out the leech status.
   // Old saved cards had no recentLapses, so inherit their current leech state.
+  const wasLeech = st.reviewStatus === 'leech';
   const recent = Number(st.recentLapses);
   st.recentLapses = Number.isSafeInteger(recent) && recent >= 0
     ? Math.min(LEECH_LAPSES, recent)
@@ -37,7 +38,9 @@ export function reviewResult(previous, score, confidence = 'unsure', now = Date.
     // the historical total. Guesswork does not count as recovery.
     if (score === 1 && confidence === 'sure')
       st.recentLapses = Math.max(0, st.recentLapses - LEECH_RECOVERY_PER_SURE);
-    st.reviewStatus = st.recentLapses >= LEECH_LAPSES ? 'leech' : st.interval < 21 ? 'young' : 'mature';
+    // Hysteresis: once flagged, require complete recovery rather than one success.
+    st.reviewStatus = st.recentLapses >= LEECH_LAPSES || (wasLeech && st.recentLapses > 0)
+      ? 'leech' : st.interval < 21 ? 'young' : 'mature';
     st.due = now + st.interval * DAY;
   }
   if (score === 1) st.best_conf = confidence === 'sure' ? 'sure' : st.best_conf || confidence;
