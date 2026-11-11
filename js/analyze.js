@@ -1,6 +1,7 @@
 // Анализ конспектов: распознавание фото, разбиение на темы, план, генерация кусков с проверкой полноты.
 
 import { generate, generateJSON, conn, AIError as GeminiError } from './ai.js';
+import { traceClaim } from './source-trace.js';
 
 const PART_CHARS = 12000;     // размер части для разбиения на темы
 
@@ -433,19 +434,19 @@ ${text}
 >>>
 
 Задание:
-1. "points": выпиши ВСЕ пункты исходного текста — каждое определение, факт, формулу, число, дату, элемент перечисления, пример, вывод — отдельным коротким пунктом, в порядке исходника.
+1. "points": для каждого пункта укажи "source_quote" — точную короткую цитату из ИСХОДНОГО ТЕКСТА, подтверждающую факт; если её нет, оставь пустую строку. Выпиши ВСЕ пункты исходного текста — каждое определение, факт, формулу, число, дату, элемент перечисления, пример, вывод — отдельным коротким пунктом, в порядке исходника.
 2. "chunks": последовательность кусков для диктовки. Каждый кусок "t" — 1–3 предложения. Передай всё содержание полностью, по порядку, переформулировав для устной речи; формулы и обозначения — словами, числа — цифрами. Тип "k": "content". Если в куске есть цифры — "s": тот же кусок для озвучки, числа полностью словами в нужном падеже.
 3. В сложных местах${topic.difficulty >= 3 ? ' (в этой теме их, вероятно, много)' : ''} добавь отдельные куски с типом "k":"explain" (начинаются словами «Пояснение:») — короткое пояснение простыми словами, и/или "k":"example" (начинаются словами «Например:») — короткий пример. Это дополнение, а не замена содержания.
 4. У каждого пункта "c" — номера кусков (с нуля), в которых он передан.
 5. "recap": 1–3 предложения — самое главное из этого текста для быстрого повторения перед экзаменом, для устной речи.
 6. "quiz": 1–2 вопроса для самопроверки по самому важному в этом тексте, с краткими правильными ответами "a" (одно-два предложения). Вопросы — такие, на которые можно ответить устно.
 7. ${FX_ITEM}${fxRule}
-Ответ JSON: {"points":[{"p":"…","c":[0]}],"chunks":[{"t":"…","k":"content","s":"…"}],"recap":"…","quiz":[{"q":"…","a":"…"}],"formulas":[{"n":"…","f":"…","d":"…"}]${typeof fx === 'number' ? ',"apart":false' : ''}}`;
+Ответ JSON: {"points":[{"p":"…","c":[0],"source_quote":"…"}],"chunks":[{"t":"…","k":"content","s":"…"}],"recap":"…","quiz":[{"q":"…","a":"…"}],"formulas":[{"n":"…","f":"…","d":"…","source_quote":"дословно из исходного текста"}]${typeof fx === 'number' ? ',"apart":false' : ''}}`;
   const res = await generateJSON({ ...conn(settings, 'notes'), system: SYS_DICTATION, parts: [{ text: prompt }], onStatus, temperature: 0.3 });
   const chunks = (res.chunks || []).map((c) => withSpoken({ t: String(c.t || c.text || '').trim(), k: ['explain', 'example'].includes(c.k) ? c.k : 'content' }, c.s)).filter((c) => c.t);
-  const points = (res.points || []).map((p) => ({ p: String(p.p || p.point || '').trim(), c: (p.c || []).map(Number).filter((n) => n >= 0 && n < chunks.length) })).filter((p) => p.p);
+  const points = (res.points || []).map((p) => ({ p: String(p.p || p.point || '').trim(), c: (p.c || []).map(Number).filter((n) => n >= 0 && n < chunks.length), citation: traceClaim(text, String(p.source_quote || '')) })).filter((p) => p.p);
   if (!chunks.length) throw new GeminiError('Нейросеть не вернула куски для темы', { code: 'EMPTY' });
-  const formulas = cleanFormulas(res.formulas);
+  const formulas = cleanFormulas(res.formulas, text);
   const apart = fx === 'separate' || (typeof fx === 'number' && res.apart === true);
   return { chunks, points, recap: String(res.recap || '').trim(), quiz: cleanQuiz(res.quiz), formulas, apart };
 }
@@ -468,9 +469,9 @@ export function plainFormula(f) {
   return s.replace(/[{}]/g, '').replace(/\s+/g, ' ').trim();
 }
 
-function cleanFormulas(list) {
+function cleanFormulas(list, source = '') {
   return (Array.isArray(list) ? list : [])
-    .map((x) => ({ n: String(x.n || x.name || '').trim(), f: plainFormula(x.f || x.formula), d: String(x.d || x.legend || '').trim() }))
+    .map((x) => ({ n: String(x.n || x.name || '').trim(), f: plainFormula(x.f || x.formula), d: String(x.d || x.legend || '').trim(), citation: traceClaim(source, String(x.source_quote || '')) }))
     .filter((x) => x.f);
 }
 
@@ -483,9 +484,9 @@ export async function extractFormulas(topic, settings, onStatus) {
 ${topic.text.slice(0, 20000)}
 >>>
 ${FX_ITEM}
-Ответ JSON: {"formulas":[{"n":"…","f":"…","d":"…"}]}`;
+Ответ JSON: {"formulas":[{"n":"…","f":"…","d":"…","source_quote":"точная цитата из исходного текста"}]}`;
   const res = await generateJSON({ ...conn(settings, 'notes'), system: SYS_METHODIST, parts: [{ text: prompt }], onStatus, temperature: 0.1 });
-  return cleanFormulas(res.formulas);
+  return cleanFormulas(res.formulas, topic.text);
 }
 
 // Числа на экране — цифрами («19 500 рублей»), а голосу — словами в нужном падеже («девятнадцати тысяч пятисот»):
@@ -588,7 +589,7 @@ export async function generateTopicChunks(topic, settings, onStatus) {
   const quizzes = [];
   const formulas = [];
   const fxOn = settings.formulasApart !== false;
-  let apart = false;
+  let apart = false, sourceOffset = 0;
   let splits = 0, checks = 0, checkFailed = false, supplemented = false;
   for (let si = 0; si < sections.length; si++) {
     const text = sections[si];
@@ -644,7 +645,10 @@ export async function generateTopicChunks(topic, settings, onStatus) {
     }
     const off = allChunks.length;
     allChunks.push(...chunks);
-    allPoints.push(...points.map((p) => ({ p: p.p, c: p.c.map((i) => i + off) })));
+    const sectionStart = topic.text.indexOf(text, sourceOffset);
+    allPoints.push(...points.map((p) => ({ p: p.p, c: p.c.map((i) => i + off), citation: p.citation && sectionStart >= 0 ? { ...p.citation, start: sectionStart + p.citation.start, end: sectionStart + p.citation.end } : null })));
+    for (const f of res.formulas) if (f.citation) f.citation = sectionStart < 0 ? null : { ...f.citation, start: sectionStart + f.citation.start, end: sectionStart + f.citation.end };
+    if (sectionStart >= 0) sourceOffset = sectionStart + text.length;
   }
   topic.chunks = allChunks;
   topic.points = allPoints;

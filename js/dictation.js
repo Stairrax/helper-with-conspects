@@ -7,6 +7,7 @@ import {
 } from './speech.js';
 import { stream, conn } from './ai.js';
 import { activeSeq, pauseFor, LISTEN_GAP_MS } from './analyze.js';
+import { reviewResult } from './review-schedule.js';
 import { abbreviate } from './abbr.js';
 import { matchAppCommand, findTopic, looksLikeRequest, aiCommand, HELP_TEXT, HELP_TEXT_EN } from './commands.js';
 import { drawTicket, gradeOf, gradeScore, endOfAnswer } from './tickets.js';
@@ -191,12 +192,13 @@ export class Dictation {
   /** Назначает дату повторения: слабые темы — завтра, остальные — через 3 дня, после повторений — реже. */
   schedule(id, fromReview = false) {
     const st = this.stat(id);
-    const score = st.total ? st.right / st.total : 1;
-    st.weak = score < 0.7 || st.asked >= 2;
-    if (fromReview) st.interval = Math.min(30, Math.max(1, (st.interval || 1) * (st.weak ? 1.2 : 2.5)));
-    else st.interval = st.weak ? 1 : 3;
     st.studiedAt = Date.now();
-    st.due = Date.now() + st.interval * DAY;
+    if (!st.due) {
+      st.reviewStatus = 'learning';
+      st.interval = 0;
+      st.due = Date.now() + 10 * 60 * 1000;
+      st.due_at = st.due;
+    }
     this.h.saveProgress();
   }
 
@@ -704,11 +706,14 @@ export class Dictation {
   }
 
   /** Записывает балл в статистику темы и назначает повторение. */
-  scoreTopic(id, score) {
+  scoreTopic(id, score, confidence = 'unsure') {
     const st = this.stat(id);
     st.total += 1;
     st.right += score;
-    this.schedule(id);
+    Object.assign(st, reviewResult(st, score, confidence));
+    st.weak = score < 1 || st.right / st.total < 0.7 || st.asked >= 2;
+    st.studiedAt = Date.now();
+    this.h.saveProgress();
   }
 
   // ---------- Экзамен ----------
@@ -1049,7 +1054,13 @@ export class Dictation {
         const text = t.recap || t.chunks?.filter((c) => c.k === 'content').slice(0, 3).map((c) => c.s || c.t).join(' ') || '';
         const r = await this.say(`${t.title}. ${text}`, false, 1.1);
         if (my !== this.token) return;
-        if (r !== 'error') this.schedule(t.id, true);
+        // Listening is useful practice, but it cannot prove recall or extend the interval.
+        if (r !== 'error') {
+          const st = this.stat(t.id);
+          st.due = Math.max(st.due || 0, Date.now() + 10 * 60 * 1000);
+          st.due_at = st.due;
+          this.h.saveProgress();
+        }
         await sleep(700);
         if (my !== this.token) return;
       }

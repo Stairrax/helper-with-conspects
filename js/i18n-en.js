@@ -7,6 +7,10 @@ const pl = (n, one, many) => `${n} ${+n === 1 ? one : many}`;
 const VOICE = { Бая: 'Baya', Ксения: 'Xenia', Ксюша: 'Ksyusha', Айдар: 'Aidar', Евгений: 'Evgeny', Ирина: 'Irina', Дмитрий: 'Dmitri', Денис: 'Denis', Руслан: 'Ruslan' };
 
 export const EXACT = {
+  'Насколько вы были уверены?': 'How confident were you?',
+  'Знал': 'Knew it', 'Сомневался': 'Unsure', 'Угадал': 'Guessed',
+  'Цитата из оригинала': 'Quote from the original',
+  'Источник не подтверждён — сверьте с оригиналом': 'Source not verified — compare with the original',
   'Ответ проверки неполный': 'The verification response is incomplete',
   'Распознать заново': 'Recognise again',
   'Распознавание повторится при составлении плана.': 'Recognition will run again when you create the plan.',
