@@ -67,7 +67,7 @@ const store={
 const limiter=new RequestLimits({storage:store});
 let inferences=0;
 const env={
-  REQUEST_LIMITS:{idFromName:()=> 'today', get:()=>({fetch:r=>limiter.fetch(r)})},
+  REQUEST_LIMITS:{idFromName:()=> 'today', get:()=>({fetch:(url,init)=>limiter.fetch(new Request(url,init))})},
   AI:{run:async()=>{inferences++;return {response:'hello'};}},
 };
 const key='kd_0123456789abcdef0123456789abcdef';
