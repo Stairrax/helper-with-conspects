@@ -1,17 +1,13 @@
 // Хранилище: настройки и прогресс — localStorage, тяжёлые данные проекта — IndexedDB.
 
 import { FREE_PROXY } from './config.js';
+import { storageFailures, storageResult } from './storage-state.js';
+export { storageFailures };
 
 const LS_SETTINGS = 'kd.settings';
 const LS_PROGRESS = 'kd.progress';
 
-// Keep failures visible without putting keys or user data into error messages.
-export const storageFailures = new Set();
-function storageResult(key, ok) {
-  if (ok) storageFailures.delete(key); else storageFailures.add(key);
-  window.dispatchEvent(new CustomEvent('kd-storage-state', { detail: { failed: storageFailures.size > 0 } }));
-  return ok;
-}
+// Storage failures are shared with config.js so connection settings report errors too.
 function writeLocal(key, value) {
   if (restoring) return storageResult(key, false);
   try { localStorage.setItem(key, JSON.stringify(value)); return storageResult(key, true); }
@@ -119,8 +115,10 @@ export function saveProgress(p, id) {
 }
 
 export function clearProgress(id) {
-  if (restoring) return false;
-  try { localStorage.removeItem(progressKey(id)); } catch { /* ignore */ }
+  const key = progressKey(id);
+  if (restoring) return storageResult(key, false);
+  try { localStorage.removeItem(key); return storageResult(key, true); }
+  catch { return storageResult(key, false); }
 }
 
 // ---------- Предметы ----------

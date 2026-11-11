@@ -1,3 +1,5 @@
+import { storageResult } from './storage-state.js';
+
 // Бесплатный режим: нейросеть через сервер автора (server/worker.js), своего ключа пользователю не нужно.
 // Сюда — адреса сервера после установки (см. server/README.md), например 'https://konspekt-free.имя.workers.dev'.
 // Адресов может быть несколько: приложение берёт первый, который отвечает, и запоминает его. Это нужно там,
@@ -11,7 +13,8 @@ function read(key) {
   try { return localStorage.getItem(key); } catch { return null; }
 }
 function write(key, value) {
-  try { localStorage.setItem(key, value); } catch { /* ignore */ }
+  try { localStorage.setItem(key, value); return storageResult(key, true); }
+  catch { return storageResult(key, false); }
 }
 
 const clean = (u) => String(u || '').trim().replace(/\/+$/, '');
@@ -50,7 +53,7 @@ export function deviceId() {
   let id = read('kd.device');
   if (!id) {
     id = 'kd-' + Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, '0')).join('');
-    try { localStorage.setItem('kd.device', id); } catch { /* ignore */ }
+    write('kd.device', id);
   }
   return id;
 }

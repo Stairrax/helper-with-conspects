@@ -5,8 +5,8 @@ const BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const base = (u) => String(u || '').trim().replace(/\/+$/, '') || BASE;
 
 export class GeminiError extends Error {
-  constructor(message, { status = 0, code = '', retryable = false } = {}) {
-    super(message);
+  constructor(message, { status = 0, code = '', retryable = false, cause } = {}) {
+    super(message, cause === undefined ? undefined : { cause });
     this.status = status;
     this.code = code;
     this.retryable = retryable;
