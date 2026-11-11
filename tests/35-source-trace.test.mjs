@@ -1,12 +1,12 @@
 import { traceClaim } from '../js/source-trace.js';
 
 export default async ({ ok, open, prepare, FINANCE }) => {
-  const original = 'Доходы — это поступления.\nФормула: S = P(1 + r)^n.\nТемпература −5 °C.';
+  const original = 'Доходы — это поступления.\nФормула расчёта: S = P(1 + r)^n.\nТемпература −5 °C.';
   const found = traceClaim(original, 'доходы - это поступления.');
   ok(found && original.slice(found.start, found.end) === found.quote,
     'verified quote resolves to its exact saved span');
-  const formula = traceClaim(original, 'Формула: S = P(1 + r)^n.');
-  ok(formula?.quote === 'Формула: S = P(1 + r)^n.',
+  const formula = traceClaim(original, 'Формула расчёта: S = P(1 + r)^n.');
+  ok(formula?.quote === 'Формула расчёта: S = P(1 + r)^n.',
     'meaningful formula quote resolves without rewriting symbols');
   ok(!traceClaim(original, 'S = P(1 + r)^n') && !traceClaim(original, 'Ставка 10%'),
     'short formula fragments and invented facts stay unverified');
