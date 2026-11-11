@@ -931,7 +931,7 @@ function showTestStep(step) {
   $('testRun').classList.toggle('hidden', step !== 'run');
   $('testDone').classList.toggle('hidden', step !== 'done');
 }
-function closeTest() { $('testSheet').classList.add('hidden'); quiz = null; }
+function closeTest() { saveTestAnswer(); $('testSheet').classList.add('hidden'); quiz = null; }
 
 function renderTestHint() {
   const pool = testPool();
