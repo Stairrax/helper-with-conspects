@@ -18,7 +18,7 @@ export function reviewResult(previous, score, confidence = 'unsure', now = Date.
     st.reviewStatus = st.interval < 21 ? 'young' : 'mature';
     st.due = now + st.interval * DAY;
   }
-  st.best_conf = confidence === 'sure' ? 'sure' : st.best_conf || confidence;
+  if (score === 1) st.best_conf = confidence === 'sure' ? 'sure' : st.best_conf || confidence;
   st.due_at = st.due;
   return st;
 }

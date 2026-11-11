@@ -378,7 +378,7 @@ export async function analyze({ sources, budgetMin, priority, settings, log, sig
         last.text += '\n\n' + text;
         last.chars = last.text.length;
       } else {
-        topics.push({ id: 't' + uid(), title: r.title, text, chars: text.length, source: source.name });
+        topics.push({ id: 't' + uid(), title: r.title, text, chars: text.length, source: source.name, sourceId: source.id });
       }
     });
     prevTitle = topics[topics.length - 1]?.title;

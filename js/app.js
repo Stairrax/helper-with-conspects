@@ -2329,7 +2329,7 @@ $('backupBtn').addEventListener('click', async () => {
 // Личного в нём нет: ни прогресса, ни вопросов, ни настроек и ключей.
 
 const SHARE_FORMAT = 'konspekt-diktor';
-const TOPIC_KEYS = ['id', 'title', 'text', 'chars', 'source', 'origIndex', 'difficulty', 'prereq', 'summary', 'chunks', 'points', 'recap', 'quiz', 'formulas', 'coverage'];
+const TOPIC_KEYS = ['id', 'title', 'text', 'chars', 'source', 'sourceId', 'origIndex', 'difficulty', 'prereq', 'summary', 'chunks', 'points', 'recap', 'quiz', 'formulas', 'coverage'];
 
 function buildShare() {
   const title = curSubject()?.title || 'Конспект';

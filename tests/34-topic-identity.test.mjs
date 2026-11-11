@@ -17,4 +17,8 @@ export default async ({ ok }) => {
   ok(next.topics.map(t => t.id).join() === 'old-a,new-b,old-c,new-d', 'unchanged source text keeps its topic ID; changed and duplicate topics get new IDs');
   ok(next.plan.order.join() === 'new-b,old-a,old-c,new-d' && next.topics[1].prereq[0] === 'old-a', 'plan and prerequisites point to retained IDs');
   ok(stats['old-a']?.due === 100 && stats['old-c']?.due === 300 && !stats['old-b'], 'only unchanged topics retain review history');
+  const named = { topics: [{ id: 'new-x', source: 'lecture', sourceId: 'source-x', text: 'Fact A' }], plan: { order: ['new-x'] } };
+  ok(preserveTopicIdentity(named, previous, progress)['old-a']?.due === 100 && named.topics[0].id === 'old-a', 'older projects without source IDs retain matching history');
+  const distinct = { topics: [{ id: 'new-y', source: 'lecture', sourceId: 'source-y', text: 'Fact A' }] };
+  ok(!Object.keys(preserveTopicIdentity(distinct, { topics: [{ id: 'old-x', source: 'lecture', sourceId: 'source-x', text: 'Fact A' }] }, { stats: { 'old-x': { due: 1 } } })).length && distinct.topics[0].id === 'new-y', 'different source files with the same name do not share history');
 };

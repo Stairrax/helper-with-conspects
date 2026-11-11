@@ -3,14 +3,15 @@
 export function preserveTopicIdentity(next, previous, progress) {
   const old = new Map();
   for (const topic of previous?.topics || []) {
-    const key = JSON.stringify([topic.source, topic.text]);
+    const key = JSON.stringify([topic.sourceId || topic.source, topic.text]);
     if (!old.has(key)) old.set(key, []);
     old.get(key).push(topic);
   }
   const stats = {};
   const renamed = new Map();
   for (const topic of next.topics || []) {
-    const match = old.get(JSON.stringify([topic.source, topic.text]))?.shift();
+    const match = old.get(JSON.stringify([topic.sourceId || topic.source, topic.text]))?.shift()
+      || (topic.sourceId ? old.get(JSON.stringify([topic.source, topic.text]))?.shift() : null);
     if (!match) continue;
     renamed.set(topic.id, match.id);
     topic.id = match.id;
