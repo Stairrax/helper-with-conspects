@@ -2356,7 +2356,7 @@ async function shareKonspekt() {
   const data = buildShare();
   const name = `${data.title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'конспект'}.konspekt.json`;
   if (await shareOrDownload(new File([JSON.stringify(data)], name, { type: 'application/json' })) && ready < project.topics.length) {
-    toast(`Готово тем: ${ready} из ${project.topics.length}. Остальные получатель подготовит сам — для них нужен ключ нейросети.`, 6000);
+    toast(`Готово тем: ${ready} из ${project.topics.length}. Остальные могут начать готовиться при открытии файла через бесплатный режим или свой ключ, расходуя доступные запросы.`, 7000);
   }
 }
 
@@ -2371,6 +2371,12 @@ async function importKonspekt(data) {
     prereq: (t.prereq || []).filter((x) => ids.has(x)),
     status: t.status === 'ready' && t.chunks?.length ? 'ready' : 'pending',
   }));
+  // A shared ready topic is a finished offline snapshot. Older files may omit
+  // quiz/formulas; do not silently generate those extras using the recipient's quota.
+  for (const topic of topics) if (topic.status === 'ready') {
+    if (!Array.isArray(topic.quiz)) topic.quiz = [];
+    if (!Array.isArray(topic.formulas)) topic.formulas = [];
+  }
   const order = (p.plan?.order || []).filter((id) => ids.has(id));
   topics.forEach((t) => { if (!order.includes(t.id)) order.push(t.id); });
   const proj = {

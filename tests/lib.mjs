@@ -74,7 +74,7 @@ const between = (text) => text.split('<<<')[1].split('>>>')[0].trim();
 /** Заглушка нейросети (OpenRouter, Gemini, Anthropic). ai — счётчики и запросы, чтобы тест мог их проверить. */
 export async function mockAI(page, ai) {
   // кодировщик MP3 для аудиоконспекта — локальная копия вместо CDN
-  await page.route(/lamejs@1\.2\.1\/lame\.min\.js/, (route) => route.fulfill({ path: path.join(ROOT, 'node_modules/lamejs/lame.min.js'), contentType: 'text/javascript' }));
+  await page.route(/lamejs@1\.2\.1\/lame\.min\.js/, (route) => route.fulfill({ path: path.join(ROOT, 'node_modules/lamejs/lame.min.js'), contentType: 'text/javascript', headers: { 'Access-Control-Allow-Origin': '*' } }));
   await page.route(/generativelanguage\.googleapis|openrouter\.ai\/api|api\.anthropic\.com|free-proxy\.test/, async (route) => {
     const url = route.request().url();
     const body = JSON.parse(route.request().postData() || '{}');

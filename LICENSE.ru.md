@@ -25,6 +25,6 @@ Copyright (C) 2026 Stairrax
 
 Это чужие работы со своими лицензиями, GPL на них не распространяется:
 
-- **`voices/silero-ru/`** — модель синтеза речи Silero, © Silero Team, лицензия CC BY-NC-SA 4.0: **только некоммерческое использование**, с указанием авторов. Подробнее — в [`voices/silero-ru/LICENSE`](voices/silero-ru/LICENSE).
+- **Компоненты Silero:** модели в `voices/silero-ru/` распространяются под CC BY-NC-SA 4.0, © Silero Team. `js/silero-core.js` адаптирует логику Silero для браузера; не считайте этот файл разрешением использовать Silero в коммерческом продукте. Для коммерческой версии замените Silero целиком или получите отдельное разрешение правообладателя. Подробнее — в [`voices/silero-ru/LICENSE`](voices/silero-ru/LICENSE).
 - **`fonts/`** — шрифты Onest, Unbounded и Literata, лицензия SIL Open Font License 1.1. Подробнее — в [`fonts/OFL.txt`](fonts/OFL.txt).
 - Голоса Piper и библиотеки, которые загружаются с CDN (onnxruntime-web, piper-wasm, pdf.js, mammoth.js), — по их собственным лицензиям.

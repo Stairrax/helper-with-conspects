@@ -35,4 +35,18 @@ export default async ({ open, prepare, FINANCE, ok }) => {
   await other.page.click('#startBtn');
   await other.page.waitForFunction(() => window.__spoken.length >= 2, null, { timeout: 10000 });
   ok(other.ai.prompts.length === before, 'диктовка без ключа и без единого запроса к нейросети');
+
+  // Older shared files can mark topics ready without quiz/formulas fields.
+  // Opening them must not silently spend the recipient's free proxy quota.
+  const legacy = JSON.parse(shared.text);
+  for (const topic of legacy.project.topics) { delete topic.quiz; delete topic.formulas; }
+  const oldFile = path.join(path.dirname(file), 'older-shared.konspekt.json');
+  fs.writeFileSync(oldFile, JSON.stringify(legacy));
+  const recipient = await open({ settings: null, freeProxy: 'https://free-proxy.test' });
+  const requestsBefore = recipient.ai.prompts.length;
+  const [chooseOld] = await Promise.all([recipient.page.waitForEvent('filechooser'), recipient.page.click('#obImport')]);
+  await chooseOld.setFiles(oldFile);
+  await recipient.page.waitForFunction(() => document.querySelectorAll('#planList .pstate[data-ready="true"]').length === 2, null, { timeout: 10000 });
+  await recipient.page.waitForTimeout(500);
+  ok(recipient.ai.prompts.length === requestsBefore, 'старый готовый файл не запускает нейросеть для недостающих дополнительных полей');
 };

@@ -9,6 +9,8 @@ const LAME = [
   'https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js',
   'https://unpkg.com/lamejs@1.2.1/lame.min.js',
 ];
+// Both pinned CDN URLs serve the same npm tarball file. Reject changed bytes.
+const LAME_INTEGRITY = 'sha384-xuasJXVcyv3hZq0eYpelEkBC8l4yufatZXDsKuyCU2rqfhDCb+ftuE/mSfZAteiK';
 
 let lameReady = null;
 function loadLame() {
@@ -20,6 +22,8 @@ function loadLame() {
           await new Promise((resolve, reject) => {
             const s = document.createElement('script');
             s.src = url;
+            s.integrity = LAME_INTEGRITY;
+            s.crossOrigin = 'anonymous';
             s.onload = resolve;
             s.onerror = () => { s.remove(); reject(); };
             document.head.append(s);
