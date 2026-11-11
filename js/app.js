@@ -2315,6 +2315,19 @@ $('backupBtn').addEventListener('click', async () => {
     for (const key of Object.keys(data.localStorage)) if (key.startsWith('kd.idb.')) delete data.localStorage[key];
     const day = new Date().toISOString().slice(0, 10);
     const file = new File([JSON.stringify(data)], `diktor-backup-${day}.json`, { type: 'application/json' });
+    const photoCount = Object.entries(data.idb).reduce((sum, [key, stored]) =>
+      key.startsWith('sources:') && Array.isArray(stored)
+        ? sum + stored.reduce((n, s) => n + (s.kind === 'images' ? (s.images?.length || 0) : 0), 0) : sum, 0);
+    // Images are intentionally kept so a restored project can re-run OCR.
+    // The JSON is private learning material even though API credentials were removed.
+    if (photoCount || file.size >= 10 * 1024 * 1024) {
+      const sizeMb = (file.size / 1024 / 1024).toFixed(1);
+      const warning = `Резервная копия: ${sizeMb} МБ.` +
+        (photoCount ? ` В ней есть исходные фотографии страниц (${photoCount} шт.).` : '') +
+        ' В файле могут быть личные учебные материалы и заметки; не публикуйте его и не отправляйте незнакомым людям. ' +
+        'Изображения сохраняются для повторного распознавания после восстановления. Продолжить сохранение?';
+      if (!confirm(warning)) return;
+    }
     if (await shareOrDownload(file)) {
       try { localStorage.setItem('kd.backupAt', String(Date.now())); } catch { /* ignore */ }
       renderBackupInfo();
