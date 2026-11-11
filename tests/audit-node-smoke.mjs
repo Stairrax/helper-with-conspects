@@ -53,6 +53,7 @@ const store={
       const draft=new Map(records), tx={
         get:async key=>draft.get(key),
         put:async (key,v)=>draft.set(key,v),
+        delete:async key=>draft.delete(key),
       };
       const result=await fn(tx);
       records.clear();for(const [k,v]of draft)records.set(k,v);
@@ -87,3 +88,71 @@ const conflict=await worker.fetch(req(key,'other'),env);
 assert.equal((await conflict.json()).error.code,'idempotency_conflict');
 assert.equal(inferences,1);
 console.log('PASS: HTTP failover, stable request IDs, no EMPTY replay, atomic single inference/quota.');
+
+const failingEnv={...env,AI:undefined,OPENROUTER_KEY:'mock-key',
+  UPSTREAM:'https://mock.provider.test/v1',MODELS:'test-model'};
+const failedKey='kd_11111111111111111111111111111111';
+const completedKey='kd_22222222222222222222222222222222';
+const uncertainKey='kd_33333333333333333333333333333333';
+let upstreamCalls=0, allowSuccess=false;
+const totalBefore=records.get('total');
+try {
+  globalThis.fetch=async url=>{
+    if (!String(url).includes('/chat/completions')) throw new Error('Unexpected URL');
+    upstreamCalls++;
+    return allowSuccess
+      ? Response.json({choices:[{message:{content:'ok'},finish_reason:'stop'}]})
+      : Response.json({error:{message:'unavailable'}},{status:503});
+  };
+  const rejected=await worker.fetch(req(failedKey),failingEnv);
+  assert.equal(rejected.status,503);
+  assert.equal(records.get('total'),totalBefore,'provider 503 consumed daily quota');
+  assert.equal([...records.keys()].some(k=>k.endsWith(failedKey)),false,'provider 503 left dedup stuck');
+  allowSuccess=true;
+  const retried=await worker.fetch(req(failedKey),failingEnv);
+  assert.equal(retried.status,200,'same request ID should be reusable after confirmed rejection');
+  assert.equal(records.get('total'),totalBefore+1);
+  const duplicateAfterSuccess=await worker.fetch(req(failedKey),failingEnv);
+  assert.equal(duplicateAfterSuccess.status,409,'successful inference must retain dedup');
+  assert.equal(upstreamCalls,2,'duplicate triggered a second provider call');
+
+  // A stale or forged rollback cannot remove a reservation owned by a new call.
+  const invalidRelease=await limiter.fetch(new Request('https://limits.internal/',{
+    method:'POST',body:JSON.stringify({action:'release',device:'test-device',ip:'unknown',
+      requestId:failedKey,fingerprint:'not-the-fingerprint',token:'wrong-token'}),
+  }));
+  assert.equal((await invalidRelease.json()).released,false);
+  assert.equal(records.get('total'),totalBefore+1);
+
+  globalThis.fetch=async()=>{throw new TypeError('connection reset after send');};
+  const uncertain=await worker.fetch(req(uncertainKey),failingEnv);
+  assert.equal(uncertain.status,502);
+  assert.equal((await worker.fetch(req(uncertainKey),failingEnv)).status,409,
+    'ambiguous network failure should not allow duplicate inference');
+  assert.equal(records.get('total'),totalBefore+2);
+} finally {
+  globalThis.fetch=realFetch;
+}
+
+const { generate: generateClaude } = await import('../js/anthropic.js');
+let claudeCalls=0;
+try {
+  globalThis.fetch=async()=>{
+    claudeCalls++;
+    return Response.json({content:[],stop_reason:'end_turn'});
+  };
+  const opts={apiKey:'test-key',model:'claude-sonnet-4-5',
+    parts:[{text:'hello'}],retries:2,timeoutMs:5000};
+  await assert.rejects(generateClaude(opts),e=>e.code==='EMPTY');
+  assert.equal(claudeCalls,1,'valid empty JSON must not be retried');
+  claudeCalls=0;
+  globalThis.fetch=async()=>{
+    claudeCalls++;
+    return new Response('invalid json',{status:200,headers:{'Content-Type':'application/json'}});
+  };
+  await assert.rejects(generateClaude({...opts,retries:1}),e=>e.code==='EMPTY');
+  assert.equal(claudeCalls,2,'unreadable JSON should use retry budget');
+} finally {
+  globalThis.fetch=realFetch;
+}
+console.log('PASS: upstream rejection releases dedup/quota; ambiguous network failure stays reserved; Anthropic EMPTY parsing behavior.');
