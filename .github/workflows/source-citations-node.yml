@@ -1,0 +1,23 @@
+name: Source citation audit (Node only)
+on:
+  push:
+    paths:
+      - js/source-trace.js
+      - tests/source-citation-node.mjs
+      - .github/workflows/source-citations-node.yml
+  pull_request:
+    paths:
+      - js/source-trace.js
+      - tests/source-citation-node.mjs
+      - .github/workflows/source-citations-node.yml
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --check js/source-trace.js
+      - run: node tests/source-citation-node.mjs
