@@ -16,6 +16,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: node tests/verify-lame-sri.mjs
       # Ubuntu runner already includes the Chromium runtime libraries.
       # --with-deps invokes apt and can fail on transient Ubuntu mirror DNS outages,
       # preventing npm test from starting even when the JS dependencies are fine.
