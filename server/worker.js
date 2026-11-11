@@ -370,7 +370,7 @@ export default {
     if (!env.OPENROUTER_KEY && !env.AI) return fail(503, 'unavailable', 'Бесплатный режим не настроен на сервере.', c.headers);
 
     if (+(req.headers.get('Content-Length') || 0) > MAX_BODY) return fail(413, 'too_large', 'Запрос слишком большой.', c.headers);
-    let body;
+    let body, bodyBytes;
     try {
       const reader = req.body?.getReader();
       if (!reader) throw new Error('empty');
@@ -389,6 +389,7 @@ export default {
       } finally { reader.releaseLock(); }
       const bytes = new Uint8Array(size); let offset = 0;
       for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+      bodyBytes = bytes;
       body = JSON.parse(new TextDecoder().decode(bytes));
     } catch { return fail(400, 'bad_request', 'Неверный запрос.', c.headers); }
     if (!Array.isArray(body?.messages) || !body.messages.length) return fail(400, 'bad_request', 'Неверный запрос.', c.headers);
@@ -404,7 +405,7 @@ export default {
     // don't store study text or API keys inside the quota Durable Object.
     let fingerprint = '';
     if (requestId) {
-      const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+      const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bodyBytes));
       fingerprint = Array.from(hash, b => b.toString(16).padStart(2, '0')).join('');
     }
     let quota;
