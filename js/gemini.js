@@ -79,7 +79,7 @@ async function generateRequest(opts) {
   let attempt = 0;
   for (;;) {
     attempt++;
-    let res, data;
+    let res, data, parsed = false;
     try {
       await waitOnline(signal);
       res = await fetch(`${base(baseUrl)}/${modelPath(model)}:generateContent`, {
@@ -88,7 +88,10 @@ async function generateRequest(opts) {
         body,
         signal,
       });
-      data = await res.json().catch(() => ({}));
+      try {
+        data = await res.json();
+        parsed = true;
+      } catch { data = {}; }
     } catch (e) {
       if (e.name === 'AbortError') throw e;
       if (attempt > retries) throw new GeminiError('Нет связи с Gemini. Проверьте интернет.', { code: 'NETWORK', retryable: true });
@@ -101,9 +104,14 @@ async function generateRequest(opts) {
       const { text, finish } = extractText(data);
       if (finish === 'MAX_TOKENS') throw new GeminiError('Ответ обрезан по длине', { code: 'MAX_TOKENS' });
       if (!text) {
-        if (attempt > retries) throw new GeminiError('Пустой ответ Gemini' + (finish ? ` (${finish})` : ''), { code: 'EMPTY' });
-        onStatus('Пустой ответ, повторяю…');
-        await sleep(1500, signal);
+        // A valid HTTP 200 with no text may already have been billed.
+        // Never replay it automatically. Only an unreadable body may be retried.
+        if (parsed || attempt > retries) {
+          throw new GeminiError('Пустой ответ Gemini' + (finish ? ` (${finish})` : ''), { code: 'EMPTY', retryable: false });
+        }
+        const wait = Math.min(2000 * 2 ** (attempt - 1), 30000);
+        onStatus(`Ответ Gemini не удалось разобрать, повтор через ${Math.round(wait / 1000)} с…`);
+        await sleep(wait, signal);
         continue;
       }
       return text;

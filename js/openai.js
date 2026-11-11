@@ -40,7 +40,10 @@ function buildBody({ system, parts, temperature, maxOutputTokens, model, fallbac
   // OpenRouter: если основная модель перегружена или недоступна, запрос уйдёт на запасную
   const extra = (fallbacks || []).filter((m) => m && m !== body.model);
   if (extra.length) body.models = [body.model, ...extra].slice(0, 3);
-  if (maxOutputTokens) body.max_tokens = maxOutputTokens;
+  // Always bound generation length, including requests sent directly with a
+  // user's own API key. Explicit positive limits still override the default.
+  const requested = Number(maxOutputTokens);
+  body.max_tokens = Number.isSafeInteger(requested) && requested > 0 ? requested : 8192;
   if (streamMode) body.stream = true;
   return body;
 }

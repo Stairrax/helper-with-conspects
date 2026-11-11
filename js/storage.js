@@ -198,10 +198,12 @@ export async function idbGet(key) {
   if (restoring) throw new Error('Restore in progress; reload required');
   await writes.get(key);
   // A fallback was written after a failed IDB write and is newer than IDB.
+  // A corrupt or inaccessible fallback alone says nothing about IndexedDB health.
+  // Only flag a storage failure if the actual IDB read also fails.
   try {
     const fallback = localStorage.getItem('kd.idb.' + key);
     if (fallback !== null) return JSON.parse(fallback);
-  } catch { storageResult('idb:' + key, false); }
+  } catch { /* recover from IDB without showing a false storage failure */ }
   try { return await tx('readonly', (s) => s.get(key)); } catch (err) {
     // A read failure is not evidence that a subject is empty.
     storageResult('idb:' + key, false);
