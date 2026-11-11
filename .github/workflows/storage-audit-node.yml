@@ -1,0 +1,33 @@
+name: Storage and error audit (Node only)
+on:
+  push:
+    paths:
+      - js/config.js
+      - js/storage.js
+      - js/storage-state.js
+      - js/gemini.js
+      - tests/storage-audit-node.mjs
+      - .github/workflows/storage-audit-node.yml
+  pull_request:
+    paths:
+      - js/config.js
+      - js/storage.js
+      - js/storage-state.js
+      - js/gemini.js
+      - tests/storage-audit-node.mjs
+      - .github/workflows/storage-audit-node.yml
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: |
+          node --check js/config.js
+          node --check js/storage.js
+          node --check js/storage-state.js
+          node --check js/gemini.js
+      - run: node tests/storage-audit-node.mjs
