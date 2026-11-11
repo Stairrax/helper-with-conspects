@@ -23,7 +23,7 @@ export default async ({ open, ok }) => {
   };
   const limiter = new RequestLimits({ storage });
   const env = {
-    REQUEST_LIMITS: { idFromName: () => 'today', get: () => ({ fetch: req => limiter.fetch(req) }) },
+    REQUEST_LIMITS: { idFromName: () => 'today', get: () => ({ fetch: (url, init) => limiter.fetch(new Request(url, init)) }) },
     AI: { run: async () => { modelCalls++; return { response: 'model answered' }; } },
   };
   const key = 'kd_0123456789abcdef0123456789abcdef';
