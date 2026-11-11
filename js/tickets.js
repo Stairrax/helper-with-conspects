@@ -130,15 +130,24 @@ export function gradeOf(text) {
 export const gradeScore = (g) => ({ 5: 1, 4: 0.75, 3: 0.5, 2: 0 }[g] ?? null);
 
 /**
- * Какой билет тянуть: сначала те, на которые ещё не отвечали, потом — с оценкой ниже пятёрки, потом любой.
- * rnd — для автотестов.
+ * Какой билет тянуть: сначала новый, затем тот, чей срок повтора (due_at)
+ * наступил; затем слабые без срока (старые сохранения), затем любой.
+ * Билеты с будущим due_at не обгоняют уже назначенные на повтор.
+ * rnd и now передаются в автотестах для воспроизводимого выбора.
  */
-export function drawTicket(tickets, results = {}, rnd = Math.random) {
+export function drawTicket(tickets, results = {}, rnd = Math.random, now = Date.now()) {
   if (!tickets?.length) return null;
+  const dueAt = (t) => {
+    const raw = results[t.id]?.due_at ?? t.due_at;
+    if (raw == null || raw === '') return null;
+    const value = typeof raw === 'number' ? raw : /^\\d+$/.test(String(raw)) ? Number(raw) : Date.parse(raw);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  };
   const fresh = tickets.filter((t) => !results[t.id]);
-  const weak = tickets.filter((t) => results[t.id] && results[t.id].grade < 5);
-  const pool = fresh.length ? fresh : weak.length ? weak : tickets;
-  return pool[Math.floor(rnd() * pool.length)];
+  const due = tickets.filter((t) => results[t.id] && dueAt(t) !== null && dueAt(t) <= now);
+  const weakLegacy = tickets.filter((t) => results[t.id]?.grade < 5 && dueAt(t) === null);
+  const pool = fresh.length ? fresh : due.length ? due : weakLegacy.length ? weakLegacy : tickets;
+  return pool[Math.min(pool.length - 1, Math.max(0, Math.floor(rnd() * pool.length)))];
 }
 
 /** Сводка: сколько готово, на сколько отвечено, средняя оценка. */

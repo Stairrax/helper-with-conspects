@@ -5,9 +5,13 @@
 
 import * as neural from './neural.js';
 
+// Both mirrors serve the same pinned npm artifact. The digest is checked
+// against both live CDN responses by tests/verify-lame-sri.mjs.
+// Keep SRI fail-closed: never load a CDN script if its bytes change.
+const LAME_SRI = 'sha256-FdKF4lh7O9v9GKaN5s4HzAdPdICoLDgV2i3Bw0jsbfQ=';
 const LAME = [
-  'https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js',
-  'https://unpkg.com/lamejs@1.2.1/lame.min.js',
+  { url: 'https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js', integrity: LAME_SRI },
+  { url: 'https://unpkg.com/lamejs@1.2.1/lame.min.js', integrity: LAME_SRI },
 ];
 
 let lameReady = null;
@@ -15,11 +19,13 @@ function loadLame() {
   if (window.lamejs) return Promise.resolve(window.lamejs);
   if (!lameReady) {
     lameReady = (async () => {
-      for (const url of LAME) {
+      for (const { url, integrity } of LAME) {
         try {
           await new Promise((resolve, reject) => {
             const s = document.createElement('script');
             s.src = url;
+            s.integrity = integrity;
+            s.crossOrigin = 'anonymous';
             s.onload = resolve;
             s.onerror = () => { s.remove(); reject(); };
             document.head.append(s);
