@@ -1,0 +1,33 @@
+name: Audit Node smoke (no Playwright downloads)
+on:
+  push:
+    paths:
+      - js/openai.js
+      - js/request.js
+      - server/worker.js
+      - tests/audit-node-smoke.mjs
+      - .github/workflows/audit-node.yml
+  pull_request:
+    paths:
+      - js/openai.js
+      - js/request.js
+      - server/worker.js
+      - tests/audit-node-smoke.mjs
+      - .github/workflows/audit-node.yml
+jobs:
+  audit-node:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax
+        run: |
+          node --check js/openai.js
+          node --check js/request.js
+          node --check server/worker.js
+          node --check tests/audit-node-smoke.mjs
+      - name: Local, dependency-free concurrency and failover test
+        run: node tests/audit-node-smoke.mjs
