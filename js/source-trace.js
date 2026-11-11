@@ -1,8 +1,8 @@
 // A matching source quotation is evidence of provenance, NOT proof that the
 // model interpreted the quotation correctly.
-const MIN_QUOTE_CHARS = 10; // Ignore ambiguous snippets like "да", "5 %" and "стоп".
+const MIN_QUOTE_CHARS = 20; // Only meaningful excerpts receive a verified source marker.
 
-const fold = text => String(text).toLocaleLowerCase('ru-RU')
+const fold = text => String(text).toLowerCase()
   .replace(/ё/g, 'е')
   .replace(/[«»„“”]/g, '"')
   .replace(/[‐‑‒–—−]/g, '-')
