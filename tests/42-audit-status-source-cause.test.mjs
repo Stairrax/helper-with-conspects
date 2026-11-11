@@ -17,6 +17,9 @@ export default async ({ ok, open }) => {
     'short fuzzy normalized quote is not strong enough to verify a claim');
   ok(sourceSpan('Ёлка росла.', 'ёлка росла.') === null,
     'short case-folded evidence is weak even when normalized text matches');
+  const repeated = traceClaim('Ёлка, а потом ёлка.', 'ёлка');
+  ok(repeated?.start === 14 && repeated.quote === 'ёлка',
+    'short exact quote can match a later occurrence after a weak normalized match');
   ok(sourceSpan(source, '\u00ad') === null && sourceSpan(source, 'несуществующая длинная цитата') === null,
     'empty normalized and invented quotes are rejected');
 
