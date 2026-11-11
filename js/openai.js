@@ -34,13 +34,18 @@ function toMessages(system, parts) {
   return messages;
 }
 
-function buildBody({ system, parts, temperature, maxOutputTokens, model, fallbacks, purpose }, streamMode) {
+const DEFAULT_DIRECT_MAX_TOKENS = 4096; // cost guard for requests made with a user's own API key
+function buildBody({ system, parts, temperature, maxOutputTokens, model, fallbacks, purpose, baseUrl }, streamMode) {
   const body = { model: String(model || '').trim(), messages: toMessages(system, parts), temperature };
   if (purpose === 'notes' || purpose === 'question') body.kd_purpose = purpose;
   // OpenRouter: если основная модель перегружена или недоступна, запрос уйдёт на запасную
   const extra = (fallbacks || []).filter((m) => m && m !== body.model);
   if (extra.length) body.models = [body.model, ...extra].slice(0, 3);
-  if (maxOutputTokens) body.max_tokens = maxOutputTokens;
+  // Respect explicit budgets. The free proxy has its own server-side cap;
+  // direct requests should never have unlimited output by omission.
+  const requested = Number(maxOutputTokens);
+  if (Number.isSafeInteger(requested) && requested > 0) body.max_tokens = requested;
+  else if (!isFreeProxy(baseUrl)) body.max_tokens = DEFAULT_DIRECT_MAX_TOKENS;
   if (streamMode) body.stream = true;
   return body;
 }
