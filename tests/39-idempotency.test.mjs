@@ -8,7 +8,7 @@ export default async ({ open, ok }) => {
     transaction(fn) {
       const next = pending.then(async () => {
         const draft = new Map(records);
-        const tx = { get: async k => draft.get(k), put: async (k,v) => draft.set(k,v) };
+        const tx = { get: async k => draft.get(k), put: async (k,v) => draft.set(k,v), delete: async k => draft.delete(k) };
         const answer = await fn(tx);
         records.clear();
         for (const [key,value] of draft) records.set(key,value);
@@ -49,6 +49,29 @@ export default async ({ open, ok }) => {
     'a new manual request still consumes an independent quota');
   const legacy = await worker.fetch(request(null), env);
   ok(legacy.status === 200 && modelCalls === 3, 'older clients without request IDs remain supported');
+  const badEnv={...env,AI:undefined,OPENROUTER_KEY:'test-key',
+    UPSTREAM:'https://upstream.test/v1',MODELS:'test-model'};
+  const failedId='kd_33333333333333333333333333333333';
+  const totalBefore=records.get('total');
+  const realFetch=globalThis.fetch;
+  try {
+    globalThis.fetch=async url=>{
+      if (String(url).includes('/chat/completions')) return Response.json({error:{message:'down'}},{status:503});
+      throw new Error('Unexpected URL');
+    };
+    const rejected=await worker.fetch(request(failedId),badEnv);
+    ok(rejected.status===503 && records.get('total')===totalBefore &&
+      ![...records.keys()].some(k=>k.endsWith(failedId)),
+      'explicit upstream 503 releases dedup and refunds all counters');
+    const again=await worker.fetch(request(failedId),badEnv);
+    ok(again.status===503 && records.get('total')===totalBefore,
+      'the same logical request can retry following explicit rejection');
+    globalThis.fetch=async()=>{throw new Error('connection lost after sending');};
+    const uncertain=await worker.fetch(request('kd_44444444444444444444444444444444'),badEnv);
+    const repeat=await worker.fetch(request('kd_44444444444444444444444444444444'),badEnv);
+    ok(uncertain.status===502 && repeat.status===409,
+      'ambiguous network interruption must retain dedup to avoid provider double charge');
+  } finally { globalThis.fetch=realFetch; }
   const { page } = await open({ freeProxy: 'https://proxy-one.test,https://proxy-two.test' });
   const seen = await page.evaluate(async () => {
     const { generate } = await import('./js/openai.js');
