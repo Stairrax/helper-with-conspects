@@ -11,18 +11,6 @@ const netMessage = (baseUrl) => (isFreeProxy(baseUrl)
   ? 'Нет связи с сервером бесплатного режима. Если вы в России и без VPN, он может быть недоступен: включите VPN или подключитесь к другой сети. Что именно не открывается, покажет Настройки → Проверить связь.'
   : 'Нет связи с API (сеть или CORS). Проверьте интернет и адрес API.');
 
-function waitOnline(signal) {
-  checkAbort(signal);
-  if (navigator.onLine !== false) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const cleanup = () => { window.removeEventListener('online', online); signal?.removeEventListener('abort', abort); };
-    const online = () => { cleanup(); resolve(); };
-    const abort = () => { cleanup(); reject(cancelled()); };
-    window.addEventListener('online', online, { once: true });
-    signal?.addEventListener('abort', abort, { once: true });
-  });
-}
-
 const trimBase = (u) => String(u || '').trim().replace(/\/+$/, '');
 
 const newRequestId = () => 'kd_' + Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
