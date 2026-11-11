@@ -9,7 +9,7 @@ globalThis.localStorage = {
   getItem: key => saved.get(key) || null,
   setItem: (key,value) => saved.set(key,String(value)),
 };
-globalThis.navigator = { onLine:true };
+Object.defineProperty(globalThis, 'navigator', { configurable:true, value:{ onLine:true } });
 globalThis.window = { addEventListener(){}, removeEventListener(){} };
 globalThis.location = { origin:'http://localhost' };
 
