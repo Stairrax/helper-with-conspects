@@ -52,4 +52,4 @@ function waitOnline(signal) {
 }
 
 
-export { withDeadline, sleep, waitOnline };
+export { withDeadline, sleep, waitOnline, checkAbort };

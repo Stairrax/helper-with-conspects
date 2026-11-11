@@ -85,11 +85,16 @@ async function generateRequest(opts) {
   let attempt = 0;
   for (;;) {
     attempt++;
-    let res, data;
+    let res, data, parsed = false;
     try {
       await waitOnline(signal);
       res = await fetch(`${trimBase(baseUrl)}/messages`, { method: 'POST', headers: headers(apiKey, model), body, signal });
-      data = await res.json().catch(() => ({}));
+      try {
+        data = await res.json();
+        parsed = true;
+      } catch {
+        data = {};
+      }
     } catch (e) {
       if (e.name === 'AbortError') throw e;
       if (attempt > retries) throw new AIError('Нет связи с Anthropic API. Проверьте интернет.', { code: 'NETWORK', retryable: true });
@@ -99,9 +104,12 @@ async function generateRequest(opts) {
       continue;
     }
     if (res.ok) {
-      const { text, finish } = extract(data);
+      const { text, finish } = extract(data ?? {});
       if (finish === 'max_tokens') throw new AIError('Ответ обрезан по длине', { code: 'MAX_TOKENS' });
       if (text) return text;
+      // A valid but empty JSON response is not a transient parsing failure:
+      // retrying it can duplicate a billed inference on the user's API key.
+      if (parsed) throw new AIError('Пустой ответ Claude', { code: 'EMPTY', retryable: false });
       if (attempt > retries) throw new AIError('Пустой ответ Claude', { code: 'EMPTY' });
       onStatus('Пустой ответ, повторяю…');
       await sleep(1500, signal);

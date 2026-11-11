@@ -4,67 +4,20 @@
 import { GeminiError as AIError } from './gemini.js';
 import { isFreeProxy, freeProxyFailed, FREE_PROXY_LIST } from './config.js';
 
-const cancelled = () => new DOMException('Request cancelled', 'AbortError');
-function checkAbort(signal) { if (signal?.aborted) throw cancelled(); }
-function sleep(ms, signal) {
-  checkAbort(signal);
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, ms);
-    const abort = () => { clearTimeout(timer); reject(cancelled()); };
-    signal?.addEventListener('abort', abort, { once: true });
-  });
-}
-
-// One deadline for the entire operation, including offline waits, response bodies and retries.
-// Racing the signal also handles a stalled body reader or a fetch implementation ignoring abort.
-async function withDeadline(opts, defaultMs, run) {
-  checkAbort(opts.signal);
-  const ms = Number.isFinite(opts.timeoutMs) && opts.timeoutMs > 0 ? opts.timeoutMs : defaultMs;
-  const ctrl = new AbortController();
-  let expired = false;
-  const abort = () => ctrl.abort();
-  opts.signal?.addEventListener('abort', abort, { once: true });
-  let rejectAbort;
-  const stopped = new Promise((_, reject) => { rejectAbort = reject; });
-  const onAbort = () => rejectAbort(expired
-    ? new AIError('Нейросеть слишком долго не отвечает. Попробуйте снова.', { code: 'REQUEST_TIMEOUT', retryable: true })
-    : cancelled());
-  ctrl.signal.addEventListener('abort', onAbort, { once: true });
-  const timer = setTimeout(() => { expired = true; ctrl.abort(); }, ms);
-  const scoped = { ...opts, signal: ctrl.signal,
-    onStatus: (...args) => { if (!ctrl.signal.aborted) opts.onStatus?.(...args); },
-    onText: (...args) => { if (!ctrl.signal.aborted) opts.onText?.(...args); },
-  };
-  try { return await Promise.race([Promise.resolve().then(() => run(scoped)), stopped]); }
-  finally {
-    clearTimeout(timer);
-    opts.signal?.removeEventListener('abort', abort);
-    ctrl.signal.removeEventListener('abort', onAbort);
-    ctrl.abort();
-  }
-}
+import { withDeadline, sleep, waitOnline, checkAbort } from './request.js';
 
 // В России без VPN сервер бесплатного режима (на Cloudflare) бывает недоступен — говорим об этом прямо
 const netMessage = (baseUrl) => (isFreeProxy(baseUrl)
   ? 'Нет связи с сервером бесплатного режима. Если вы в России и без VPN, он может быть недоступен: включите VPN или подключитесь к другой сети. Что именно не открывается, покажет Настройки → Проверить связь.'
   : 'Нет связи с API (сеть или CORS). Проверьте интернет и адрес API.');
 
-function waitOnline(signal) {
-  checkAbort(signal);
-  if (navigator.onLine !== false) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const cleanup = () => { window.removeEventListener('online', online); signal?.removeEventListener('abort', abort); };
-    const online = () => { cleanup(); resolve(); };
-    const abort = () => { cleanup(); reject(cancelled()); };
-    window.addEventListener('online', online, { once: true });
-    signal?.addEventListener('abort', abort, { once: true });
-  });
-}
-
 const trimBase = (u) => String(u || '').trim().replace(/\/+$/, '');
 
-function headers(apiKey, baseUrl) {
+const newRequestId = () => 'kd_' + Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
+function headers(apiKey, baseUrl, requestId) {
   const h = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey };
+  // Only the app's own free proxy understands idempotency keys.
+  if (requestId && isFreeProxy(baseUrl)) h['Idempotency-Key'] = requestId;
   // необязательные заголовки атрибуции OpenRouter; другим API их не шлём, чтобы не сломать CORS
   if (/openrouter\.ai/.test(baseUrl)) { h['HTTP-Referer'] = location.origin; h['X-Title'] = 'Konspekt Diktor'; }
   return h;
@@ -145,6 +98,7 @@ async function generateRequest(opts) {
   const payload = buildBody({ temperature: 0.3, ...opts }, false);
   let body = JSON.stringify(payload);
   let url = baseUrl;
+  let requestId = opts.requestId || newRequestId(); // stable across retries and alternate URLs
   let switched = 0; // сколько раз уже перешли на запасной адрес: каждый пробуем не больше одного раза
   let attempt = 0;
   for (;;) {
@@ -152,15 +106,18 @@ async function generateRequest(opts) {
     let res, data;
     try {
       await waitOnline(signal);
-      res = await fetch(`${trimBase(url)}/chat/completions`, { method: 'POST', headers: headers(apiKey, url), body, signal });
+      res = await fetch(`${trimBase(url)}/chat/completions`, { method: 'POST', headers: headers(apiKey, url, requestId), body, signal });
       data = await res.json().catch(() => ({}));
       checkAbort(signal);
     } catch (e) {
       if (e.name === 'AbortError') throw e;
       // у сервера бесплатного режима бывает запасной адрес: этот не отвечает — пробуем следующий, не ожидая
-      if (switched < FREE_PROXY_LIST.length - 1) {
+      if (isFreeProxy(url) && switched < FREE_PROXY_LIST.length - 1) {
         const alt = freeProxyFailed(url);
-        if (alt) { url = alt; switched++; attempt--; continue; }
+        if (alt) {
+          onStatus('Основной сервер недоступен, переключаюсь на запасной…');
+          url = alt; switched++; attempt--; continue;
+        }
       }
       if (attempt > retries) throw new AIError(netMessage(url), { code: 'NETWORK', retryable: true });
       const wait = Math.min(2000 * 2 ** (attempt - 1), 30000);
@@ -174,7 +131,9 @@ async function generateRequest(opts) {
         const { text, finish } = extract(data);
         if (finish === 'length') throw new AIError('Ответ обрезан по длине', { code: 'MAX_TOKENS' });
         if (text) return text;
-        err = new AIError('Пустой ответ модели', { code: 'EMPTY', retryable: true });
+        // An empty 200 response might already have used shared quota.
+        // Never replay it automatically through a free proxy.
+        err = new AIError('Пустой ответ модели', { code: 'EMPTY', retryable: !isFreeProxy(url) });
       } catch (e) {
         if (!(e instanceof AIError) || !e.retryable) throw e;
         err = e;
@@ -183,9 +142,20 @@ async function generateRequest(opts) {
       // сервис не принял список запасных моделей — повторяем без него
       delete payload.models;
       body = JSON.stringify(payload);
+      // Changed request content: a fresh logical attempt needs a fresh key.
+      requestId = newRequestId();
       attempt--;
       continue;
     } else {
+      // A live proxy may return HTTP 502/503 instead of a network exception.
+      // Try each configured proxy at most once.
+      if (res.status >= 500 && isFreeProxy(url) && switched < FREE_PROXY_LIST.length - 1) {
+        const alt = freeProxyFailed(url);
+        if (alt) {
+          onStatus('Сервер вернул ошибку, переключаюсь на запасной…');
+          url = alt; switched++; attempt--; continue;
+        }
+      }
       err = new AIError(humanError(res.status, data), { status: res.status, retryable: canRetry(res.status, data), code: isDailyLimit(data) ? 'DAILY_LIMIT' : '' });
     }
     if (!err.retryable || attempt > retries) throw err;
@@ -201,15 +171,27 @@ export async function stream(opts) {
 }
 async function streamRequest(opts) {
   const { apiKey, baseUrl, onText, signal, onStatus = () => {} } = opts;
+  const requestId = opts.requestId || newRequestId();
   if (!apiKey) throw new AIError('Не задан API-ключ (Настройки).', { code: 'NO_KEY' });
   let got = false;
   try {
     await waitOnline(signal);
     const res = await fetch(`${trimBase(baseUrl)}/chat/completions`, {
-      method: 'POST', headers: headers(apiKey, baseUrl), body: JSON.stringify(buildBody({ temperature: 0.4, ...opts }, true)), signal,
+      method: 'POST', headers: headers(apiKey, baseUrl, requestId), body: JSON.stringify(buildBody({ temperature: 0.4, ...opts }, true)), signal,
     });
     if (!res.ok || !res.body) {
       const data = await res.json().catch(() => ({}));
+      // Switch only before any text is streamed, so the reply cannot be duplicated.
+      if (res.status >= 500 && isFreeProxy(baseUrl) && FREE_PROXY_LIST.length > 1) {
+        const alt = freeProxyFailed(baseUrl);
+        if (alt) {
+          onStatus('Сервер недоступен, переключаюсь на запасной…');
+          // Reuse the key: if the first worker may have billed inference, the
+          // second cannot silently repeat it on the same Durable Object.
+          onText(await generate({ ...opts, baseUrl: alt, requestId, retries: 0 }));
+          return;
+        }
+      }
       const noFallbacks = res.status === 400 && (opts.fallbacks || []).length > 0; // повторим обычным запросом без них
       throw new AIError(humanError(res.status, data), { status: res.status, retryable: canRetry(res.status, data) || noFallbacks, code: isDailyLimit(data) ? 'DAILY_LIMIT' : '' });
     }
@@ -255,7 +237,7 @@ async function streamRequest(opts) {
     if (got) throw e;
     if (e instanceof AIError && !e.retryable) throw e;
     onStatus('Повторяю запрос…');
-    onText(await generate({ ...opts, retries: 3 }));
+    onText(await generate({ ...opts, requestId, retries: 3 }));
   }
 }
 

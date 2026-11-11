@@ -1,0 +1,158 @@
+// Small dependency-free audit smoke: can run when Playwright/apt downloads are unavailable.
+import assert from 'node:assert/strict';
+import { webcrypto } from 'node:crypto';
+import worker, { RequestLimits } from '../server/worker.js';
+
+globalThis.crypto ||= webcrypto;
+const saved = new Map([['kd.freeProxy','https://proxy-one.test,https://proxy-two.test']]);
+globalThis.localStorage = {
+  getItem: key => saved.get(key) || null,
+  setItem: (key,value) => saved.set(key,String(value)),
+};
+Object.defineProperty(globalThis, 'navigator', { configurable:true, value:{ onLine:true } });
+globalThis.window = { addEventListener(){}, removeEventListener(){} };
+globalThis.location = { origin:'http://localhost' };
+
+const { generate, stream } = await import('../js/openai.js');
+const input = { apiKey:'device-id', baseUrl:'https://proxy-one.test',
+  model:'server-picks', parts:[{text:'hello'}], purpose:'question',
+  timeoutMs:5000, retries:0 };
+const realFetch = globalThis.fetch;
+const seen = [];
+try {
+  globalThis.fetch = async (url,opts) => {
+    seen.push({url,id:opts.headers['Idempotency-Key']});
+    if (url.startsWith('https://proxy-one')) return Response.json(
+      {error:{proxy:true,code:'unavailable',message:'temporary outage'}},{status:503});
+    return Response.json({choices:[{message:{content:'got result'},finish_reason:'stop'}]});
+  };
+  assert.equal(await generate(input),'got result');
+  assert.equal(seen.length,2);
+  assert.match(seen[0].id,/^kd_[a-f0-9]{32}$/);
+  assert.equal(seen[0].id,seen[1].id,'retry changed the idempotency key');
+  seen.length=0;
+  let chunks='';
+  await stream({...input,onText:text=>{chunks+=text;}});
+  assert.equal(chunks,'got result');
+  assert.equal(seen.length,2);
+  assert.equal(seen[0].id,seen[1].id,'stream fallback changed idempotency key');
+  seen.length=0;
+  globalThis.fetch = async ()=>{seen.push('request');return Response.json(
+    {choices:[{message:{content:''},finish_reason:'stop'}]});};
+  await assert.rejects(generate({...input,retries:3}),e=>e.code==='EMPTY');
+  assert.equal(seen.length,1,'empty answer was retried');
+} finally {
+  globalThis.fetch=realFetch;
+}
+
+const records=new Map();
+let pending=Promise.resolve();
+const store={
+  transaction(fn){
+    const next=pending.then(async()=>{
+      const draft=new Map(records), tx={
+        get:async key=>draft.get(key),
+        put:async (key,v)=>draft.set(key,v),
+        delete:async key=>draft.delete(key),
+      };
+      const result=await fn(tx);
+      records.clear();for(const [k,v]of draft)records.set(k,v);
+      return result;
+    });
+    pending=next.catch(()=>{});
+    return next;
+  },
+  getAlarm:async()=>null, setAlarm:async()=>{},
+  deleteAll:async()=>records.clear(),
+};
+const limiter=new RequestLimits({storage:store});
+let inferences=0;
+const env={
+  REQUEST_LIMITS:{idFromName:()=> 'today', get:()=>({fetch:(url,init)=>limiter.fetch(new Request(url,init))})},
+  AI:{run:async()=>{inferences++;return {response:'hello'};}},
+};
+const key='kd_0123456789abcdef0123456789abcdef';
+const req=(id,text='hello')=>new Request('https://server.test/chat/completions',{
+  method:'POST',headers:{Origin:'https://stairrax.github.io',
+    Authorization:'Bearer test-device',...(id?{'Idempotency-Key':id}:{})},
+  body:JSON.stringify({kd_purpose:'question',messages:[{role:'user',content:text}]}),
+});
+const responses=await Promise.all([worker.fetch(req(key),env),worker.fetch(req(key),env)]);
+assert.deepEqual(responses.map(x=>x.status).sort(),[200,409]);
+assert.equal(inferences,1);
+assert.equal(records.get('total'),1);
+const duplicate=await worker.fetch(req(key),env);
+assert.equal(duplicate.status,409);
+assert.equal((await duplicate.json()).error.code,'duplicate_request');
+const conflict=await worker.fetch(req(key,'other'),env);
+assert.equal((await conflict.json()).error.code,'idempotency_conflict');
+assert.equal(inferences,1);
+console.log('PASS: HTTP failover, stable request IDs, no EMPTY replay, atomic single inference/quota.');
+
+const failingEnv={...env,AI:undefined,OPENROUTER_KEY:'mock-key',
+  UPSTREAM:'https://mock.provider.test/v1',MODELS:'test-model'};
+const failedKey='kd_11111111111111111111111111111111';
+const completedKey='kd_22222222222222222222222222222222';
+const uncertainKey='kd_33333333333333333333333333333333';
+let upstreamCalls=0, allowSuccess=false;
+const totalBefore=records.get('total');
+try {
+  globalThis.fetch=async url=>{
+    if (!String(url).includes('/chat/completions')) throw new Error('Unexpected URL');
+    upstreamCalls++;
+    return allowSuccess
+      ? Response.json({choices:[{message:{content:'ok'},finish_reason:'stop'}]})
+      : Response.json({error:{message:'unavailable'}},{status:503});
+  };
+  const rejected=await worker.fetch(req(failedKey),failingEnv);
+  assert.equal(rejected.status,503);
+  assert.equal(records.get('total'),totalBefore,'provider 503 consumed daily quota');
+  assert.equal([...records.keys()].some(k=>k.endsWith(failedKey)),false,'provider 503 left dedup stuck');
+  allowSuccess=true;
+  const retried=await worker.fetch(req(failedKey),failingEnv);
+  assert.equal(retried.status,200,'same request ID should be reusable after confirmed rejection');
+  assert.equal(records.get('total'),totalBefore+1);
+  const duplicateAfterSuccess=await worker.fetch(req(failedKey),failingEnv);
+  assert.equal(duplicateAfterSuccess.status,409,'successful inference must retain dedup');
+  assert.equal(upstreamCalls,2,'duplicate triggered a second provider call');
+
+  // A stale or forged rollback cannot remove a reservation owned by a new call.
+  const invalidRelease=await limiter.fetch(new Request('https://limits.internal/',{
+    method:'POST',body:JSON.stringify({action:'release',device:'test-device',ip:'unknown',
+      requestId:failedKey,fingerprint:'not-the-fingerprint',token:'wrong-token'}),
+  }));
+  assert.equal((await invalidRelease.json()).released,false);
+  assert.equal(records.get('total'),totalBefore+1);
+
+  globalThis.fetch=async()=>{throw new TypeError('connection reset after send');};
+  const uncertain=await worker.fetch(req(uncertainKey),failingEnv);
+  assert.equal(uncertain.status,502);
+  assert.equal((await worker.fetch(req(uncertainKey),failingEnv)).status,409,
+    'ambiguous network failure should not allow duplicate inference');
+  assert.equal(records.get('total'),totalBefore+2);
+} finally {
+  globalThis.fetch=realFetch;
+}
+
+const { generate: generateClaude } = await import('../js/anthropic.js');
+let claudeCalls=0;
+try {
+  globalThis.fetch=async()=>{
+    claudeCalls++;
+    return Response.json({content:[],stop_reason:'end_turn'});
+  };
+  const opts={apiKey:'test-key',model:'claude-sonnet-4-5',
+    parts:[{text:'hello'}],retries:2,timeoutMs:5000};
+  await assert.rejects(generateClaude(opts),e=>e.code==='EMPTY');
+  assert.equal(claudeCalls,1,'valid empty JSON must not be retried');
+  claudeCalls=0;
+  globalThis.fetch=async()=>{
+    claudeCalls++;
+    return new Response('invalid json',{status:200,headers:{'Content-Type':'application/json'}});
+  };
+  await assert.rejects(generateClaude({...opts,retries:1}),e=>e.code==='EMPTY');
+  assert.equal(claudeCalls,2,'unreadable JSON should use retry budget');
+} finally {
+  globalThis.fetch=realFetch;
+}
+console.log('PASS: upstream rejection releases dedup/quota; ambiguous network failure stays reserved; Anthropic EMPTY parsing behavior.');
