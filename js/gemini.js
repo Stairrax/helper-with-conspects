@@ -50,7 +50,7 @@ function buildBody({ system, parts, json, temperature, maxOutputTokens }) {
     generationConfig: { temperature },
   };
   if (json) body.generationConfig.responseMimeType = 'application/json';
-  if (maxOutputTokens) body.generationConfig.maxOutputTokens = maxOutputTokens;
+  body.generationConfig.maxOutputTokens = Number.isSafeInteger(maxOutputTokens) && maxOutputTokens > 0 ? maxOutputTokens : 8192;
   if (system) body.systemInstruction = { parts: [{ text: system }] };
   return body;
 }
