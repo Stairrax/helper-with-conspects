@@ -13,6 +13,13 @@ export const EXACT = {
   'Источник не подтверждён — сверьте с оригиналом': 'Source not verified — compare with the original',
   'Ответ проверки неполный': 'The verification response is incomplete',
   'Распознать заново': 'Recognise again',
+  'Все пункты покрыты по проверке ИИ': 'All points covered according to the AI check',
+  'Пропуски дополнены, повторная проверка не проводилась': 'Missing points supplemented; not independently rechecked',
+  'Некоторые пункты не покрыты': 'Some points remain uncovered',
+  'Проверка полноты не удалась': 'Completeness check failed',
+  'Полнота не проверена': 'Completeness not checked',
+  'Тема готовится': 'Preparing topic',
+  'Ошибка подготовки темы': 'Topic preparation failed',
   'Распознавание повторится при составлении плана.': 'Recognition will run again when you create the plan.',
   'дополнительная оценка ИИ, а не гарантия полноты; требует запросов': 'An additional AI assessment, not a completeness guarantee; uses requests',
   'Резервная копия сохраняет настройки, конспекты и прогресс без API-ключей. После восстановления ключи нужно ввести заново. Файл содержит ваши учебные материалы — делитесь им осмотрительно.': 'Backups save settings, notes and progress without API keys. Enter your keys again after restoring. The file contains your study materials — share it with care.',
@@ -423,6 +430,7 @@ export const EXACT = {
 const VOICE_NAME = (m) => `${VOICE[m[1]] || m[1]} (${m[2] === 'мужской' ? 'male' : 'female'}${m[3] ? ', lively' : ''}${m[4] ? ', English' : ''})`;
 
 export const PATTERNS = [
+  [/^(\d+) фото будут распознаны заново$/, '$1 photos will be recognised again'],
   [/^(\d+) ч (\d+) мин$/, '$1 h $2 min'],
   [/^≈(.+) звука\.(?: (.+))?$/, (m, tr) => `≈${tr(m[1])} of audio.${m[2] ? ' ' + tr(m[2]) : ''}`],
   [/^Сейчас паузы (короче|длиннее) обычных: ×([\d,]+)\.$/, (m) => `Pauses are now ${m[1] === 'короче' ? 'shorter' : 'longer'} than usual: ×${m[2].replace(',', '.')}.`],
