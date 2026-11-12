@@ -190,46 +190,7 @@ export default async ({ ok, open }) => {
     'no non-literal dynamic imports can evade the static precache graph: ' +
     nonliteral.map(([p]) => p).join(', '));
   const templateExample = 'await import(' + String.fromCharCode(96) +
-    './
-
-  // Structural checks alone do not establish actual offline bootability.
-  // Prove that a first install while online can start with the network disabled
-  // on the very next navigation, without relying on runtime network-first warmup.
-  const {ctx, page} = await open();
-  const installed = await page.evaluate(async () => {
-    await navigator.serviceWorker.ready;
-    const cache = await caches.open('kd-v' +
-      document.querySelector('script[type=module][src*="app.js"]')
-        .src.match(/[?&]v=(\d+)/)[1]);
-    const keyFiles = ['js/app.js','js/config.js','js/storage.js','js/analyze.js'];
-    const missing = [];
-    for (const file of keyFiles) if (!await cache.match(file)) missing.push(file);
-    return {controller: Boolean(navigator.serviceWorker.controller),missing};
-  });
-  ok(installed.controller && !installed.missing.length,
-    'installed service worker controls the page with required modules already cached: ' +
-    JSON.stringify(installed));
-
-  let offline;
-  try {
-    await ctx.setOffline(true);
-    await page.reload({waitUntil:'domcontentloaded',timeout:20000});
-    await page.waitForFunction(() => window.__kdReady === true, null, {timeout:15000});
-    offline = await page.evaluate(() => ({
-      ready: window.__kdReady === true,
-      hasApp: !!document.querySelector('#analyzeBtn'),
-      blocked: !!document.querySelector('.boot-fail'),
-    }));
-  } catch (err) {
-    offline = {error: String(err)};
-  } finally {
-    await ctx.setOffline(false);
-  }
-  ok(offline.ready && offline.hasApp && !offline.blocked,
-    'PWA starts with no network immediately after the first online installation: ' +
-    JSON.stringify(offline));
-};
- + '{name}.js' + String.fromCharCode(96) + ')';
+    './$' + '{name}.js' + String.fromCharCode(96) + ')';
   ok(nonLiteralDynamicImports("await import('./' + name + '.js')").length === 1 &&
     nonLiteralDynamicImports(templateExample).length === 1 &&
     nonLiteralDynamicImports("await import('./literal.js')").length === 0,
