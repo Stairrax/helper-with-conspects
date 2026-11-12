@@ -319,6 +319,8 @@ function renderSources() {
       <svg><use href="#i-${s.kind === 'images' ? 'camera' : 'doc'}"/></svg>
       <span class="name" data-no-i18n>${esc(s.name)}</span>
       <span class="size">${s.kind === 'images' ? `${s.images.length} стр.` : fmtChars((s.text || '').length)}</span>
+      ${s.kind === 'images' && s.ocrRevision > 0 && !String(s.text || '').trim()
+        ? `<span class="size">${T(`${s.images.length} фото будут распознаны заново`)}</span>` : ''}
       ${s.kind === 'images' ? `<button class="btn text" data-ocr="${esc(s.id)}">Распознать заново</button>` : ''}
       <button class="icon-btn small" data-del="${esc(s.id)}" aria-label="Удалить"><svg><use href="#i-close"/></svg></button>
     </li>`).join('');
@@ -545,10 +547,14 @@ $('analyzeBtn').addEventListener('click', async () => {
   if (isFreeMode()) {
     const estimate = estimateFreeRequests(sources, settings.coverageCheck);
     if (estimate.plan >= 8 || estimate.min >= 45 || estimate.unknownPhotos >= 5) {
-      const unknown = estimate.unknownPhotos
-        ? ` Фотографий без распознанного текста: ${estimate.unknownPhotos}; для них расход на подготовку пока неизвестен.`
+      const freshPhotos = estimate.unknownPhotos - estimate.reocrPhotos;
+      const unknown = freshPhotos
+        ? ` Фотографий без распознанного текста: ${freshPhotos}; для них расход на подготовку пока неизвестен.`
         : '';
-      const message = `Большой материал. На план нужно примерно ${estimate.plan} запросов; на подготовку${settings.coverageCheck ? ' и проверку полноты' : ''} — ещё около ${Math.max(0, estimate.min - estimate.plan)}–${Math.max(0, estimate.likelyHigh - estimate.plan)}. Всего ориентировочно ${estimate.min}–${estimate.likelyHigh} запросов, иногда больше из-за разделения тем и повторов.${unknown}\n\nБесплатные лимиты делятся между всеми пользователями. Готовые темы сохраняются, остальные можно подготовить позже. Продолжить?`;
+      const reocr = estimate.reocrPhotos
+        ? ` ${estimate.reocrPhotos} фото будут распознаны заново. Эти запросы уже учтены в оценке плана; расход на подготовку уточнится после распознавания.`
+        : '';
+      const message = `Большой материал. На план нужно примерно ${estimate.plan} запросов; на подготовку${settings.coverageCheck ? ' и проверку полноты' : ''} — ещё около ${Math.max(0, estimate.min - estimate.plan)}–${Math.max(0, estimate.likelyHigh - estimate.plan)}. Всего ориентировочно ${estimate.min}–${estimate.likelyHigh} запросов, иногда больше из-за разделения тем и повторов.${unknown}${reocr}\n\nБесплатные лимиты делятся между всеми пользователями. Готовые темы сохраняются, остальные можно подготовить позже. Продолжить?`;
       if (!confirm(T(message))) return;
     }
   }
@@ -727,15 +733,20 @@ function renderPlan() {
       else if (!stat.weak && stat.total) badges += `<span class="badge good">${fmtScore(stat.right)}/${stat.total}</span>`;
     }
     if (hasFx(t)) badges += `<span class="badge fx">∑ ${t.formulas.length}</span>`;
-    let st = '', stCls = '';
+    let st = '', stCls = '', stHint = '';
     if (t.status === 'ready') {
       const c = t.coverage || { total: 0, covered: 0 };
       const passed = c.state === 'passed' && c.checked && c.total > 0 && c.covered === c.total;
       const supplemented = c.state === 'supplemented';
       st = passed ? '✓' : supplemented ? '+' : '⚠';
       stCls = passed ? 'ok' : supplemented ? '' : 'err';
-    } else if (t.status === 'generating') st = '⏳';
-    else if (t.status === 'error') { st = '⚠'; stCls = 'err'; }
+      stHint = passed ? 'Все пункты покрыты по проверке ИИ'
+        : supplemented ? 'Пропуски дополнены, повторная проверка не проводилась'
+        : c.state === 'partial' ? 'Некоторые пункты не покрыты'
+        : c.state === 'failed' ? 'Проверка полноты не удалась'
+        : 'Полнота не проверена';
+    } else if (t.status === 'generating') { st = '⏳'; stHint = 'Тема готовится'; }
+    else if (t.status === 'error') { st = '⚠'; stCls = 'err'; stHint = 'Ошибка подготовки темы'; }
     let detail = '';
     if (openTopic === id) {
       const prereq = (t.prereq || []).map((p) => {
@@ -778,7 +789,7 @@ function renderPlan() {
         <span class="pnum">${skipped ? '–' : done ? '✓' : n}</span>
         <span class="pbody"><span class="ptitle"><span data-no-i18n>${esc(t.title)}</span>${badges}</span>
           <span class="pmeta"><span class="dots">${dots(t.difficulty || 3)}</span> · ≈${fmtDur(est)}</span></span>
-        <span data-ready="${t.status === 'ready'}" class="pstate ${stCls}">${st}</span>
+        <span data-ready="${t.status === 'ready'}" class="pstate ${stCls}" title="${esc(T(stHint))}" aria-label="${esc(T(stHint))}">${st}</span>
       </button>
       ${detail}
     </li>`;
