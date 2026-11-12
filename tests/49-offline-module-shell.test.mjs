@@ -193,8 +193,10 @@ export default async ({ ok, open }) => {
     './$' + '{name}.js' + String.fromCharCode(96) + ')';
   ok(nonLiteralDynamicImports("await import('./' + name + '.js')").length === 1 &&
     nonLiteralDynamicImports(templateExample).length === 1 &&
-    nonLiteralDynamicImports("await import('./literal.js')").length === 0,
-    'dynamic import guard rejects concatenation and templates, but accepts literals');
+    nonLiteralDynamicImports('await import(specifier)').length === 1 &&
+    nonLiteralDynamicImports("await import('./literal.js')").length === 0 &&
+    nonLiteralDynamicImports("await import( './ok.js' )").length === 0,
+    'dynamic import guard rejects concatenation, templates and identifiers but accepts literals');
 
   const entries = Object.entries(importMap);
   const mappedPaths = new Set(entries.map(([, url]) => url.replace(/^\.\//, '').split('?')[0]));
