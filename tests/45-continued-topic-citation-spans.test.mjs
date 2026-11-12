@@ -18,7 +18,7 @@ export default async ({ ok, open }) => {
     ['punctuation cluster', hostile],
     ['long sentence without punctuation', noPunctuation],
   ]) {
-    const compact = (s) => s.replace(/\\s/g, '');
+    const compact = (s) => s.replace(/\s/g, '');
     const blocks = toBlocks(original);
     ok(original.length > 1200 && compact(blocks.join('')) === compact(original),
       name + ': plan segmentation preserves every non-whitespace character');
