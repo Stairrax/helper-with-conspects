@@ -1,0 +1,28 @@
+name: Export full files v94
+on:
+  push:
+    branches:
+      - chore/export-full-v94-files-2026-11-13
+    paths:
+      - .github/workflows/export-full-v94-files.yml
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Bundle full files (not patches)
+        run: |
+          mkdir -p bundle/js bundle/tests
+          cp js/analyze.js js/app.js js/i18n-en.js bundle/js/
+          cp tests/48-estimate-fallback-and-split-limits.test.mjs bundle/tests/
+          cp index.html sw.js STATUS.md bundle/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: full-source-files-v94
+          path: bundle/
+          retention-days: 1
