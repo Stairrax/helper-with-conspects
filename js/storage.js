@@ -7,15 +7,24 @@ const LS_PROGRESS = 'kd.progress';
 
 // Keep failures visible without putting keys or user data into error messages.
 export const storageFailures = new Set();
-function storageResult(key, ok) {
-  if (ok) storageFailures.delete(key); else storageFailures.add(key);
+// Only the type of failure is retained, never user data or error messages.
+export const storageFailureReasons = new Map();
+const isQuota = (err) => err?.name === 'QuotaExceededError';
+function storageResult(key, ok, reason = 'unavailable') {
+  if (ok) {
+    storageFailures.delete(key);
+    storageFailureReasons.delete(key);
+  } else {
+    storageFailures.add(key);
+    storageFailureReasons.set(key, reason);
+  }
   window.dispatchEvent(new CustomEvent('kd-storage-state', { detail: { failed: storageFailures.size > 0 } }));
   return ok;
 }
 function writeLocal(key, value) {
   if (restoring) return storageResult(key, false);
   try { localStorage.setItem(key, JSON.stringify(value)); return storageResult(key, true); }
-  catch { return storageResult(key, false); }
+  catch (err) { return storageResult(key, false, isQuota(err) ? 'quota' : 'unavailable'); }
 }
 export function saveLectureDraft(value) { return writeLocal('kd.lectureDraft', value); }
 export function clearLectureDraft() {
@@ -228,13 +237,18 @@ async function writeIDB(key, value) {
     await tx('readwrite', (s) => s.put(value, key));
     localStorage.removeItem('kd.idb.' + key);
     return storageResult('idb:' + key, true);
-  } catch {
+  } catch (idbErr) {
     try {
       const json = JSON.stringify(value);
       if (json === undefined) throw new Error('Not JSON');
       localStorage.setItem('kd.idb.' + key, json);
       return storageResult('idb:' + key, true);
-    } catch { return storageResult('idb:' + key, false); }
+    } catch (fallbackErr) {
+      // Only call it a quota problem when both storage failures are quota errors.
+      // If IDB is unavailable, a backup may fail or omit the latest changes.
+      const reason = isQuota(idbErr) && isQuota(fallbackErr) ? 'quota' : 'unavailable';
+      return storageResult('idb:' + key, false, reason);
+    }
   }
 }
 
