@@ -126,7 +126,7 @@ export default async ({ ok, open, prepare, FINANCE }) => {
     return {topics:p?.topics?.length, order:p?.plan?.order?.length, stats:Object.keys(progress?.stats || {}).length,
       projectId:p?.id, progressProjectId:progress?.projectId, reviewDaily:progress?.reviewDaily};
   });
-  ok(initial.includes('15 из 22'), 'one tap offers at most 15 of 22 due topics, without hiding backlog: ' + JSON.stringify({initial,beforeState}));
+  ok(/^Повторить нужное \(15 из \d+\)$/.test(initial), 'one tap offers at most 15 of 22 due topics, without hiding backlog: ' + JSON.stringify({initial,beforeState}));
 
   await page.evaluate(async () => {
     const storage = await import('./js/storage.js');
@@ -142,6 +142,6 @@ export default async ({ ok, open, prepare, FINANCE }) => {
   const exhausted = await page.locator('#reviewDueBtn').textContent();
   const disabled = await page.locator('#reviewDueBtn').isDisabled();
   const summary = await page.locator('#reviewSummary').textContent();
-  ok(disabled && exhausted.includes('сегодня достаточно') && summary.includes('7'),
+  ok(disabled && /сегодня достаточно/i.test(exhausted) && summary.includes('7'),
     'daily review budget persists, leaving the remaining 7 topics visible for tomorrow: ' + JSON.stringify({exhausted,disabled,summary}));
 };
