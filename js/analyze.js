@@ -38,7 +38,9 @@ export function estimateFreeRequests(sources, coverageCheck = true) {
       // uncertain, even though OCR calls themselves are included in "plan".
       if (src.ocrRevision > 0) reocrPhotos += count;
     }
-    if (text.trim()) sections += groupBlocks(toBlocks(text), SECTION_CHARS).length;
+    // Estimate with the same section splitter used to generate note chunks.
+    // Topic boundaries chosen later by the AI may still increase the total.
+    if (text.trim()) sections += sectionSpans(text).length;
   }
   // An AI-generated topic boundary may split a 5000-character section into more sections.
   const possibleSections = Math.ceil(sections * 1.25);
