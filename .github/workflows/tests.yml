@@ -6,6 +6,22 @@ on:
   pull_request:
 
 jobs:
+  package-usage-files:
+    if: github.head_ref == 'feature/private-usage-graph-first-user-2026-11-13'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          mkdir -p review-files/server review-files/tests review-files/.github/workflows
+          cp server/{usage-stats.js,usage-page.js,worker.js,wrangler.toml,README.md} review-files/server/
+          cp tests/51-anonymous-usage.test.mjs review-files/tests/
+          cp .github/workflows/first-usage.yml review-files/.github/workflows/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: usage-first-user-source-files-fast
+          path: review-files/
+          retention-days: 7
+
   test:
     runs-on: ubuntu-24.04 # Playwright 1.56 не ставит Chromium на Ubuntu 26.04 (ubuntu-latest)
     timeout-minutes: 20
