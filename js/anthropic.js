@@ -36,11 +36,11 @@ function toContent(parts) {
 }
 
 /** effort: 'low' для быстрых ответов на вопросы, 'medium' для анализа. */
-function buildBody({ system, parts, model, temperature, effort = 'medium' }, streamMode) {
+function buildBody({ system, parts, model, temperature, effort = 'medium', maxOutputTokens }, streamMode) {
   const m = String(model || '').trim();
   const body = {
     model: m,
-    max_tokens: streamMode ? 32000 : 16000,
+    max_tokens: Number.isSafeInteger(maxOutputTokens) && maxOutputTokens > 0 ? maxOutputTokens : 8192,
     messages: [{ role: 'user', content: toContent(parts) }],
   };
   if (system) body.system = system;

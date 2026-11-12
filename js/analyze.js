@@ -22,11 +22,32 @@ async function segmentKey(text) {
   return 'sha256:' + [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 const SECTION_CHARS = 5000;   // размер секции для генерации кусков
+
+/** A rough free-tier budget, including work after the plan.
+ * Topic splitting, OCR, retries and follow-up questions may increase the actual count.
+ */
+export function estimateFreeRequests(sources, coverageCheck = true) {
+  const plan = estimatePlanRequests(sources);
+  let sections = 0, unknownPhotos = 0;
+  for (const src of sources) {
+    const text = String(src.text || '');
+    if (src.kind === 'images' && !text.trim()) unknownPhotos += src.images?.length || 0;
+    if (text.trim()) sections += groupBlocks(toBlocks(text), SECTION_CHARS).length;
+  }
+  // An AI-generated topic boundary may split a 5000-character section into more sections.
+  const possibleSections = Math.ceil(sections * 1.25);
+  const perSection = coverageCheck ? 2 : 1; // generation plus independent coverage check
+  return {
+    plan, sections, unknownPhotos,
+    min: plan + sections * perSection,
+    likelyHigh: plan + possibleSections * (perSection + (coverageCheck ? 1 : 0)),
+  };
+}
 export const CHARS_PER_SEC = 13; // скорость русской речи TTS при rate=1
 const SPOKEN_FACTOR = 1.35;   // устный текст длиннее исходного (пояснения, формулы словами)
 const AVG_CHUNK = 170;
 
-const uid = () => Math.random().toString(36).slice(2, 10);
+const uid = () => crypto.randomUUID();
 
 // ---------- Разбиение текста на блоки ----------
 
@@ -68,6 +89,81 @@ export function toBlocks(text) {
   }
   flush();
   return blocks.flatMap((b) => (b.length > 1200 ? splitSentences(b, 700) : [b]));
+}
+
+/**
+ * Split a topic into original-source spans. The AI must see the exact characters
+ * whose offsets we later save: toBlocks() normalizes whitespace, so joining its
+ * output and searching topic.text with indexOf() can silently lose citations.
+ *
+ * Works for topics assembled from multiple PART_CHARS passes, repeated phrases,
+ * long unbroken paragraphs, headings and imported CRLF/NBSP text.
+ */
+export function sectionSpans(original, maxChars = SECTION_CHARS) {
+  const source = String(original || '');
+  const lines = [];
+  const breakRe = /\r\n?|\n/g;
+  let from = 0;
+  for (const match of source.matchAll(breakRe)) {
+    lines.push({ text: source.slice(from, match.index).replace(/\u00a0/g, ' ').trimEnd(),
+      start: from, breakAt: match.index });
+    from = match.index + match[0].length;
+  }
+  lines.push({ text: source.slice(from).replace(/\u00a0/g, ' ').trimEnd(), start: from });
+
+  const blocks = [];
+  let current = [];
+  const flush = () => {
+    if (!current.length) return;
+    let joined = '', positions = [];
+    for (let i = 0; i < current.length; i++) {
+      const line = current[i];
+      if (i) { joined += '\n'; positions.push(current[i - 1].breakAt); }
+      joined += line.text;
+      for (let j = 0; j < line.text.length; j++) positions.push(line.start + j);
+    }
+    current = [];
+    const value = joined.trim();
+    if (!value) return;
+    const trim = joined.length - joined.trimStart().length;
+    positions = positions.slice(trim, trim + value.length);
+    const pieces = value.length > 1200 ? splitSentences(value, 700) : [value];
+    let cursor = 0;
+    for (const piece of pieces) {
+      const at = value.indexOf(piece, cursor); // only within a block derived from the same text
+      if (at < 0) throw new Error('Source span mapping failed');
+      blocks.push({ text: piece, start: positions[at],
+        end: positions[at + piece.length - 1] + 1 });
+      cursor = at + piece.length;
+    }
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].text;
+    if (!line.trim()) { flush(); continue; }
+    const t = line.trim();
+    const heading = HEADING_RE.test(t) && t.length < 120 ||
+      (t.length < 70 && !/[.,;:!?…]$/.test(t) && /^[A-ZА-ЯЁ0-9]/.test(t) && lines[i + 1]?.text.trim());
+    if (heading) flush();
+    current.push(lines[i]);
+    if (current.map((l) => l.text).join('\n').length > 700) flush();
+  }
+  flush();
+
+  const sections = [];
+  let group = [], len = 0;
+  const push = () => {
+    if (!group.length) return;
+    const start = group[0].start, end = group[group.length - 1].end;
+    sections.push({ start, text: source.slice(start, end) });
+    group = []; len = 0;
+  };
+  for (const block of blocks) {
+    if (group.length && len + block.text.length > maxChars) push();
+    group.push(block);
+    len += block.text.length + 2;
+  }
+  push();
+  return sections;
 }
 
 function groupBlocks(blocks, maxChars) {
@@ -582,17 +678,17 @@ function insertChunks(chunks, points, extra) {
 
 /** Генерирует куски для темы (по секциям), проверяет полноту и догенерирует пропуски. */
 export async function generateTopicChunks(topic, settings, onStatus) {
-  const sections = groupBlocks(toBlocks(topic.text), SECTION_CHARS).map((g) => g.join('\n\n'));
+  const sections = sectionSpans(topic.text);
   const allChunks = [];
   const allPoints = [];
   const recaps = [];
   const quizzes = [];
   const formulas = [];
   const fxOn = settings.formulasApart !== false;
-  let apart = false, sourceOffset = 0;
+  let apart = false;
   let splits = 0, checks = 0, checkFailed = false, supplemented = false;
   for (let si = 0; si < sections.length; si++) {
-    const text = sections[si];
+    const { text, start: sectionStart } = sections[si];
     const tag = sections.length > 1 ? ` (часть ${si + 1}/${sections.length})` : '';
     onStatus(`«${topic.title}»${tag}: готовлю куски`);
     let res;
@@ -609,7 +705,8 @@ export async function generateTopicChunks(topic, settings, onStatus) {
       let cut = text.lastIndexOf(' ', middle);
       if (cut < middle / 2) cut = middle;
       const half = [text.slice(0, cut), text.slice(cut)];
-      sections.splice(si, 1, ...half);
+      sections.splice(si, 1, { text: half[0], start: sectionStart },
+        { text: half[1], start: sectionStart + cut });
       si--;
       continue;
     }
@@ -645,10 +742,9 @@ export async function generateTopicChunks(topic, settings, onStatus) {
     }
     const off = allChunks.length;
     allChunks.push(...chunks);
-    const sectionStart = topic.text.indexOf(text, sourceOffset);
+    // sectionStart comes from the original source spans, not a normalized substring search.
     allPoints.push(...points.map((p) => ({ p: p.p, c: p.c.map((i) => i + off), citation: p.citation && sectionStart >= 0 ? { ...p.citation, start: sectionStart + p.citation.start, end: sectionStart + p.citation.end } : null })));
     for (const f of res.formulas) if (f.citation) f.citation = sectionStart < 0 ? null : { ...f.citation, start: sectionStart + f.citation.start, end: sectionStart + f.citation.end };
-    if (sectionStart >= 0) sourceOffset = sectionStart + text.length;
   }
   topic.chunks = allChunks;
   topic.points = allPoints;
@@ -658,5 +754,13 @@ export async function generateTopicChunks(topic, settings, onStatus) {
   const rest = quizzes.flatMap((q) => q.slice(1));
   topic.quiz = [...first, ...rest].slice(0, 3);
   topic.formulas = formulas;
-  topic.coverage = { total: allPoints.length, covered: allPoints.filter((p) => p.c.length).length, checked: !!settings.coverageCheck && !checkFailed && checks === sections.length && allPoints.length > 0 && !supplemented, state: !settings.coverageCheck ? 'not_checked' : checkFailed ? 'failed' : !supplemented && allPoints.length && allPoints.every(p => p.c.length) ? 'passed' : 'partial' };
+  const fullyCovered = allPoints.length > 0 && allPoints.every((p) => p.c.length);
+  topic.coverage = {
+    total: allPoints.length,
+    covered: allPoints.filter((p) => p.c.length).length,
+    // Supplemented text was not independently checked after insertion.
+    checked: !!settings.coverageCheck && !checkFailed && checks === sections.length && fullyCovered && !supplemented,
+    state: !settings.coverageCheck ? 'not_checked' : checkFailed ? 'failed'
+      : fullyCovered ? (supplemented ? 'supplemented' : 'passed') : 'partial',
+  };
 }

@@ -54,7 +54,7 @@ export default async ({ open, ok }) => {
     page.once('dialog', (d) => { msg = d.message(); d.dismiss(); });
     await page.click('#analyzeBtn');
     await page.waitForTimeout(500);
-    ok(/Конспект большой: на план уйдёт около \d+ запросов/.test(msg) && ai.segment === 0, 'большой конспект: предупреждение, и пока ничего не отправлено: ' + msg.slice(0, 60));
+    ok(/Большой материал\. На план нужно примерно \d+ запросов; на подготовку/.test(msg) && ai.segment === 0, 'большой конспект: предупреждение, и пока ничего не отправлено: ' + msg.slice(0, 60));
     page.once('dialog', (d) => d.accept());
     await page.click('#analyzeBtn');
     await page.waitForFunction(() => document.querySelectorAll('#planList li').length > 0, null, { timeout: 30000 });

@@ -2,12 +2,12 @@
 
 import {
   loadSettings, saveSettings, loadProgress, saveProgress, clearProgress, idbGet, idbSet, idbDel, loadSubjects, saveSubjects,
-  makeBackup, restoreBackup, settingsForBackup, storageFailures,
+  makeBackup, restoreBackup, settingsForBackup, storageFailures, storageFailureReasons,
 } from './storage.js';
 import { fileToSource } from './extract.js';
 import { preserveTopicIdentity } from './topic-identity.js';
 import {
-  analyze, estimatePlanRequests, generateTopicChunks, generateExtras, extractFormulas, FX_MIN, orderTopics, activeSeq, estimateTopicSec, allocateBudget, fitPause,
+  analyze, estimateFreeRequests, generateTopicChunks, generateExtras, extractFormulas, FX_MIN, orderTopics, activeSeq, estimateTopicSec, allocateBudget, fitPause,
   pauseFor, CHARS_PER_SEC,
 } from './analyze.js';
 import { listModels, conn, PROVIDERS, providerName, hasAI } from './ai.js';
@@ -17,6 +17,7 @@ import {
 import { prepare as prepareNeural, missingMB, NEURAL_VOICES, VOICE_STYLES, audioContext, isSilero, voiceLang } from './neural.js';
 import { enableMedia, disableMedia, updateMedia, mediaSupported } from './media.js';
 import { Dictation, STATE_TEXT } from './dictation.js';
+import { reviewDayKey } from './review-schedule.js';
 import { initOnboarding, onboardingDone } from './onboarding.js';
 import { setRipple } from './ripple.js';
 import { IOS, SYS } from './platform.js';
@@ -32,7 +33,7 @@ import { parseTickets, mergeTickets, prepareNextBatch, ticketSummary } from './t
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const uid = () => Math.random().toString(36).slice(2, 10);
+const uid = () => crypto.randomUUID();
 
 let settings = loadSettings();
 setUiLang(settings.uiLang);
@@ -99,8 +100,13 @@ async function flushProject() {
 const saveSources = () => idbSet('sources:' + cur(), sources);
 const persistProgress = () => { if (progress) { saveProgress(progress, cur()); syncDueSoon(); } };
 
+const STORAGE_QUOTA_WARNING = 'Не удалось сохранить изменения: место в браузере закончилось. Не закрывайте страницу. Освободите место и попробуйте сохранить снова. Если резервная копия создаётся, проверьте её: последние несохранённые изменения могут не попасть в неё.';
+const STORAGE_UNAVAILABLE_WARNING = 'Хранилище браузера не отвечает. Последние изменения могут пропасть при закрытии страницы. Не закрывайте вкладку. Резервная копия может быть неполной или не создаться — не считайте её подтверждением сохранения.';
 function showStorageState() {
-  $('storageWarning').classList.toggle('hidden', !storageFailures.size);
+  const el = $('storageWarning');
+  const unavailable = [...storageFailureReasons.values()].some((reason) => reason !== 'quota');
+  el.textContent = T(unavailable ? STORAGE_UNAVAILABLE_WARNING : STORAGE_QUOTA_WARNING);
+  el.classList.toggle('hidden', !storageFailures.size);
 }
 window.addEventListener('kd-storage-state', showStorageState);
 showStorageState();
@@ -151,6 +157,7 @@ document.querySelectorAll('.navbar button').forEach((b) => b.addEventListener('c
 // ---------- Фоновая генерация кусков ----------
 
 const AHEAD = 3;               // бесплатный режим: заранее готовим текущую тему и две следующие
+const MAX_DAILY_REVIEW_TOPICS = 15; // a manageable optional daily review plan
 const LIMIT_PAUSE = 30 * 60e3; // кончились бесплатные запросы — пробуем снова не чаще, чем раз в полчаса
 const isFreeMode = () => !!PROVIDERS[settings.provider]?.noKey;
 /** Чем сейчас подключена нейросеть: сменили провайдера или ключ — прежние лимиты к ней не относятся. */
@@ -249,7 +256,7 @@ const gen = {
 $('prepAllBtn').addEventListener('click', () => {
   if (!project) return;
   const left = activeSeq(project).filter((t) => t.status !== 'ready').length;
-  if (!confirm(T(`Подготовить сразу все темы (осталось ${left})? На каждую уйдёт один-два запроса, а бесплатных запросов в день ограниченное число — на всех. Обычно лучше готовить по мере чтения.`))) return;
+  if (!confirm(T(`Подготовить сразу все темы (осталось ${left})? Каждый фрагмент требует генерации и, если включена проверка полноты, отдельного запроса на проверку. Исправление пропусков потребует ещё запросов. Дневной бесплатный лимит общий для всех. Обычно лучше готовить темы по мере чтения.`))) return;
   project.prepAll = true;
   saveProject();
   gen.clear();
@@ -534,12 +541,16 @@ $('analyzeBtn').addEventListener('click', async () => {
   if (!sources.length) return toast('Добавьте хотя бы один конспект');
   const budgetMin = getBudget();
   if (!budgetMin) return toast('Укажите, сколько у вас времени');
-  // бесплатных запросов в день немного, а большой конспект тратит их десятками: предупреждаем заранее
+  // Show the whole free-tier workload, not just the inexpensive initial plan.
   if (isFreeMode()) {
-    const need = estimatePlanRequests(sources);
-    if (need >= 8 && !confirm(T(need >= 40
-      ? `Этот конспект очень большой: на план уйдёт около ${need} запросов к нейросети, а бесплатных запросов в день меньше. Скорее всего, за один день план не составится. Лучше добавить конспект по частям или подключить свой ключ (Настройки → Настроить заново). Всё равно продолжить?`
-      : `Конспект большой: на план уйдёт около ${need} запросов к нейросети, а бесплатных запросов в день ограниченное число — их может не хватить. Можно добавить конспект по частям или подключить свой ключ (Настройки → Настроить заново). Продолжить?`))) return;
+    const estimate = estimateFreeRequests(sources, settings.coverageCheck);
+    if (estimate.plan >= 8 || estimate.min >= 45 || estimate.unknownPhotos >= 5) {
+      const unknown = estimate.unknownPhotos
+        ? ` Фотографий без распознанного текста: ${estimate.unknownPhotos}; для них расход на подготовку пока неизвестен.`
+        : '';
+      const message = `Большой материал. На план нужно примерно ${estimate.plan} запросов; на подготовку${settings.coverageCheck ? ' и проверку полноты' : ''} — ещё около ${Math.max(0, estimate.min - estimate.plan)}–${Math.max(0, estimate.likelyHigh - estimate.plan)}. Всего ориентировочно ${estimate.min}–${estimate.likelyHigh} запросов, иногда больше из-за разделения тем и повторов.${unknown}\n\nБесплатные лимиты делятся между всеми пользователями. Готовые темы сохраняются, остальные можно подготовить позже. Продолжить?`;
+      if (!confirm(T(message))) return;
+    }
   }
   if (project && !confirm('Составить план заново? Текущий план и место, где вы остановились, будут сброшены.\n\nЧтобы продолжить диктовку, нажмите «Отмена» и откройте вкладку «Диктовка». Для другого предмета создайте новый предмет (название под заголовком).')) return;
   invalidateAnalysis();
@@ -691,8 +702,10 @@ function renderPlan() {
   $('reviewSummary').textContent = rv.studied.length
     ? `Пройдено тем: ${rv.studied.length}. ${rv.due.length ? `Пора повторить: ${rv.due.length}${rv.weak.length ? `, из них слабых: ${rv.weak.length}` : ''}.` : 'Сегодня повторять нечего.'}`
     : 'Темы появятся здесь после диктовки — с отметками, что пора повторить.';
-  $('reviewDueBtn').disabled = !rv.due.length;
-  $('reviewDueBtn').textContent = rv.due.length ? `Повторить нужное (${rv.due.length})` : 'Повторить нужное';
+  $('reviewDueBtn').disabled = !rv.today.length;
+  $('reviewDueBtn').textContent = rv.due.length
+    ? rv.today.length ? `Повторить нужное (${rv.today.length} из ${rv.due.length})` : 'На сегодня достаточно — продолжим завтра'
+    : 'Повторить нужное';
   $('reviewAllBtn').disabled = !rv.studied.length;
   $('ticketBtn').textContent = project.tickets?.length ? `Билеты (${project.tickets.length})` : 'Билеты';
 
@@ -718,7 +731,9 @@ function renderPlan() {
     if (t.status === 'ready') {
       const c = t.coverage || { total: 0, covered: 0 };
       const passed = c.state === 'passed' && c.checked && c.total > 0 && c.covered === c.total;
-      st = passed ? '✓' : '⚠'; stCls = passed ? 'ok' : 'err';
+      const supplemented = c.state === 'supplemented';
+      st = passed ? '✓' : supplemented ? '+' : '⚠';
+      stCls = passed ? 'ok' : supplemented ? '' : 'err';
     } else if (t.status === 'generating') st = '⏳';
     else if (t.status === 'error') { st = '⚠'; stCls = 'err'; }
     let detail = '';
@@ -732,7 +747,7 @@ function renderPlan() {
       let stLong = '';
       if (t.status === 'ready') {
         const c = t.coverage || { total: 0, covered: 0 };
-        stLong = `${t.chunks.length} ${plural(t.chunks.length, ['кусок', 'куска', 'кусков'])} · покрыто пунктов ${c.covered} из ${c.total}${c.checked ? '' : ' (без проверки)'}`;
+        stLong = `${t.chunks.length} ${plural(t.chunks.length, ['кусок', 'куска', 'кусков'])} · покрыто пунктов ${c.covered} из ${c.total}${c.state === 'supplemented' ? ' (пропуски дополнены, повторная проверка не проводилась)' : c.checked ? '' : ' (без полной проверки)'}`;
       } else if (t.status === 'generating') stLong = 'Готовится…';
       else if (t.status === 'error') stLong = `<span class="bad">${esc(t.error)}</span>`;
       else stLong = 'В очереди на подготовку';
@@ -869,11 +884,15 @@ function reviewSets() {
   const seq = project ? activeSeq(project) : [];
   const stats = progress?.stats || {};
   const studied = seq.filter((t) => stats[t.id]?.studiedAt && t.status === 'ready');
-  const due = studied.filter((t) => stats[t.id].weak || (stats[t.id].due && stats[t.id].due <= Date.now()))
-    .sort((a, b) => (stats[b.id].weak ? 1 : 0) - (stats[a.id].weak ? 1 : 0));
-  return { studied, due, weak: due.filter((t) => stats[t.id].weak) };
+  const completed = progress?.reviewDaily?.day === reviewDayKey() && Array.isArray(progress.reviewDaily.ids)
+    ? new Set(progress.reviewDaily.ids) : new Set();
+  const due = studied.filter((t) => !completed.has(t.id) &&
+    (stats[t.id].weak || (stats[t.id].due && stats[t.id].due <= Date.now())))
+    .sort((a, b) => (stats[b.id].weak ? 1 : 0) - (stats[a.id].weak ? 1 : 0) || (stats[a.id].due || 0) - (stats[b.id].due || 0));
+  const today = due.slice(0, Math.max(0, MAX_DAILY_REVIEW_TOPICS - completed.size));
+  return { studied, due, today, weak: due.filter((t) => stats[t.id].weak) };
 }
-$('reviewDueBtn').addEventListener('click', () => { const ids = reviewSets().due.map((t) => t.id); if (ids.length) { switchTab('dictate'); dict.startReview(ids); } });
+$('reviewDueBtn').addEventListener('click', () => { const ids = reviewSets().today.map((t) => t.id); if (ids.length) { switchTab('dictate'); dict.startReview(ids); } });
 $('reviewAllBtn').addEventListener('click', () => { const ids = reviewSets().studied.map((t) => t.id); if (ids.length) { switchTab('dictate'); dict.startReview(ids); } });
 
 // ---------- Экзамен ----------
@@ -2708,7 +2727,6 @@ async function deleteSubject() {
   const s = curSubject();
   if (!s || !confirm(`Удалить предмет «${s.title}» вместе с планом, конспектами и прогрессом?`)) return;
   invalidateAnalysis();
-  await idbGet('analysis-cache:' + s.id).catch(() => {});
   await idbDel('project:' + s.id);
   await idbDel('sources:' + s.id);
   await idbDel('analysis-cache:' + s.id);

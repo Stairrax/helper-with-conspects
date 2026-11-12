@@ -5,7 +5,7 @@
 import { generateJSON, conn } from './ai.js';
 import { norm } from './speech.js';
 
-const uid = () => Math.random().toString(36).slice(2, 10);
+const uid = () => crypto.randomUUID();
 const BATCH = 5;
 const MAX_TICKETS = 150;
 const TEXT_LIMIT = 24000; // столько текста конспекта уходит на одну пачку билетов
