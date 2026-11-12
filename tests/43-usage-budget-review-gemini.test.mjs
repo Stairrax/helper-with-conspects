@@ -67,8 +67,8 @@ export default async ({ ok, open, prepare, FINANCE }) => {
   ok(result.calls === 3 && result.coverage.state === 'supplemented' &&
     !result.coverage.checked && result.coverage.covered === result.coverage.total,
     'supplemented coverage has its own state but never claims independent verification');
-  ok(result.warning.includes('последние данные могут пропасть') &&
-    result.warning.includes('Резервная копия может не содержать'),
+  ok(result.warning.includes('последние несохранённые изменения могут не попасть') &&
+    result.warning.includes('Освободите место'),
     'storage warning explains irreversible risk to unsaved photo projects');
 
   // Exercise the actual review button with a backlog larger than the daily plan.
@@ -89,9 +89,17 @@ export default async ({ ok, open, prepare, FINANCE }) => {
     storage.saveProgress(progress,subject);
   });
   await page.reload();
-  await page.waitForTimeout(400);
+  await page.waitForFunction(() => document.querySelectorAll('#planList li').length === 22, null, {timeout:15000});
   const initial = await page.locator('#reviewDueBtn').textContent();
-  ok(initial.includes('15 из 22'), 'one tap offers at most 15 of 22 due topics, without hiding backlog');
+  const beforeState = await page.evaluate(async () => {
+    const storage = await import('./js/storage.js');
+    const subject = storage.loadSubjects().current;
+    const p = await storage.idbGet('project:' + subject);
+    const progress = storage.loadProgress(subject);
+    return {topics:p?.topics?.length, order:p?.plan?.order?.length, stats:Object.keys(progress?.stats || {}).length,
+      projectId:p?.id, progressProjectId:progress?.projectId, reviewDaily:progress?.reviewDaily};
+  });
+  ok(initial.includes('15 из 22'), 'one tap offers at most 15 of 22 due topics, without hiding backlog: ' + JSON.stringify({initial,beforeState}));
 
   await page.evaluate(async () => {
     const storage = await import('./js/storage.js');
@@ -102,10 +110,10 @@ export default async ({ ok, open, prepare, FINANCE }) => {
     storage.saveProgress(p,subject);
   });
   await page.reload();
-  await page.waitForTimeout(400);
+  await page.waitForFunction(() => document.querySelectorAll('#planList li').length === 22, null, {timeout:15000});
   const exhausted = await page.locator('#reviewDueBtn').textContent();
   const disabled = await page.locator('#reviewDueBtn').isDisabled();
   const summary = await page.locator('#reviewSummary').textContent();
   ok(disabled && exhausted.includes('Сегодня достаточно') && summary.includes('7'),
-    'daily review budget persists, leaving the remaining 7 topics visible for tomorrow');
+    'daily review budget persists, leaving the remaining 7 topics visible for tomorrow: ' + JSON.stringify({exhausted,disabled,summary}));
 };
