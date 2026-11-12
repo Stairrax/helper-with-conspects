@@ -63,10 +63,10 @@ function splitSentences(text, max) {
     if (!/[.!?…]/.test(text[i])) continue;
     let end = i + 1;
     while (end < text.length && /[.!?…]/.test(text[end])) end++;
-    while (end < text.length && /[»”"')\\]]/.test(text[end])) end++;
+    while (end < text.length && /[»”"')\]]/.test(text[end])) end++;
     // A period inside a number/word isn't a sentence boundary.
-    if (end < text.length && !/\\s/.test(text[end])) { i = end - 1; continue; }
-    while (end < text.length && /\\s/.test(text[end])) end++;
+    if (end < text.length && !/\s/.test(text[end])) { i = end - 1; continue; }
+    while (end < text.length && /\s/.test(text[end])) end++;
     sents.push(text.slice(from, end));
     from = end;
     i = end - 1;
@@ -198,12 +198,12 @@ export function sectionSpans(original, maxChars = SECTION_CHARS) {
   for (const section of sections) {
     if (section.start < coveredUntil ||
         source.slice(section.start, section.start + section.text.length) !== section.text ||
-        /\\S/.test(source.slice(coveredUntil, section.start))) {
+        /\S/.test(source.slice(coveredUntil, section.start))) {
       throw new Error('Ошибка разбиения: часть исходного текста потеряна.');
     }
     coveredUntil = section.start + section.text.length;
   }
-  if (/\\S/.test(source.slice(coveredUntil))) {
+  if (/\S/.test(source.slice(coveredUntil))) {
     throw new Error('Ошибка разбиения: часть исходного текста потеряна.');
   }
   return sections;
