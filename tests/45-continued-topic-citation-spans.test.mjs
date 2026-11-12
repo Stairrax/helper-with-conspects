@@ -45,7 +45,12 @@ export default async ({ ok, open }) => {
             return Response.json({choices:[{message:{content:''},finish_reason:'length'}]});
           }
           const quote = section.slice(0,100).trim();
-          const answer = {points:[{p:'Пункт из исходного текста',c:[0],source_quote:quote}],
+          const points = [{p:'Пункт из исходного текста',c:[0],source_quote:quote}];
+          const joinedQuote = text.slice(boundary - 38,boundary + 50);
+          if (section.includes(joinedQuote)) points.push({
+            p:'Цитата через стык частей плана',c:[0],source_quote:joinedQuote,
+          });
+          const answer = {points,
             chunks:[{t:'Орбиты зависят от гравитации.',k:'content'}],
             recap:'',quiz:[],formulas:[]};
           return Response.json({choices:[{message:{content:JSON.stringify(answer)},finish_reason:'stop'}]});
@@ -66,7 +71,7 @@ export default async ({ ok, open }) => {
   }, {text,boundary});
 
   ok(outcome.ordinary.total >= 2 && outcome.ordinary.matched === outcome.ordinary.total &&
-    outcome.ordinary.afterJoin,
+    outcome.ordinary.afterJoin && outcome.ordinary.crossed,
     'ordinary sections retain verified citations before and after a continued-topic boundary: ' +
       JSON.stringify(outcome.ordinary));
   ok(outcome.split.rejected > 0 && outcome.split.total > outcome.ordinary.total &&
