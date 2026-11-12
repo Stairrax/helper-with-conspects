@@ -17,6 +17,10 @@
 //
 // Работает в Cloudflare Workers; настройки — переменные окружения (wrangler.toml или панель Cloudflare).
 
+import { UsageStats, recordSuccessfulUsage, readUsageDays, readUsageSignal } from './usage-stats.js';
+import { USAGE_PAGE } from './usage-page.js';
+export { UsageStats };
+
 const OPENROUTER = 'https://openrouter.ai/api/v1';
 const MAX_BODY = 12 * 1024 * 1024; // фото страниц приходят картинками в base64
 const healthCounters = new Map();
@@ -384,13 +388,47 @@ async function health(req, env) {
 }
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const path = url.pathname.replace(/^\/v1(?=\/)/, '');
     const c = cors(req, env);
 
     if (req.method === 'OPTIONS') return new Response(null, { status: c.ok ? 204 : 403, headers: c.headers });
     if (path === '/' || path === '') return new Response('ok', { headers: c.headers });
+    // The public signal contains only a boolean. It never exposes counts,
+    // device identifiers, study materials or the owner-only dashboard data.
+    if (req.method === 'GET' && path === '/usage-signal') {
+      const data = await readUsageSignal(env).catch(() => null);
+      return json(200, { enabled: !!data, observed: !!data?.observed },
+        { 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' });
+    }
+    if (req.method === 'GET' && path === '/usage') {
+      return new Response(USAGE_PAGE, { headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'Referrer-Policy': 'no-referrer',
+        'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'",
+      } });
+    }
+    if (req.method === 'GET' && path === '/usage/data') {
+      const secret = String(env.USAGE_ADMIN_TOKEN || '');
+      const supplied = req.headers.get('Authorization') || '';
+      const expected = 'Bearer ' + secret;
+      // Constant-time comparison of digests: never put the owner token in URLs.
+      const sha = async (value) => new Uint8Array(await crypto.subtle.digest(
+        'SHA-256', new TextEncoder().encode(value),
+      ));
+      const [a, b] = await Promise.all([sha(supplied), sha(expected)]);
+      let difference = 0;
+      for (let i = 0; i < a.length; i++) difference |= a[i] ^ b[i];
+      if (!secret || difference !== 0) return json(401, { error: 'Owner token required' },
+        { 'Cache-Control': 'no-store' });
+      const data = await readUsageDays(env).catch(() => null);
+      return json(data ? 200 : 503, data || { error: 'Usage storage unavailable' },
+        { 'Cache-Control': 'no-store' });
+    }
     // /health — для владельца: что сервер видит из того места, куда обратились (можно открыть в браузере на телефоне)
     if (req.method === 'GET' && path === '/health') return health(req, env);
     if (!c.ok) return fail(403, 'origin', 'Этот сервер работает только для приложения «Помощник по учёбе».', c.headers);
@@ -472,15 +510,28 @@ export default {
       }
       return response;
     };
+    // This counts successful HTTP responses only, not proof that a human
+    // completed a note. Deployment probes use kd-deploy-check and are excluded.
+    const track = async (response) => {
+      const origin = req.headers.get('Origin') || '';
+      if (response?.ok && c.ok && origin.startsWith('https://') &&
+          /^kd-[0-9a-f]{24}$/.test(device) && env.USAGE_STATS) {
+        const write = recordSuccessfulUsage(env, device, purpose)
+          .catch((e) => console.warn('Anonymous usage update failed', e));
+        if (ctx?.waitUntil) ctx.waitUntil(write);
+        else await write;
+      }
+      return response;
+    };
     const maxTokens = +opt(env, 'MAX_TOKENS', 16000);
     // Вопросы сначала отправляем в Cloudflare. Для изображений viaAI возвращает null.
     const backup = () => viaAI(env, body, Math.min(+body.max_tokens || maxTokens, maxTokens), c.headers);
     if (body.kd_purpose === 'question') {
       const answer = await backup();
-      if (answer) return answer;
+      if (answer) return track(answer);
     }
 
-    if (!env.OPENROUTER_KEY) return (await backup()) || failedBeforeAnswer(fail(503, 'unavailable', DOWN_TEXT, c.headers));
+    if (!env.OPENROUTER_KEY) return track((await backup()) || await failedBeforeAnswer(fail(503, 'unavailable', DOWN_TEXT, c.headers)));
 
     let list;
     try { list = await models(env); } catch { list = []; }
@@ -488,7 +539,7 @@ export default {
     if (isOpenRouter(env)) list = list.filter((id) => id.endsWith(':free'));
     const paid = body.kd_purpose === 'notes' && await paidKeyReady(env);
     if (paid) list = ['google/gemini-2.5-flash-lite', ...list].slice(0, 3);
-    if (!list.length) return (await backup()) || failedBeforeAnswer(fail(503, 'unavailable', DOWN_TEXT, c.headers, modelsError || 'models-empty'));
+    if (!list.length) return track((await backup()) || await failedBeforeAnswer(fail(503, 'unavailable', DOWN_TEXT, c.headers, modelsError || 'models-empty')));
     const out = {
       model: list[0],
       messages: body.messages,
@@ -509,27 +560,27 @@ export default {
     try {
       up = await fetch(upstream(env) + '/chat/completions', { method: 'POST', headers, body: JSON.stringify(out) });
     } catch {
-      return (await backup()) || fail(502, 'upstream', 'Сервер нейросети не отвечает. Попробуйте ещё раз.', c.headers, 'upstream-unreachable');
+      return track((await backup()) || fail(502, 'upstream', 'Сервер нейросети не отвечает. Попробуйте ещё раз.', c.headers, 'upstream-unreachable'));
     }
     // кончились деньги или лимит на ключе, ключ отозван — это забота владельца сервера, а не пользователя
-    if ([401, 402, 403].includes(up.status)) return (await backup()) || failedBeforeAnswer(fail(503, 'unavailable', DOWN_TEXT, c.headers, 'upstream-' + up.status));
+    if ([401, 402, 403].includes(up.status)) return track((await backup()) || await failedBeforeAnswer(fail(503, 'unavailable', DOWN_TEXT, c.headers, 'upstream-' + up.status)));
     // у бесплатных моделей дневной лимит на весь ключ — когда он кончился, повторять бессмысленно
     if (up.status === 429) {
       const text = await up.text();
-      if (/per-day|daily/i.test(text)) return (await backup()) || failedBeforeAnswer(fail(429, 'daily_limit', LIMIT_TEXT, c.headers));
+      if (/per-day|daily/i.test(text)) return track((await backup()) || await failedBeforeAnswer(fail(429, 'daily_limit', LIMIT_TEXT, c.headers)));
       return failedBeforeAnswer(new Response(text, { status: 429, headers: { ...c.headers, 'Content-Type': 'application/json', 'Retry-After': up.headers.get('Retry-After') || '20' } }));
     }
     // сбой на стороне нейросети — пробуем запасную
-    if (up.status >= 500) { const alt = await backup(); if (alt) return alt; }
+    if (up.status >= 500) { const alt = await backup(); if (alt) return track(alt); }
     // Explicitly rejected upstream requests free the logical request and its quota.
     // A successful response remains reserved, including while a stream is in flight.
     if (up.status >= 400) {
       await failedBeforeAnswer(null);
     }
     // ответ (и потоковый тоже) отдаём как есть
-    return new Response(up.body, {
+    return track(new Response(up.body, {
       status: up.status,
       headers: { ...c.headers, 'Content-Type': up.headers.get('Content-Type') || 'application/json', 'Cache-Control': 'no-store' },
-    });
+    }));
   },
 };

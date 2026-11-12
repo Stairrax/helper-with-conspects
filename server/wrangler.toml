@@ -26,6 +26,15 @@ class_name = "RequestLimits"
 tag = "v1"
 new_sqlite_classes = ["RequestLimits"]
 
+# Separate analytics namespace: the existing quota counters stay unchanged.
+[[durable_objects.bindings]]
+name = "USAGE_STATS"
+class_name = "UsageStats"
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["UsageStats"]
+
 [vars]
 # сайт приложения; несколько — через запятую
 ALLOWED_ORIGINS = "https://stairrax.github.io"

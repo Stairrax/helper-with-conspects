@@ -1,0 +1,62 @@
+# Only the first accepted non-test AI use triggers an alert.
+# The public endpoint discloses one boolean; content/IP/device details never leave Cloudflare.
+name: Первое использование Диктора
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: first-real-use-alert
+  cancel-in-progress: false
+
+jobs:
+  first-use:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Проверить анонимный сигнал
+        id: signal
+        shell: bash
+        run: |
+          # Fail closed: unavailable endpoint, disabled stats, malformed JSON
+          # or no usage -> no announcement.
+          data=$(curl -fsS --retry 2 --max-time 20 'https://konspekt-free.dimonperetyatko228.workers.dev/usage-signal') || exit 0
+          if printf '%s' "$data" | jq -e '.enabled == true and .observed == true' >/dev/null; then
+            echo 'observed=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Сообщить владельцу только один раз
+        if: steps.signal.outputs.observed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- konspekt-first-usage-alert-v1 -->';
+            const {owner, repo} = context.repo;
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'all', per_page: 100
+            });
+            if (issues.some(issue => issue.body?.includes(marker))) return;
+            await github.rest.issues.create({
+              owner, repo,
+              title: '🎉 Первое использование ИИ в Дикторе конспектов!',
+              body: [
+                marker,
+                '@Stairrax, поздравляю! Сервер впервые зарегистрировал',
+                'успешный ответ ИИ (HTTP 2xx) на запрос с сайта приложения,',
+                'отличающийся от тестов публикации и localhost.',
+                '',
+                'Это первый технически подтверждённый признак использования',
+                'после включения анонимной статистики. По одному запросу',
+                'нельзя доказать, что это был новый человек, а не бот.',
+                '',
+                'Посмотреть график владельца: ',
+                'https://konspekt-free.dimonperetyatko228.workers.dev/usage',
+                '',
+                'Никакие конспекты, IP-адреса или ID устройств здесь не публикуются.'
+              ].join('\n')
+            });
