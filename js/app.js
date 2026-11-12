@@ -32,7 +32,7 @@ import { parseTickets, mergeTickets, prepareNextBatch, ticketSummary } from './t
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const uid = () => Math.random().toString(36).slice(2, 10);
+const uid = () => crypto.randomUUID();
 
 let settings = loadSettings();
 setUiLang(settings.uiLang);
@@ -2708,7 +2708,6 @@ async function deleteSubject() {
   const s = curSubject();
   if (!s || !confirm(`Удалить предмет «${s.title}» вместе с планом, конспектами и прогрессом?`)) return;
   invalidateAnalysis();
-  await idbGet('analysis-cache:' + s.id).catch(() => {});
   await idbDel('project:' + s.id);
   await idbDel('sources:' + s.id);
   await idbDel('analysis-cache:' + s.id);
