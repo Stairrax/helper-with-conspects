@@ -51,6 +51,32 @@ export function estimateFreeRequests(sources, coverageCheck = true) {
     likelyHigh: plan + possibleSections * (perSection + (coverageCheck ? 1 : 0)),
   };
 }
+/** A failed preflight must not prevent the user from starting plan creation. */
+export function tryEstimateFreeRequests(sources, coverageCheck = true, estimate = estimateFreeRequests) {
+  try { return estimate(sources, coverageCheck); }
+  catch { return null; }
+}
+
+/** Recalculate *preparation* calls after AI has chosen the actual topic boundaries.
+ * This excludes OCR and the already completed plan. It remains approximate:
+ * long outputs, re-tries and missing-point supplements add extra calls.
+ */
+export function estimateTopicPreparation(project, coverageCheck = true) {
+  let sections = 0;
+  const skipped = project?.plan?.skipped || {};
+  for (const topic of project?.topics || []) {
+    if (skipped[topic.id] || !String(topic.text || '').trim()) continue;
+    sections += sectionSpans(topic.text).length;
+  }
+  const perSection = coverageCheck ? 2 : 1;
+  return {
+    sections,
+    min: sections * perSection,
+    likelyHigh: Math.ceil(sections * 1.25) * (perSection + (coverageCheck ? 1 : 0)),
+    coverageCheck: !!coverageCheck,
+  };
+}
+
 export const CHARS_PER_SEC = 13; // скорость русской речи TTS при rate=1
 const SPOKEN_FACTOR = 1.35;   // устный текст длиннее исходного (пояснения, формулы словами)
 const AVG_CHUNK = 170;
