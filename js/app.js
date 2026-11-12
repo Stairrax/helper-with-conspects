@@ -7,7 +7,7 @@ import {
 import { fileToSource } from './extract.js';
 import { preserveTopicIdentity } from './topic-identity.js';
 import {
-  analyze, estimatePlanRequests, generateTopicChunks, generateExtras, extractFormulas, FX_MIN, orderTopics, activeSeq, estimateTopicSec, allocateBudget, fitPause,
+  analyze, estimateFreeRequests, generateTopicChunks, generateExtras, extractFormulas, FX_MIN, orderTopics, activeSeq, estimateTopicSec, allocateBudget, fitPause,
   pauseFor, CHARS_PER_SEC,
 } from './analyze.js';
 import { listModels, conn, PROVIDERS, providerName, hasAI } from './ai.js';
@@ -251,7 +251,7 @@ const gen = {
 $('prepAllBtn').addEventListener('click', () => {
   if (!project) return;
   const left = activeSeq(project).filter((t) => t.status !== 'ready').length;
-  if (!confirm(T(`Подготовить сразу все темы (осталось ${left})? На каждую уйдёт один-два запроса, а бесплатных запросов в день ограниченное число — на всех. Обычно лучше готовить по мере чтения.`))) return;
+  if (!confirm(T(`Подготовить сразу все темы (осталось ${left})? Каждый фрагмент требует генерации и, если включена проверка полноты, отдельного запроса на проверку. Исправление пропусков потребует ещё запросов. Дневной бесплатный лимит общий для всех. Обычно лучше готовить темы по мере чтения.`))) return;
   project.prepAll = true;
   saveProject();
   gen.clear();
@@ -536,12 +536,16 @@ $('analyzeBtn').addEventListener('click', async () => {
   if (!sources.length) return toast('Добавьте хотя бы один конспект');
   const budgetMin = getBudget();
   if (!budgetMin) return toast('Укажите, сколько у вас времени');
-  // бесплатных запросов в день немного, а большой конспект тратит их десятками: предупреждаем заранее
+  // Show the whole free-tier workload, not just the inexpensive initial plan.
   if (isFreeMode()) {
-    const need = estimatePlanRequests(sources);
-    if (need >= 8 && !confirm(T(need >= 40
-      ? `Этот конспект очень большой: на план уйдёт около ${need} запросов к нейросети, а бесплатных запросов в день меньше. Скорее всего, за один день план не составится. Лучше добавить конспект по частям или подключить свой ключ (Настройки → Настроить заново). Всё равно продолжить?`
-      : `Конспект большой: на план уйдёт около ${need} запросов к нейросети, а бесплатных запросов в день ограниченное число — их может не хватить. Можно добавить конспект по частям или подключить свой ключ (Настройки → Настроить заново). Продолжить?`))) return;
+    const estimate = estimateFreeRequests(sources, settings.coverageCheck);
+    if (estimate.plan >= 8 || estimate.min >= 45 || estimate.unknownPhotos >= 5) {
+      const unknown = estimate.unknownPhotos
+        ? ` Фотографий без распознанного текста: ${estimate.unknownPhotos}; для них расход на подготовку пока неизвестен.`
+        : '';
+      const message = `Большой материал. На план нужно примерно ${estimate.plan} запросов; на подготовку${settings.coverageCheck ? ' и проверку полноты' : ''} — ещё около ${Math.max(0, estimate.min - estimate.plan)}–${Math.max(0, estimate.likelyHigh - estimate.plan)}. Всего ориентировочно ${estimate.min}–${estimate.likelyHigh} запросов, иногда больше из-за разделения тем и повторов.${unknown}\n\nБесплатные лимиты делятся между всеми пользователями. Готовые темы сохраняются, остальные можно подготовить позже. Продолжить?`;
+      if (!confirm(T(message))) return;
+    }
   }
   if (project && !confirm('Составить план заново? Текущий план и место, где вы остановились, будут сброшены.\n\nЧтобы продолжить диктовку, нажмите «Отмена» и откройте вкладку «Диктовка». Для другого предмета создайте новый предмет (название под заголовком).')) return;
   invalidateAnalysis();
@@ -722,7 +726,9 @@ function renderPlan() {
     if (t.status === 'ready') {
       const c = t.coverage || { total: 0, covered: 0 };
       const passed = c.state === 'passed' && c.checked && c.total > 0 && c.covered === c.total;
-      st = passed ? '✓' : '⚠'; stCls = passed ? 'ok' : 'err';
+      const supplemented = c.state === 'supplemented';
+      st = passed ? '✓' : supplemented ? '+' : '⚠';
+      stCls = passed ? 'ok' : supplemented ? '' : 'err';
     } else if (t.status === 'generating') st = '⏳';
     else if (t.status === 'error') { st = '⚠'; stCls = 'err'; }
     let detail = '';
@@ -736,7 +742,7 @@ function renderPlan() {
       let stLong = '';
       if (t.status === 'ready') {
         const c = t.coverage || { total: 0, covered: 0 };
-        stLong = `${t.chunks.length} ${plural(t.chunks.length, ['кусок', 'куска', 'кусков'])} · покрыто пунктов ${c.covered} из ${c.total}${c.checked ? '' : ' (без проверки)'}`;
+        stLong = `${t.chunks.length} ${plural(t.chunks.length, ['кусок', 'куска', 'кусков'])} · покрыто пунктов ${c.covered} из ${c.total}${c.state === 'supplemented' ? ' (пропуски дополнены, повторная проверка не проводилась)' : c.checked ? '' : ' (без полной проверки)'}`;
       } else if (t.status === 'generating') stLong = 'Готовится…';
       else if (t.status === 'error') stLong = `<span class="bad">${esc(t.error)}</span>`;
       else stLong = 'В очереди на подготовку';
