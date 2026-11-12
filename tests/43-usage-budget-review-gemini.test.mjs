@@ -73,6 +73,30 @@ export default async ({ ok, open, prepare, FINANCE }) => {
 
   // Exercise the actual review button with a backlog larger than the daily plan.
   await prepare(page, FINANCE, 'Повторения');
+  // App pagehide handlers save their own in-memory progress on reload. Reapply
+  // our test fixture after pagehide and before the new app reads localStorage.
+  await page.addInitScript(() => {
+    const phase = sessionStorage.getItem('__audit_review_phase');
+    if (!phase) return;
+    sessionStorage.removeItem('__audit_review_phase');
+    const subject = JSON.parse(localStorage.getItem('kd.subjects') || 'null')?.current;
+    if (!subject) return;
+    const key = 'kd.progress:' + subject;
+    const progress = JSON.parse(localStorage.getItem(key) || 'null');
+    if (!progress) return;
+    if (phase === 'stats') {
+      progress.stats = Object.fromEntries(Array.from({length:22}, (_, i) =>
+        ['due-topic-'+i, {total:3,right:2,asked:0,studiedAt:Date.now()-86400000,
+          due:Date.now()-1000,weak:false}]));
+    } else if (phase === 'daily') {
+      // Use exactly the same local calendar-date format as reviewDayKey.
+      const d = new Date();
+      const day = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') +
+        '-' + String(d.getDate()).padStart(2,'0');
+      progress.reviewDaily = {day,ids:Array.from({length:15},(_,i)=>'due-topic-'+i)};
+    }
+    localStorage.setItem(key, JSON.stringify(progress));
+  });
   await page.evaluate(async () => {
     const storage = await import('./js/storage.js');
     const subject = storage.loadSubjects().current;
@@ -87,6 +111,7 @@ export default async ({ ok, open, prepare, FINANCE }) => {
     progress.stats = Object.fromEntries(p.topics.map(t=>[t.id,
       {total:3,right:2,asked:0,studiedAt:Date.now()-86400000,due:Date.now()-1000,weak:false}]));
     storage.saveProgress(progress,subject);
+    sessionStorage.setItem('__audit_review_phase', 'stats');
   });
   await page.reload();
   await page.waitForFunction(() => document.querySelectorAll('#planList li').length === 22, null, {timeout:15000});
@@ -108,6 +133,7 @@ export default async ({ ok, open, prepare, FINANCE }) => {
     const p = storage.loadProgress(subject);
     p.reviewDaily = {day:reviewDayKey(),ids:Array.from({length:15},(_,i)=>'due-topic-'+i)};
     storage.saveProgress(p,subject);
+    sessionStorage.setItem('__audit_review_phase', 'daily');
   });
   await page.reload();
   await page.waitForFunction(() => document.querySelectorAll('#planList li').length === 22, null, {timeout:15000});
