@@ -13,6 +13,9 @@ export const EXACT = {
   'Источник не подтверждён — сверьте с оригиналом': 'Source not verified — compare with the original',
   'Ответ проверки неполный': 'The verification response is incomplete',
   'Распознать заново': 'Recognise again',
+  'Не удалось оценить расход бесплатных запросов. Подготовка может потребовать много запросов, лимит может закончиться. Продолжить составление плана?': 'Could not estimate free AI requests. Preparing the notes may require many requests and the daily quota may run out. Continue creating the plan?',
+  'Расход запросов на подготовку после составления плана уточнить не удалось.': 'Could not refine the preparation request estimate after creating the plan.',
+  'Не удалось уточнить расход запросов после составления плана.': 'Could not refine the request estimate after creating the plan.',
   'Все пункты покрыты по проверке ИИ': 'All points covered according to the AI check',
   'Пропуски дополнены, повторная проверка не проводилась': 'Missing points supplemented; not independently rechecked',
   'Некоторые пункты не покрыты': 'Some points remain uncovered',
@@ -430,6 +433,7 @@ export const EXACT = {
 const VOICE_NAME = (m) => `${VOICE[m[1]] || m[1]} (${m[2] === 'мужской' ? 'male' : 'female'}${m[3] ? ', lively' : ''}${m[4] ? ', English' : ''})`;
 
 export const PATTERNS = [
+  [/^После разделения на темы: подготовка всех тем потребует ориентировочно (\d+)–(\d+) запросов \(без уже потраченных на план и OCR\)\. Темы готовятся постепенно; дневной лимит общий\.$/, 'After splitting into topics: preparing all topics will take roughly $1–$2 requests (excluding those already used for the plan and OCR). Topics are prepared gradually; the daily quota is shared.'],
   [/^(\d+) фото будут распознаны заново$/, '$1 photos will be recognised again'],
   [/^(\d+) ч (\d+) мин$/, '$1 h $2 min'],
   [/^≈(.+) звука\.(?: (.+))?$/, (m, tr) => `≈${tr(m[1])} of audio.${m[2] ? ' ' + tr(m[2]) : ''}`],
