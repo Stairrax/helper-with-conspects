@@ -140,6 +140,6 @@ export default async ({ ok, open, prepare, FINANCE }) => {
   const exhausted = await page.locator('#reviewDueBtn').textContent();
   const disabled = await page.locator('#reviewDueBtn').isDisabled();
   const summary = await page.locator('#reviewSummary').textContent();
-  ok(disabled && exhausted.includes('Сегодня достаточно') && summary.includes('7'),
+  ok(disabled && exhausted.includes('сегодня достаточно') && summary.includes('7'),
     'daily review budget persists, leaving the remaining 7 topics visible for tomorrow: ' + JSON.stringify({exhausted,disabled,summary}));
 };
