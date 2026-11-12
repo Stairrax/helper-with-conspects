@@ -2,7 +2,7 @@
 
 import {
   loadSettings, saveSettings, loadProgress, saveProgress, clearProgress, idbGet, idbSet, idbDel, loadSubjects, saveSubjects,
-  makeBackup, restoreBackup, settingsForBackup, storageFailures,
+  makeBackup, restoreBackup, settingsForBackup, storageFailures, storageFailureReasons,
 } from './storage.js';
 import { fileToSource } from './extract.js';
 import { preserveTopicIdentity } from './topic-identity.js';
@@ -100,8 +100,13 @@ async function flushProject() {
 const saveSources = () => idbSet('sources:' + cur(), sources);
 const persistProgress = () => { if (progress) { saveProgress(progress, cur()); syncDueSoon(); } };
 
+const STORAGE_QUOTA_WARNING = 'Не удалось сохранить изменения: место в браузере закончилось. Не закрывайте страницу. Освободите место и попробуйте сохранить снова. Если резервная копия создаётся, проверьте её: последние несохранённые изменения могут не попасть в неё.';
+const STORAGE_UNAVAILABLE_WARNING = 'Хранилище браузера не отвечает. Последние изменения могут пропасть при закрытии страницы. Не закрывайте вкладку. Резервная копия может быть неполной или не создаться — не считайте её подтверждением сохранения.';
 function showStorageState() {
-  $('storageWarning').classList.toggle('hidden', !storageFailures.size);
+  const el = $('storageWarning');
+  const unavailable = [...storageFailureReasons.values()].some((reason) => reason !== 'quota');
+  el.textContent = T(unavailable ? STORAGE_UNAVAILABLE_WARNING : STORAGE_QUOTA_WARNING);
+  el.classList.toggle('hidden', !storageFailures.size);
 }
 window.addEventListener('kd-storage-state', showStorageState);
 showStorageState();
