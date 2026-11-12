@@ -3,9 +3,50 @@
 // for the first offline launch of an installed PWA.
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+/** Parse the literal SHELL array without letting a comment containing '];'
+ * or a nested bracket terminate the scan. Reject non-string array elements.
+ */
+function shellEntries(code) {
+  const match = /\bconst\s+SHELL\s*=\s*\[/.exec(code);
+  if (!match) throw new Error('SHELL declaration not found');
+  const start = match.index + match[0].lastIndexOf('[');
+  let depth = 0, quote = null, comment = null, escaped = false;
+  for (let i = start; i < code.length; i++) {
+    const ch = code[i], next = code[i + 1];
+    if (comment === 'line') {
+      if (ch === '\n') comment = null;
+      continue;
+    }
+    if (comment === 'block') {
+      if (ch === '*' && next === '/') { comment = null; i++; }
+      continue;
+    }
+    if (quote) {
+      if (escaped) { escaped = false; continue; }
+      if (ch === '\\') { escaped = true; continue; }
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '/' && next === '/') { comment = 'line'; i++; continue; }
+    if (ch === '/' && next === '*') { comment = 'block'; i++; continue; }
+    if (ch === "'" || ch === '"' || ch === '`') { quote = ch; continue; }
+    if (ch === '[') depth++;
+    if (ch === ']' && --depth === 0) {
+      // The source is our own service-worker manifest, not outside input.
+      const values = vm.runInNewContext(code.slice(start, i + 1), {}, {timeout:1000});
+      if (!Array.isArray(values) || !values.every((v) => typeof v === 'string')) {
+        throw new Error('SHELL must be a flat list of literal path strings');
+      }
+      return [...values];
+    }
+  }
+  throw new Error('Unterminated SHELL array');
+}
 
 const moduleRefs = (code) => {
   const refs = new Set();
@@ -37,16 +78,29 @@ function missingFromShell(modules, shell) {
 export default async ({ ok, open }) => {
   const sw = await fs.readFile(path.join(ROOT, 'sw.js'), 'utf8');
   const html = await fs.readFile(path.join(ROOT, 'index.html'), 'utf8');
-  const shellSection = sw.match(/\bconst\s+SHELL\s*=\s*\[([\s\S]*?)\];/);
-  const shell = new Set([...((shellSection?.[1] || '').matchAll(/['"]([^'"]+)['"]/g))]
-    .map((m) => m[1]));
-  ok(Boolean(shellSection) && shell.has('index.html') && shell.has('js/app.js'),
-    'service worker has an install-time SHELL with the offline HTML and entry module');
+  const shellList = shellEntries(sw);
+  const shell = new Set(shellList);
+  ok(shellList.length === shell.size && shell.has('index.html') && shell.has('js/app.js'),
+    'service worker has an unambiguous, duplicate-free offline SHELL');
+  const withMisleadingComment = sw.replace("'./',", "'./',\n  /* ]; nested [ignored] */");
+  ok(shellEntries(withMisleadingComment).length === shellList.length,
+    'SHELL parser ignores brackets and closing delimiters inside comments');
 
   const jsDir = path.join(ROOT, 'js');
   const names = (await fs.readdir(jsDir)).filter((name) => name.endsWith('.js'));
   const modules = new Map(await Promise.all(names.map(async (name) =>
     ['js/' + name, await fs.readFile(path.join(jsDir, name), 'utf8')])));
+  const totalRefs = [...modules.values()].reduce((n, code) => n + moduleRefs(code).length, 0);
+  ok(totalRefs > 20, 'graph guard actually parses imports: ' + totalRefs);
+  const sample = [
+    "import {x} from './static.js';",
+    "export {x} from '../re-export.js';",
+    "import './side-effect.js';",
+    "await import('./dynamic.js');",
+  ].map((code) => moduleRefs(code)[0]);
+  ok(JSON.stringify(sample) === JSON.stringify([
+    './static.js', '../re-export.js', './side-effect.js', './dynamic.js',
+  ]), 'import parser recognizes imports, re-exports and literal dynamic imports');
   const missing = missingFromShell(modules, shell);
   ok(missing.length === 0 && names.every((n) => shell.has('js/' + n)),
     'all relative JS imports and all app JS modules are pre-cached: ' + missing.join('; '));
@@ -65,11 +119,31 @@ export default async ({ ok, open }) => {
   const importMap = importMapMatch ? JSON.parse(importMapMatch[1]).imports : {};
   const version = sw.match(/const VERSION\s*=\s*['"]kd-v(\d+)['"]/);
   const entry = html.match(/<script\s+type="module"\s+src="js\/app\.js\?v=(\d+)"/);
-  const mapped = Object.values(importMap);
-  ok(Boolean(version) && version[1] === entry?.[1] &&
-    mapped.length >= 20 && mapped.every((url) =>
-      url.endsWith('?v=' + version[1]) && shell.has(url.slice(2).split('?')[0])),
-  'import map, entry module and service worker cache version stay synchronized');
+  const esModules = new Set(names.map((n) => 'js/' + n)
+    // Dedicated worker scripts are cached offline, but are not imported via
+    // the document's import map.
+    .filter((p) => !new Set(['js/neural-worker.js', 'js/silero-core.js']).has(p)));
+  const entries = Object.entries(importMap);
+  const mappedPaths = new Set(entries.map(([, url]) => url.replace(/^\.\//, '').split('?')[0]));
+  const notMapped = [...esModules].filter((p) => !mappedPaths.has(p));
+  const extraMapped = [...mappedPaths].filter((p) => !esModules.has(p));
+  const malformed = entries.filter(([key, url]) => {
+    const relative = key.replace(/^\.\//, '');
+    return !key.startsWith('./js/') ||
+      url !== './' + relative + '?v=' + version?.[1] ||
+      !modules.has(relative) || !shell.has(relative);
+  });
+  ok(notMapped.length === 0 && extraMapped.length === 0 &&
+    mappedPaths.size === entries.length && malformed.length === 0,
+    'import map exactly pins all document ES modules: missing ' + notMapped.join(', ') +
+      '; extra ' + extraMapped.join(', ') + '; malformed ' + malformed.map((p) => p[0]).join(', '));
+  ok(Boolean(version) && version[1] === entry?.[1],
+    'service worker cache and entry-module versions are synchronized');
+  // A missing import-map entry for an ordinary ES dependency is not allowed.
+  const simulatedMap = new Set(mappedPaths);
+  simulatedMap.delete('js/request.js');
+  ok([...esModules].some((p) => !simulatedMap.has(p)),
+    'import-map guard fails if a required module such as request.js is removed');
 
   // Structural checks alone do not establish actual offline bootability.
   // Prove that a first install while online can start with the network disabled
