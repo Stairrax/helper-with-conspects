@@ -54,19 +54,47 @@ const uid = () => crypto.randomUUID();
 const HEADING_RE = /^\s*(#{1,6}\s|(\d+(\.\d+)*[.)]\s)|([IVXLC]+\.\s)|(§)|(тема|глава|раздел|лекция|параграф|часть|вопрос|билет)\b)/i;
 
 function splitSentences(text, max) {
-  const sents = text.match(/[^.!?…]+[.!?…]+[»")\]]*\s*|[^.!?…]+$/g) || [text];
+  // Scan without skipping characters. A global regexp may skip unmatched
+  // punctuation (especially around closing quotes and ellipses), silently
+  // removing the remainder of a long paragraph from the notes.
+  const sents = [];
+  let from = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (!/[.!?…]/.test(text[i])) continue;
+    let end = i + 1;
+    while (end < text.length && /[.!?…]/.test(text[end])) end++;
+    while (end < text.length && /[»”"')\]]/.test(text[end])) end++;
+    // A period inside a number/word isn't a sentence boundary.
+    if (end < text.length && !/\s/.test(text[end])) { i = end - 1; continue; }
+    while (end < text.length && /\s/.test(text[end])) end++;
+    sents.push(text.slice(from, end));
+    from = end;
+    i = end - 1;
+  }
+  if (from < text.length) sents.push(text.slice(from));
+
   const out = [];
   let cur = '';
-  for (const s of sents) {
-    if (cur && cur.length + s.length > max) { out.push(cur.trim()); cur = ''; }
-    cur += s;
+  for (const sentence of sents) {
+    if (cur && cur.length + sentence.length > max) { out.push(cur); cur = ''; }
+    cur += sentence;
   }
-  if (cur.trim()) out.push(cur.trim());
-  // предложения длиннее max режем по пробелам
-  return out.flatMap((b) => {
-    if (b.length <= max * 1.6) return [b];
+  if (cur) out.push(cur);
+  // Very long sentences have no convenient boundary. Split them without
+  // trimming: every character must belong to exactly one resulting block.
+  return out.flatMap((block) => {
+    if (block.length <= max * 1.6) return [block];
     const parts = [];
-    for (let i = 0; i < b.length; i += max) parts.push(b.slice(i, i + max));
+    for (let at = 0; at < block.length;) {
+      const target = Math.min(block.length, at + max);
+      let cut = target;
+      if (target < block.length) {
+        const space = block.lastIndexOf(' ', target);
+        if (space > at + max / 2) cut = space + 1;
+      }
+      parts.push(block.slice(at, cut));
+      at = cut;
+    }
     return parts;
   });
 }
@@ -163,6 +191,21 @@ export function sectionSpans(original, maxChars = SECTION_CHARS) {
     len += block.text.length + 2;
   }
   push();
+  // Non-whitespace source text must be present in exactly one saved section.
+  // Valid gaps between sections contain only whitespace (e.g. blank lines).
+  // Never silently emit an incomplete plan because a future splitter regressed.
+  let coveredUntil = 0;
+  for (const section of sections) {
+    if (section.start < coveredUntil ||
+        source.slice(section.start, section.start + section.text.length) !== section.text ||
+        /\S/.test(source.slice(coveredUntil, section.start))) {
+      throw new Error('Ошибка разбиения: часть исходного текста потеряна.');
+    }
+    coveredUntil = section.start + section.text.length;
+  }
+  if (/\S/.test(source.slice(coveredUntil))) {
+    throw new Error('Ошибка разбиения: часть исходного текста потеряна.');
+  }
   return sections;
 }
 
