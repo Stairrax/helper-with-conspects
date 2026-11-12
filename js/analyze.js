@@ -28,17 +28,23 @@ const SECTION_CHARS = 5000;   // размер секции для генерац
  */
 export function estimateFreeRequests(sources, coverageCheck = true) {
   const plan = estimatePlanRequests(sources);
-  let sections = 0, unknownPhotos = 0;
+  let sections = 0, unknownPhotos = 0, reocrPhotos = 0;
   for (const src of sources) {
     const text = String(src.text || '');
-    if (src.kind === 'images' && !text.trim()) unknownPhotos += src.images?.length || 0;
+    if (src.kind === 'images' && !text.trim()) {
+      const count = src.images?.length || 0;
+      unknownPhotos += count;
+      // Re-recognition invalidates OCR text and makes subsequent preparation
+      // uncertain, even though OCR calls themselves are included in "plan".
+      if (src.ocrRevision > 0) reocrPhotos += count;
+    }
     if (text.trim()) sections += groupBlocks(toBlocks(text), SECTION_CHARS).length;
   }
   // An AI-generated topic boundary may split a 5000-character section into more sections.
   const possibleSections = Math.ceil(sections * 1.25);
   const perSection = coverageCheck ? 2 : 1; // generation plus independent coverage check
   return {
-    plan, sections, unknownPhotos,
+    plan, sections, unknownPhotos, reocrPhotos,
     min: plan + sections * perSection,
     likelyHigh: plan + possibleSections * (perSection + (coverageCheck ? 1 : 0)),
   };
