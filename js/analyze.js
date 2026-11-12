@@ -22,6 +22,27 @@ async function segmentKey(text) {
   return 'sha256:' + [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 const SECTION_CHARS = 5000;   // размер секции для генерации кусков
+
+/** A rough free-tier budget, including work after the plan.
+ * Topic splitting, OCR, retries and follow-up questions may increase the actual count.
+ */
+export function estimateFreeRequests(sources, coverageCheck = true) {
+  const plan = estimatePlanRequests(sources);
+  let sections = 0, unknownPhotos = 0;
+  for (const src of sources) {
+    const text = String(src.text || '');
+    if (src.kind === 'images' && !text.trim()) unknownPhotos += src.images?.length || 0;
+    if (text.trim()) sections += groupBlocks(toBlocks(text), SECTION_CHARS).length;
+  }
+  // An AI-generated topic boundary may split a 5000-character section into more sections.
+  const possibleSections = Math.ceil(sections * 1.25);
+  const perSection = coverageCheck ? 2 : 1; // generation plus independent coverage check
+  return {
+    plan, sections, unknownPhotos,
+    min: plan + sections * perSection,
+    likelyHigh: plan + possibleSections * (perSection + (coverageCheck ? 1 : 0)),
+  };
+}
 export const CHARS_PER_SEC = 13; // скорость русской речи TTS при rate=1
 const SPOKEN_FACTOR = 1.35;   // устный текст длиннее исходного (пояснения, формулы словами)
 const AVG_CHUNK = 170;
