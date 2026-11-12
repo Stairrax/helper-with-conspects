@@ -103,7 +103,9 @@ export default async ({ ok, open, prepare, FINANCE }) => {
     const p = await storage.idbGet('project:' + subject);
     const template = p.topics[0];
     p.topics = Array.from({length:22},(_,i)=>({...template,id:'due-topic-'+i,
-      title:'Тема '+(i+1),status:'ready',origIndex:i}));
+      title:'Тема '+(i+1),status:'ready',origIndex:i,
+      // Keep background generation from turning test fixture topics back to pending.
+      formulas:[],quiz:[{q:'Вопрос?',a:'Ответ.'}]}));
     p.plan.order = p.topics.map(t=>t.id);
     p.plan.skipped = {};
     await storage.idbSet('project:' + subject,p);
