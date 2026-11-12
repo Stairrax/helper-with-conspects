@@ -7,7 +7,7 @@ import {
 } from './speech.js';
 import { stream, conn } from './ai.js';
 import { activeSeq, pauseFor, LISTEN_GAP_MS } from './analyze.js';
-import { reviewResult } from './review-schedule.js';
+import { reviewResult, reviewDayKey } from './review-schedule.js';
 import { abbreviate } from './abbr.js';
 import { matchAppCommand, findTopic, looksLikeRequest, aiCommand, HELP_TEXT, HELP_TEXT_EN } from './commands.js';
 import { drawTicket, gradeOf, gradeScore, endOfAnswer } from './tickets.js';
@@ -1059,6 +1059,13 @@ export class Dictation {
           const st = this.stat(t.id);
           st.due = Math.max(st.due || 0, Date.now() + 10 * 60 * 1000);
           st.due_at = st.due;
+          // Count a topic only after successful playback; the daily plan is
+          // separate from SRS due dates and never pretends listening was recall.
+          const day = reviewDayKey();
+          const prior = this.pos.reviewDaily;
+          const daily = prior?.day === day && Array.isArray(prior.ids) ? prior : { day, ids: [] };
+          if (!daily.ids.includes(t.id)) daily.ids.push(t.id);
+          this.pos.reviewDaily = daily;
           this.h.saveProgress();
         }
         await sleep(700);
