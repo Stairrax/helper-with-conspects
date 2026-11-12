@@ -220,11 +220,16 @@ async function streamRequest(opts) {
 }
 
 /** Список моделей, поддерживающих generateContent. */
-export async function listModels(apiKey, baseUrl) {
-  const res = await fetch(`${base(baseUrl)}/models?pageSize=200`, { headers: { 'x-goog-api-key': apiKey } });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new GeminiError(humanError(res.status, data), { status: res.status });
-  return (data.models || [])
-    .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
-    .map((m) => m.name.replace(/^models\//, ''));
+export async function listModels(apiKey, baseUrl, opts = {}) {
+  return withDeadline(opts, 30000, async ({ signal }) => {
+    const res = await fetch(`${base(baseUrl)}/models?pageSize=200`, {
+      headers: { 'x-goog-api-key': apiKey },
+      signal,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new GeminiError(humanError(res.status, data), { status: res.status });
+    return (data.models || [])
+      .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
+      .map((m) => m.name.replace(/^models\//, ''));
+  });
 }
