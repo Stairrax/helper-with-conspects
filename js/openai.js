@@ -92,7 +92,7 @@ function extract(data) {
 }
 
 export async function generate(opts) {
-  return withDeadline(opts, 120000, generateRequest);
+  return withDeadline(opts, opts.purpose === 'notes' ? 180000 : 120000, generateRequest);
 }
 async function generateRequest(opts) {
   const { apiKey, baseUrl, onStatus = () => {}, retries = 5, signal } = opts;
