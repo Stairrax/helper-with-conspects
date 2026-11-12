@@ -17,6 +17,7 @@ import {
 import { prepare as prepareNeural, missingMB, NEURAL_VOICES, VOICE_STYLES, audioContext, isSilero, voiceLang } from './neural.js';
 import { enableMedia, disableMedia, updateMedia, mediaSupported } from './media.js';
 import { Dictation, STATE_TEXT } from './dictation.js';
+import { reviewDayKey } from './review-schedule.js';
 import { initOnboarding, onboardingDone } from './onboarding.js';
 import { setRipple } from './ripple.js';
 import { IOS, SYS } from './platform.js';
@@ -151,6 +152,7 @@ document.querySelectorAll('.navbar button').forEach((b) => b.addEventListener('c
 // ---------- Фоновая генерация кусков ----------
 
 const AHEAD = 3;               // бесплатный режим: заранее готовим текущую тему и две следующие
+const MAX_DAILY_REVIEW_TOPICS = 15; // a manageable optional daily review plan
 const LIMIT_PAUSE = 30 * 60e3; // кончились бесплатные запросы — пробуем снова не чаще, чем раз в полчаса
 const isFreeMode = () => !!PROVIDERS[settings.provider]?.noKey;
 /** Чем сейчас подключена нейросеть: сменили провайдера или ключ — прежние лимиты к ней не относятся. */
@@ -691,8 +693,10 @@ function renderPlan() {
   $('reviewSummary').textContent = rv.studied.length
     ? `Пройдено тем: ${rv.studied.length}. ${rv.due.length ? `Пора повторить: ${rv.due.length}${rv.weak.length ? `, из них слабых: ${rv.weak.length}` : ''}.` : 'Сегодня повторять нечего.'}`
     : 'Темы появятся здесь после диктовки — с отметками, что пора повторить.';
-  $('reviewDueBtn').disabled = !rv.due.length;
-  $('reviewDueBtn').textContent = rv.due.length ? `Повторить нужное (${rv.due.length})` : 'Повторить нужное';
+  $('reviewDueBtn').disabled = !rv.today.length;
+  $('reviewDueBtn').textContent = rv.due.length
+    ? rv.today.length ? `Повторить нужное (${rv.today.length} из ${rv.due.length})` : 'На сегодня достаточно — продолжим завтра'
+    : 'Повторить нужное';
   $('reviewAllBtn').disabled = !rv.studied.length;
   $('ticketBtn').textContent = project.tickets?.length ? `Билеты (${project.tickets.length})` : 'Билеты';
 
@@ -869,11 +873,15 @@ function reviewSets() {
   const seq = project ? activeSeq(project) : [];
   const stats = progress?.stats || {};
   const studied = seq.filter((t) => stats[t.id]?.studiedAt && t.status === 'ready');
-  const due = studied.filter((t) => stats[t.id].weak || (stats[t.id].due && stats[t.id].due <= Date.now()))
-    .sort((a, b) => (stats[b.id].weak ? 1 : 0) - (stats[a.id].weak ? 1 : 0));
-  return { studied, due, weak: due.filter((t) => stats[t.id].weak) };
+  const completed = progress?.reviewDaily?.day === reviewDayKey() && Array.isArray(progress.reviewDaily.ids)
+    ? new Set(progress.reviewDaily.ids) : new Set();
+  const due = studied.filter((t) => !completed.has(t.id) &&
+    (stats[t.id].weak || (stats[t.id].due && stats[t.id].due <= Date.now())))
+    .sort((a, b) => (stats[b.id].weak ? 1 : 0) - (stats[a.id].weak ? 1 : 0) || (stats[a.id].due || 0) - (stats[b.id].due || 0));
+  const today = due.slice(0, Math.max(0, MAX_DAILY_REVIEW_TOPICS - completed.size));
+  return { studied, due, today, weak: due.filter((t) => stats[t.id].weak) };
 }
-$('reviewDueBtn').addEventListener('click', () => { const ids = reviewSets().due.map((t) => t.id); if (ids.length) { switchTab('dictate'); dict.startReview(ids); } });
+$('reviewDueBtn').addEventListener('click', () => { const ids = reviewSets().today.map((t) => t.id); if (ids.length) { switchTab('dictate'); dict.startReview(ids); } });
 $('reviewAllBtn').addEventListener('click', () => { const ids = reviewSets().studied.map((t) => t.id); if (ids.length) { switchTab('dictate'); dict.startReview(ids); } });
 
 // ---------- Экзамен ----------
