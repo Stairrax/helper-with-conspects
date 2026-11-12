@@ -26,7 +26,7 @@ export const CHARS_PER_SEC = 13; // скорость русской речи TTS
 const SPOKEN_FACTOR = 1.35;   // устный текст длиннее исходного (пояснения, формулы словами)
 const AVG_CHUNK = 170;
 
-const uid = () => Math.random().toString(36).slice(2, 10);
+const uid = () => crypto.randomUUID();
 
 // ---------- Разбиение текста на блоки ----------
 
