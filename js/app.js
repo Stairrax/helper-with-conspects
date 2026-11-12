@@ -7,7 +7,7 @@ import {
 import { fileToSource } from './extract.js';
 import { preserveTopicIdentity } from './topic-identity.js';
 import {
-  analyze, estimateFreeRequests, generateTopicChunks, generateExtras, extractFormulas, FX_MIN, orderTopics, activeSeq, estimateTopicSec, allocateBudget, fitPause,
+  analyze, tryEstimateFreeRequests, estimateTopicPreparation, generateTopicChunks, generateExtras, extractFormulas, FX_MIN, orderTopics, activeSeq, estimateTopicSec, allocateBudget, fitPause,
   pauseFor, CHARS_PER_SEC,
 } from './analyze.js';
 import { listModels, conn, PROVIDERS, providerName, hasAI } from './ai.js';
@@ -545,8 +545,12 @@ $('analyzeBtn').addEventListener('click', async () => {
   if (!budgetMin) return toast('Укажите, сколько у вас времени');
   // Show the whole free-tier workload, not just the inexpensive initial plan.
   if (isFreeMode()) {
-    const estimate = estimateFreeRequests(sources, settings.coverageCheck);
-    if (estimate.plan >= 8 || estimate.min >= 45 || estimate.unknownPhotos >= 5) {
+    const estimate = tryEstimateFreeRequests(sources, settings.coverageCheck);
+    if (!estimate) {
+      // The estimator checks source spans strictly and may itself reject
+      // malformed input. Do not prevent the actual plan from being attempted.
+      if (!confirm(T('Не удалось оценить расход бесплатных запросов. Подготовка может потребовать много запросов, лимит может закончиться. Продолжить составление плана?'))) return;
+    } else if (estimate.plan >= 8 || estimate.min >= 45 || estimate.unknownPhotos >= 5) {
       const freshPhotos = estimate.unknownPhotos - estimate.reocrPhotos;
       const unknown = freshPhotos
         ? ` Фотографий без распознанного текста: ${freshPhotos}; для них расход на подготовку пока неизвестен.`
@@ -601,6 +605,15 @@ $('analyzeBtn').addEventListener('click', async () => {
       },
     });
     if (!current()) return;
+    // Topic boundaries are known only now. Preserve the revised estimate with
+    // the plan, before any background generation begins.
+    if (isFreeMode()) {
+      try { p.prepRequestEstimate = estimateTopicPreparation(p, settings.coverageCheck); }
+      catch {
+        p.prepRequestEstimate = { unavailable: true };
+        logLine('Не удалось уточнить расход запросов после составления плана.', 'warn');
+      }
+    }
     // новый план: список билетов и дата экзамена остаются, ответы на билеты подготовятся заново — по новым темам
     const preservedStats = preserveTopicIdentity(p, project, progress);
     if (project?.tickets?.length) p.tickets = project.tickets.map((t) => ({ id: t.id, q: t.q, a: '', topics: [], status: 'pending' }));
@@ -693,8 +706,14 @@ function renderPlan() {
   if (total > budget * 1.05) line = `<span class="warn">Не укладываемся на ≈${fmtDur(total - budget)} — пропустите часть тем или уменьшите паузу.</span>`;
   else if (total < budget * 0.8) line = `Есть запас ≈${fmtDur(budget - total)}.`;
   else line = 'Укладываемся в отведённое время.';
+  const pre = project.prepRequestEstimate;
+  const forecast = isFreeMode() && pre
+    ? pre.unavailable
+      ? T('Расход запросов на подготовку после составления плана уточнить не удалось.')
+      : T(`После разделения на темы: подготовка всех тем потребует ориентировочно ${pre.min}–${pre.likelyHigh} запросов (без уже потраченных на план и OCR). Темы готовятся постепенно; дневной лимит общий.`)
+    : '';
   $('planSummary').innerHTML = `<div class="plan-sum"><span class="big">${seq.length} ${plural(seq.length, ['тема', 'темы', 'тем'])} · ≈${fmtDur(total)}</span>` +
-    `<span class="muted">из ${fmtDur(budget)}. ${line}</span></div>`;
+    `<span class="muted">из ${fmtDur(budget)}. ${line}</span>${forecast ? `<span class="muted" data-cost-forecast>${esc(forecast)}</span>` : ''}</div>`;
   $('fitPauseBtn').classList.toggle('hidden', !(total > budget * 1.05 || total < budget * 0.8));
   const limited = gen.isLimited();
   $('genStatus').textContent = ready < seq.length
