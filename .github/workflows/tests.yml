@@ -22,3 +22,16 @@ jobs:
       # preventing npm test from starting even when the JS dependencies are fine.
       - run: npx playwright install chromium
       - run: npm test
+      - name: Собрать отдельные файлы этого изменения
+        if: always() && github.head_ref == 'feature/private-usage-graph-first-user-2026-11-13'
+        run: |
+          mkdir -p review-files/server review-files/tests review-files/.github/workflows
+          cp server/{usage-stats.js,usage-page.js,worker.js,wrangler.toml,README.md} review-files/server/
+          cp tests/51-anonymous-usage.test.mjs review-files/tests/
+          cp .github/workflows/first-usage.yml review-files/.github/workflows/
+      - uses: actions/upload-artifact@v4
+        if: always() && github.head_ref == 'feature/private-usage-graph-first-user-2026-11-13'
+        with:
+          name: usage-first-user-source-files
+          path: review-files/
+          retention-days: 7
