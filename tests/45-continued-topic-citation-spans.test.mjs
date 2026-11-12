@@ -3,6 +3,32 @@
 import { sectionSpans, toBlocks, generateTopicChunks } from '../js/analyze.js';
 
 export default async ({ ok, open }) => {
+  // A quote and following punctuation inside a long (>1200-char) paragraph
+  // must not discard the rest of the material while splitting into blocks.
+  const longText = 'Важный вывод: он сказал «система устойчива.» ' +
+    'Дальше объясняется взаимодействие планет и спутников. '.repeat(27) +
+    '«...»!?…» Доказательство продолжается. ' +
+    'Это заключительный вывод без завершающего знака';
+  const hostile = 'Вводная часть!?…»...' +
+    '«..»…!? Сложная последовательность знаков, цитат и кавычек. '.repeat(32) +
+    'Итоговая мысль без точки';
+  const noPunctuation = 'Длинная непрерывная формулировка '.repeat(55);
+  for (const [name, original] of [
+    ['quoted long paragraph', longText],
+    ['punctuation cluster', hostile],
+    ['long sentence without punctuation', noPunctuation],
+  ]) {
+    const compact = (s) => s.replace(/\\s/g, '');
+    const blocks = toBlocks(original);
+    ok(original.length > 1200 && compact(blocks.join('')) === compact(original),
+      name + ': plan segmentation preserves every non-whitespace character');
+    for (const max of [90, 5000]) {
+      const spans = sectionSpans(original, max);
+      const exact = spans.every((part) => original.slice(part.start, part.start + part.text.length) === part.text);
+      const covered = compact(spans.map((part) => part.text).join('')) === compact(original);
+      ok(exact && covered, name + ': section spans are exact and cover the entire paragraph (max ' + max + ')');
+    }
+  }
   const unusual = '  Введение\r\n  Гравитация сохраняет орбиты.\r\n\r\nГлава 2\r\nПланеты\u00a0вращаются вокруг звезды.\n\n' +
     'Планеты\u00a0вращаются вокруг звезды. '.repeat(48);
   for (const size of [90, 5000]) {
