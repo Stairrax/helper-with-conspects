@@ -5,7 +5,7 @@ import { sectionSpans, toBlocks, generateTopicChunks } from '../js/analyze.js';
 export default async ({ ok, open }) => {
   // A quote and following punctuation inside a long (>1200-char) paragraph
   // must not discard the rest of the material while splitting into blocks.
-  const longText = 'Важный вывод: он сказал «система устойчива.» ' +
+  const longText = 'Важный вывод: он сказал «система устойчива.»' +
     'Дальше объясняется взаимодействие планет и спутников. '.repeat(27) +
     '«...»!?…» Доказательство продолжается. ' +
     'Это заключительный вывод без завершающего знака';
