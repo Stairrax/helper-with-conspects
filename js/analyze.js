@@ -679,5 +679,13 @@ export async function generateTopicChunks(topic, settings, onStatus) {
   const rest = quizzes.flatMap((q) => q.slice(1));
   topic.quiz = [...first, ...rest].slice(0, 3);
   topic.formulas = formulas;
-  topic.coverage = { total: allPoints.length, covered: allPoints.filter((p) => p.c.length).length, checked: !!settings.coverageCheck && !checkFailed && checks === sections.length && allPoints.length > 0 && !supplemented, state: !settings.coverageCheck ? 'not_checked' : checkFailed ? 'failed' : !supplemented && allPoints.length && allPoints.every(p => p.c.length) ? 'passed' : 'partial' };
+  const fullyCovered = allPoints.length > 0 && allPoints.every((p) => p.c.length);
+  topic.coverage = {
+    total: allPoints.length,
+    covered: allPoints.filter((p) => p.c.length).length,
+    // Supplemented text was not independently checked after insertion.
+    checked: !!settings.coverageCheck && !checkFailed && checks === sections.length && fullyCovered && !supplemented,
+    state: !settings.coverageCheck ? 'not_checked' : checkFailed ? 'failed'
+      : fullyCovered ? (supplemented ? 'supplemented' : 'passed') : 'partial',
+  };
 }
