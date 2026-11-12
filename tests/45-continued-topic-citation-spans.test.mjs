@@ -17,8 +17,8 @@ export default async ({ ok, open }) => {
   const blocks = Array.from({length:22}, (_, i) =>
     'Достоверный пункт номер ' + String(i).padStart(3,'0') +
     ' описывает движение спутников под действием гравитации. ' + sentence.repeat(6));
-  const partA = blocks.slice(0,9).join('\n\n');
-  const partB = blocks.slice(9).join('\n\n');
+  const partA = blocks.slice(0,7).join('\n\n');
+  const partB = blocks.slice(7).join('\n\n');
   const text = partA + '\n\n' + partB;
   const boundary = partA.length + 2;
   const originalSections = sectionSpans(text);
