@@ -19,14 +19,49 @@
 
 const OPENROUTER = 'https://openrouter.ai/api/v1';
 const MAX_BODY = 12 * 1024 * 1024; // фото страниц приходят картинками в base64
+const MAX_ALLOWED_TOKENS = 16000;
+const MAX_HEALTH_IDENTITIES = 4096;
+
+// Timeouts for small JSON requests cover both response headers and body parsing.
+// For inference only the initial response headers have a deadline: once they
+// arrive, the SSE body may legitimately stream for much longer.
+const timeoutMs = (env, key, fallback) => {
+  const n = Number(opt(env, key, fallback));
+  return Number.isSafeInteger(n) && n >= 100 && n <= 120000 ? n : fallback;
+};
+function boundedTokens(value, fallback) {
+  const n = (typeof value === 'number' || (typeof value === 'string' && value.trim())) ? Number(value) : NaN;
+  return Number.isSafeInteger(n) && n > 0 ? Math.min(n, MAX_ALLOWED_TOKENS) : fallback;
+}
+async function withDeadline(ms, task) {
+  const controller = new AbortController();
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error('upstream-timeout'));
+    }, ms);
+  });
+  try {
+    // Promise.race also works if a mocked or broken fetch ignores AbortSignal.
+    return await Promise.race([Promise.resolve().then(() => task(controller.signal)), deadline]);
+  } finally {
+    clearTimeout(timer);
+    // Do not abort on success: the caller may still need to read an SSE body.
+  }
+}
 const healthCounters = new Map();
 let healthDay = '';
 function countHealth(who) {
   const day = new Date().toISOString().slice(0, 10);
   if (healthDay !== day) { healthDay = day; healthCounters.clear(); }
-  const n = (healthCounters.get(who) || 0) + 1;
-  healthCounters.set(who, n);
-  return n <= 30;
+  const n = healthCounters.get(who) || 0;
+  if (n >= 30) return false;
+  // Fail closed when the daily capacity is full; evicting would let a caller
+  // reset their rate limit simply by forcing enough new IPs into the map.
+  if (n === 0 && healthCounters.size >= MAX_HEALTH_IDENTITIES) return false;
+  healthCounters.set(who, n + 1);
+  return true;
 }
 
 let freeCache = { at: 0, list: [] }; // подобранные бесплатные модели (обновляются раз в 6 часов)
@@ -156,9 +191,10 @@ async function releaseRequest(env, device, ip, requestId, fingerprint, token, da
 async function paidKeyReady(env) {
   if (String(opt(env, 'PAID_NOTES_ENABLED', 'false')) !== 'true' || !env.OPENROUTER_PAID_KEY || env.OPENROUTER_PAID_KEY === env.OPENROUTER_KEY || !isOpenRouter(env)) return false;
   try {
-    const r = await fetch(OPENROUTER + '/key', { headers: { ...FETCH_HEADERS, Authorization: 'Bearer ' + env.OPENROUTER_PAID_KEY }, signal: AbortSignal.timeout(5000) });
-    if (!r.ok) return false;
-    const d = (await r.json()).data;
+    const d = await withDeadline(timeoutMs(env, 'KEY_CHECK_TIMEOUT_MS', 5000), async signal => {
+      const r = await fetch(OPENROUTER + '/key', { headers: { ...FETCH_HEADERS, Authorization: 'Bearer ' + env.OPENROUTER_PAID_KEY }, signal });
+      return r.ok ? (await r.json()).data : null;
+    });
     return d?.limit_reset === 'monthly' && typeof d.limit === 'number' && d.limit > 0 && d.limit <= 20 && typeof d.limit_remaining === 'number' && d.limit_remaining > 0;
   } catch { return false; }
 }
@@ -187,13 +223,16 @@ function score(m) {
 // OpenRouter стоит за защитой от ботов: запросу без User-Agent она может ответить страницей-проверкой, а не списком
 const FETCH_HEADERS = { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 (compatible; StudyHelperServer/1.0; +https://stairrax.github.io/helper-with-conspects/)' };
 
-async function loadFreeList() {
+async function loadFreeList(env) {
   let lastErr = '';
   for (let i = 0; i < 2; i++) {
     try {
-      const res = await fetch(OPENROUTER + '/models', { headers: FETCH_HEADERS });
-      if (!res.ok) { lastErr = 'models-http-' + res.status; continue; }
-      const data = await res.json();
+      const result = await withDeadline(timeoutMs(env, 'MODEL_LIST_TIMEOUT_MS', 8000), async signal => {
+        const res = await fetch(OPENROUTER + '/models', { headers: FETCH_HEADERS, signal });
+        return { status: res.status, ok: res.ok, data: res.ok ? await res.json() : null };
+      });
+      if (!result.ok) { lastErr = 'models-http-' + result.status; continue; }
+      const data = result.data;
       const list = (data.data || [])
         .filter((m) => m.id.endsWith(':free') && (m.architecture?.output_modalities || ['text']).includes('text'))
         .sort((a, b) => score(b) - score(a))
@@ -201,16 +240,16 @@ async function loadFreeList() {
         .map((m) => m.id);
       if (list.length) return { list, error: '' };
       lastErr = 'models-empty';
-    } catch {
-      lastErr = 'models-unreachable';
+    } catch (err) {
+      lastErr = err?.message === 'upstream-timeout' ? 'models-timeout' : 'models-unreachable';
     }
   }
   return { list: [], error: lastErr };
 }
 
-async function freeModels() {
+async function freeModels(env) {
   if (freeCache.list.length && Date.now() - freeCache.at < 6 * 3600e3) return freeCache.list;
-  const { list, error } = await loadFreeList();
+  const { list, error } = await loadFreeList(env);
   modelsError = error;
   if (list.length) { freeCache = { at: Date.now(), list }; return list; }
   // не получилось обновить — лучше работать со старым списком, чем отвечать «недоступно»
@@ -219,7 +258,7 @@ async function freeModels() {
 
 async function models(env) {
   const v = String(opt(env, 'MODELS', 'free')).trim();
-  if (v === 'free') return freeModels();
+  if (v === 'free') return freeModels(env);
   return v.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
@@ -363,10 +402,13 @@ async function health(req, env) {
     }
     if (env.OPENROUTER_KEY && isOpenRouter(env)) {
       try {
-        const r = await fetch(OPENROUTER + '/key', { headers: { ...FETCH_HEADERS, Authorization: 'Bearer ' + env.OPENROUTER_KEY } });
-        out.keyCheck = { status: r.status };
-        if (r.ok) {
-          const d = (await r.json().catch(() => ({}))).data || {};
+        const result = await withDeadline(timeoutMs(env, 'KEY_CHECK_TIMEOUT_MS', 5000), async signal => {
+          const r = await fetch(OPENROUTER + '/key', { headers: { ...FETCH_HEADERS, Authorization: 'Bearer ' + env.OPENROUTER_KEY }, signal });
+          return { status: r.status, data: r.ok ? (await r.json().catch(() => ({}))).data || {} : {} };
+        });
+        out.keyCheck = { status: result.status };
+        if (result.status >= 200 && result.status < 300) {
+          const d = result.data;
           out.keyCheck.freeTier = d.is_free_tier !== false; // true — ключ без пополнения: у бесплатных моделей общий лимит на день
           if (typeof d.limit_remaining === 'number') out.keyCheck.limitRemaining = d.limit_remaining;
         }
@@ -472,9 +514,11 @@ export default {
       }
       return response;
     };
-    const maxTokens = +opt(env, 'MAX_TOKENS', 16000);
+    const maxTokens = boundedTokens(opt(env, 'MAX_TOKENS', 16000), MAX_ALLOWED_TOKENS);
+    const requestedTokens = boundedTokens(body.max_tokens, maxTokens);
+    const tokenBudget = Math.min(requestedTokens, maxTokens);
     // Вопросы сначала отправляем в Cloudflare. Для изображений viaAI возвращает null.
-    const backup = () => viaAI(env, body, Math.min(+body.max_tokens || maxTokens, maxTokens), c.headers);
+    const backup = () => viaAI(env, body, tokenBudget, c.headers);
     if (body.kd_purpose === 'question') {
       const answer = await backup();
       if (answer) return answer;
@@ -493,7 +537,7 @@ export default {
       model: list[0],
       messages: body.messages,
       temperature: typeof body.temperature === 'number' ? body.temperature : undefined,
-      max_tokens: Math.min(+body.max_tokens || maxTokens, maxTokens),
+      max_tokens: tokenBudget,
       stream: body.stream === true,
     };
     const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (paid ? env.OPENROUTER_PAID_KEY : env.OPENROUTER_KEY) };
@@ -507,7 +551,10 @@ export default {
 
     let up;
     try {
-      up = await fetch(upstream(env) + '/chat/completions', { method: 'POST', headers, body: JSON.stringify(out) });
+      // Only wait for response headers here. Keeping a deadline active after
+      // headers would prematurely interrupt legitimate long-running SSE output.
+      up = await withDeadline(timeoutMs(env, 'UPSTREAM_HEADERS_TIMEOUT_MS', 90000), signal =>
+        fetch(upstream(env) + '/chat/completions', { method: 'POST', headers, body: JSON.stringify(out), signal }));
     } catch {
       return (await backup()) || fail(502, 'upstream', 'Сервер нейросети не отвечает. Попробуйте ещё раз.', c.headers, 'upstream-unreachable');
     }
