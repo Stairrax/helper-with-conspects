@@ -1,4 +1,6 @@
-import worker, { RequestLimits } from '../server/worker.js';
+// Isolate module-level model/health caches from tests that ran earlier in this suite.
+// Without this, a previously warmed model cache bypasses the stalled-list mock.
+const { default: worker, RequestLimits } = await import('../server/worker.js?isolated=50-server-reliability');
 
 // All provider calls below are mocked: no live OpenRouter traffic or API-key costs.
 export default async ({ ok }) => {
