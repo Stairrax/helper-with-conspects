@@ -77,6 +77,7 @@ CHANGELOG.md          что изменилось в каждой версии
 ```
 npm ci
 npx playwright install chromium
+node tests/audit-node-smoke.mjs # быстрые проверки без Chromium
 npm test             # все тесты
 npm test formulas    # только файлы, в имени которых есть «formulas»
 npm start            # приложение на http://127.0.0.1:8080/
