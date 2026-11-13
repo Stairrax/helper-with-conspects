@@ -350,7 +350,7 @@ function aiResponse(res, model, stream, headers, budget) {
 }
 
 /** Пробует запасные модели Workers AI по очереди. null — запасного нет, в запросе фото или все отказали (причина — в aiLast). */
-async function viaAI(env, body, maxTokens, headers) {
+async function viaAI(env, body, maxTokens, headers, onTimeout = () => {}) {
   if (!env.AI) return null;
   const models = aiModels(env);
   const messages = models.length ? plainMessages(body.messages) : null;
@@ -362,16 +362,36 @@ async function viaAI(env, body, maxTokens, headers) {
   if (skip.length < models.length) models.splice(0, models.length, ...models.filter((m) => !skip.includes(m)));
   // у моделей свой потолок длины ответа: если отказались из-за него — пробуем покороче
   const budgets = [...new Set([maxTokens, Math.min(maxTokens, 4096)])];
+  // One total deadline for all fallback model attempts, not one per model.
+  // A timeout is ambiguous: the model may have processed the request already.
+  const fallbackDeadline = Date.now() + timeoutMs(env, 'FALLBACK_AI_TIMEOUT_MS', 60000);
   for (const model of models) {
     for (const budget of budgets) {
+      const remaining = fallbackDeadline - Date.now();
+      if (remaining <= 0) {
+        aiLast = 'fallback-timeout';
+        onTimeout();
+        return null;
+      }
       try {
-        const res = await env.AI.run(model, { messages, max_tokens: budget, stream, ...(typeof body.temperature === 'number' ? { temperature: body.temperature } : {}) });
+        // Workers AI binding has no universally supported abort option.
+        // The deadline bounds this Worker path even if AI.run never resolves.
+        const res = await withDeadline(remaining, () => env.AI.run(model, {
+          messages, max_tokens: budget, stream,
+          ...(typeof body.temperature === 'number' ? { temperature: body.temperature } : {}),
+        }));
         const out = aiResponse(res, model, stream, headers, budget);
         if (out) { aiLast = 'ok ' + model; return out; }
         aiLast = 'empty ' + model;
         aiTried.push({ model, error: 'пустой ответ' });
         break;
       } catch (e) {
+        if (e?.message === 'upstream-timeout') {
+          aiLast = (model + ': timeout').slice(0, 200);
+          aiTried.push({ model, budget, error: 'timeout' });
+          onTimeout();
+          return null; // never automatically retry an ambiguous generation
+        }
         const msg = String(e?.message || e);
         aiLast = (model + ': ' + msg).slice(0, 200);
         aiTried.push({ model, budget, error: msg.slice(0, 160) });
@@ -503,10 +523,11 @@ export default {
       return fail(429, 'daily_limit', msg, c.headers);
     }
 
+    let fallbackTimedOut = false;
     const failedBeforeAnswer = async (response) => {
       // Only explicit upstream rejections are safe to release automatically.
       // A fetch exception or interrupted 200/stream is ambiguous: retain dedup.
-      if (requestId && quota.token) {
+      if (requestId && quota.token && !fallbackTimedOut) {
         try {
           const released = await releaseRequest(env, device, ip, requestId, fingerprint, quota.token, reservationDay);
           if (!released) console.warn('Could not match request reservation for release');
@@ -518,10 +539,11 @@ export default {
     const requestedTokens = boundedTokens(body.max_tokens, maxTokens);
     const tokenBudget = Math.min(requestedTokens, maxTokens);
     // Вопросы сначала отправляем в Cloudflare. Для изображений viaAI возвращает null.
-    const backup = () => viaAI(env, body, tokenBudget, c.headers);
+    const backup = () => viaAI(env, body, tokenBudget, c.headers, () => { fallbackTimedOut = true; });
     if (body.kd_purpose === 'question') {
       const answer = await backup();
       if (answer) return answer;
+      if (fallbackTimedOut) return fail(504, 'timeout', 'Запасной ИИ слишком долго не отвечает. Попробуйте позже.', c.headers, 'fallback-timeout');
     }
 
     if (!env.OPENROUTER_KEY) return (await backup()) || failedBeforeAnswer(fail(503, 'unavailable', DOWN_TEXT, c.headers));
