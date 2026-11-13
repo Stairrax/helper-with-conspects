@@ -120,7 +120,34 @@ export default async ({ ok }) => {
     ok(streamed.status === 200 && streamedText.includes('[DONE]') && !activeSignal.aborted,
       'a healthy SSE stream stays alive past the header-only timeout');
 
-    // 6. Bounded /health map: saturation cannot evict an existing user's quota.
+    // 6. An unresponsive Cloudflare Workers AI binding also has a finite deadline.
+    // Its result is uncertain, so a retry with the same idempotency key is blocked.
+    let fallbackCalls = 0;
+    const stalledAI = { run: () => { fallbackCalls++; return new Promise(() => {}); } };
+    const fallbackEnv = { ...base, OPENROUTER_KEY: undefined, AI: stalledAI,
+      FALLBACK_AI_TIMEOUT_MS: '100' };
+    const fallbackId = uniqueId();
+    const fallbackStart = Date.now();
+    const stalledFallback = await worker.fetch(request({}, fallbackId), fallbackEnv);
+    const repeatedFallback = await worker.fetch(request({}, fallbackId), fallbackEnv);
+    ok(stalledFallback.status === 503 && repeatedFallback.status === 409 &&
+      fallbackCalls === 1 && Date.now() - fallbackStart < 3000,
+      'Workers AI fallback timeout returns without replaying an ambiguous generation');
+
+    // When a question first targets Workers AI, its timeout must not start
+    // another chargeable request with OpenRouter.
+    let openrouterInvocations = 0;
+    globalThis.fetch = async () => { openrouterInvocations++; throw new Error('Unexpected OpenRouter fallback'); };
+    const questionId = uniqueId();
+    const timeoutQuestion = await worker.fetch(request({ kd_purpose: 'question' }, questionId), {
+      ...base, AI: stalledAI, FALLBACK_AI_TIMEOUT_MS: '100',
+    });
+    const repeatedQuestion = await worker.fetch(request({ kd_purpose: 'question' }, questionId), base);
+    ok(timeoutQuestion.status === 504 && repeatedQuestion.status === 409 &&
+      openrouterInvocations === 0,
+      'question fallback timeout stops before a second provider can run');
+
+    // 7. Bounded /health map: saturation cannot evict an existing user's quota.
     const quickHealth = ip => worker.fetch(new Request('https://server.test/health', {
       headers: { 'CF-Connecting-IP': ip },
     }), { MODELS: 'fixed', UPSTREAM: 'https://provider.test/v1' });
