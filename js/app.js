@@ -654,7 +654,7 @@ $('analyzeBtn').addEventListener('click', async () => {
     // Автоматически повторять неоднозначный запрос нельзя: провайдер мог уже
     // обработать его. Повтор — только по явному действию пользователя.
     const temporary = e.code === 'REQUEST_TIMEOUT' || e.code === 'NETWORK' ||
-      /\\(код: (?:fallback-timeout|upstream-unreachable)\\)/.test(message);
+      /\(код: (?:fallback-timeout|upstream-unreachable)\)/.test(message);
     const diagnostic = e.code === 'REQUEST_TIMEOUT' ? ' <code>REQUEST_TIMEOUT</code>' : '';
     const retryHelp = temporary
       ? `<div class="muted small mt">${esc(T('Материалы не нужно добавлять заново. Уже сохранённые результаты разбора будут использованы при следующей попытке.'))}</div>` +
