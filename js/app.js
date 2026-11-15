@@ -264,7 +264,14 @@ $('prepAllBtn').addEventListener('click', () => {
   render();
 });
 $('limitKeyBtn').addEventListener('click', () => wizard.open(1));
-$('analyzeStatus').addEventListener('click', (e) => { if (e.target.closest('[data-own-key]')) wizard.open(1); });
+$('analyzeStatus').addEventListener('click', (e) => {
+  if (e.target.closest('[data-own-key]')) wizard.open(1);
+  else if (e.target.closest('[data-retry-analysis]')) $('analyzeBtn').click();
+  else if (e.target.closest('[data-check-connection]')) {
+    switchTab('settings');
+    $('netCheckBtn').click();
+  }
+});
 // ошибочные темы перезапускаются автоматически
 setInterval(() => { if (project && !gen.running && gen.pick(project)) gen.loop(); }, 15000);
 
@@ -641,10 +648,23 @@ $('analyzeBtn').addEventListener('click', async () => {
     gen.loop();
   } catch (e) {
     if (!current() || e.name === 'AbortError') return;
-    logLine('Ошибка: ' + (e.message || e), 'err');
-    $('analyzeStatus').innerHTML = `<span style="color:var(--danger)">${esc(e.message || e)}</span>` + (e.code === 'DAILY_LIMIT'
-      ? `<br><span class="muted small">${esc(T('Сохранённые результаты распознавания и разбора можно использовать при следующей попытке. Или подключите свой ключ.'))}</span> <button class="btn text" data-own-key>${esc(T('Подключить свой ключ'))}</button>`
-      : '');
+    const message = e.message || String(e);
+    logLine('Ошибка: ' + message, 'err');
+    // Не оставляем пользователя на тупиковом экране при временном отказе ИИ.
+    // Автоматически повторять неоднозначный запрос нельзя: провайдер мог уже
+    // обработать его. Повтор — только по явному действию пользователя.
+    const temporary = e.code === 'REQUEST_TIMEOUT' || e.code === 'NETWORK' ||
+      /\\(код: (?:fallback-timeout|upstream-unreachable)\\)/.test(message);
+    const diagnostic = e.code === 'REQUEST_TIMEOUT' ? ' <code>REQUEST_TIMEOUT</code>' : '';
+    const retryHelp = temporary
+      ? `<div class="muted small mt">${esc(T('Материалы не нужно добавлять заново. Уже сохранённые результаты разбора будут использованы при следующей попытке.'))}</div>` +
+        `<div class="row wrap mt8"><button class="btn tonal" data-retry-analysis>${esc(T('Повторить составление плана'))}</button>` +
+        `<button class="btn text" data-check-connection>${esc(T('Проверить связь'))}</button></div>`
+      : '';
+    $('analyzeStatus').innerHTML = `<span style="color:var(--danger)">${esc(T(message))}</span>${diagnostic}` +
+      (e.code === 'DAILY_LIMIT'
+        ? `<br><span class="muted small">${esc(T('Сохранённые результаты распознавания и разбора можно использовать при следующей попытке. Или подключите свой ключ.'))}</span> <button class="btn text" data-own-key>${esc(T('Подключить свой ключ'))}</button>`
+        : retryHelp);
   } finally {
     if (my === analysisEpoch) {
       analysisController = null;
