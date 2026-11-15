@@ -31,7 +31,18 @@ export default async ({ open, ok }) => {
   await page.fill('#pasteTitle', 'Финансовая грамотность');
   await page.click('#pasteAdd');
   await page.click('#analyzeBtn');
-  await page.waitForFunction(() => document.querySelector('#analyzeStatus [data-retry-analysis]'), null, { timeout: 15000 });
+  try {
+    await page.waitForFunction(() => document.querySelector('#analyzeStatus [data-retry-analysis]'), null, { timeout: 15000 });
+  } catch (e) {
+    const snapshot = await page.evaluate(() => ({
+      analyzeStatus: document.getElementById('analyzeStatus')?.textContent,
+      analyzeLog: document.getElementById('analyzeLog')?.textContent,
+      analyzeDisabled: document.getElementById('analyzeBtn')?.disabled,
+      currentTab: document.body.dataset.tab,
+      sourceCount: document.querySelectorAll('#sourceList li').length,
+    }));
+    throw new Error('Timeout recovery UI missing: ' + JSON.stringify(snapshot) + ' (' + e.message + ')');
+  }
   ok((await page.textContent('#analyzeStatus')).includes('fallback-timeout'), 'показан диагностический код сервера');
   ok((await page.textContent('#analyzeStatus')).includes('Материалы не нужно добавлять заново'),
     'после тайм-аута ясно, что исходные материалы сохранены');
