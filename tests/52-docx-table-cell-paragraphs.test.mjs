@@ -25,7 +25,7 @@ export default async ({ open, ok }) => {
       window.mammoth.convertToHtml = original;
     }
   }, encoded);
-  ok(result.includes('Первое определение\\nВторое определение | F = ma\\nm = F/a\\nединица: Н'),
+  ok(result.includes('Первое определение\nВторое определение | F = ma\nm = F/a\nединица: Н'),
     'DOCX table cell paragraphs and inline breaks are preserved');
   ok(!result.includes('Первое определениеВторое определение'),
     'DOCX table cell text must not run together');
