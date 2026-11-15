@@ -15,8 +15,8 @@ export default async ({ open, prepare, FINANCE, ok }) => {
   ok(await page.isVisible('#qaPanel') && /Дальше/.test(await page.textContent('#stopBtn')),
     'после остановки можно задать вопрос, кнопка стала «Дальше»');
   await page.click('#stopBtn');
-  await page.waitForFunction(() => document.body.dataset.dict === 'speaking', null, { timeout: 10000 });
-  ok(await page.evaluate(() => window.speechSynthesis.speaking), '«Дальше» возобновляет речь');
+  await page.waitForFunction(() => document.body.dataset.dict === 'speaking' && window.speechSynthesis.speaking, null, { timeout: 10000 });
+  ok(true, '«Дальше» возобновляет речь');
   await page.click('[data-tab=plan]');
   ok(await page.isVisible('#stopBtn'), 'кнопка доступна во время чтения с другой вкладки');
   await page.click('#stopBtn');
