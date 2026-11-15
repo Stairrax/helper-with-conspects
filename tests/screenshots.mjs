@@ -96,7 +96,7 @@ for (const [scheme, look, mine] of [['dark', 'aurora', ['dictate', 'answer']], [
   await page.waitForTimeout(2500);
   if (want('dictate')) await shot(page, `dictate-${look}.png`);
 
-  await page.dispatchEvent('#stopBtn', 'pointerdown');
+  await page.click('#stopBtn');
   await page.waitForTimeout(300);
   await say(page, QUESTION);
   await page.waitForFunction(() => /Продолжаем/.test(document.getElementById('dictState').textContent), null, { timeout: 20000 });

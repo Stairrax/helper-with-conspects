@@ -58,7 +58,7 @@ export default async ({ open, prepare, FINANCE, ok, base }) => {
   const res = await page.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find((k) => k.startsWith('kd.progress')))).tickets);
   ok(Object.values(res || {})[0]?.grade === 4, 'оценка за билет сохранена: 4');
   ok(/Хорошо/.test(await page.textContent('#answer')), 'отзыв экзаменатора виден на экране');
-  ok(/Ещё билет/.test(await page.textContent('#continueBtn')), 'кнопка «Ещё билет»');
+  ok(/Ещё билет/.test(await page.getAttribute('#stopBtn', 'aria-label')), 'кнопка «Ещё билет»');
 
   // ---- ещё билет: тянется тот, на который не отвечали
   await say('да', true, 300);
@@ -119,7 +119,7 @@ export default async ({ open, prepare, FINANCE, ok, base }) => {
   await page.click('#prepStart');
   await page.waitForFunction(() => window.__spoken.some((t) => t.startsWith('Тема: ')), null, { timeout: 10000 });
   ok(await page.evaluate(() => document.body.dataset.tab) === 'dictate', '«Начать сегодняшнее» — диктовка первой темы из плана на сегодня');
-  await page.click('#playBtn');
+  await page.click('#stopBtn');
 
   // ---- быстрые действия на значке
   const manifest = await page.evaluate(async () => (await (await fetch('manifest.webmanifest')).json()).shortcuts.map((s) => s.url));
