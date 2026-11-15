@@ -15,8 +15,10 @@ export default async ({ open, ok }) => {
   ok(JSON.stringify(deadlines) === JSON.stringify([240000, 180000, 120000]),
     'free notes allow server fallback to finish; direct notes and questions keep shorter deadlines');
   let first = true;
+  // Fail the topic-segmentation request, not an incidental warm-up/API call.
   await page.route(/free-proxy\.test/, (route) => {
-    if (route.request().method() === 'POST' && first) {
+    if (route.request().method() === 'POST' && first &&
+        (route.request().postData() || '').includes('пронумерованные блоки')) {
       first = false;
       return route.fulfill({
         status: 504, contentType: 'application/json',
