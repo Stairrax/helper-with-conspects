@@ -162,18 +162,34 @@ async function pdfExtract(file, onStatus) {
   } finally { await doc.destroy(); }
 }
 
+// DOM textContent drops soft line breaks (<br>) and silently merges DOCX lines.
+// Preserve them before the AI sees the source material.
+function textWithLineBreaks(root) {
+  const parts = [];
+  const visit = (node) => {
+    if (node.nodeType === 3) {
+      parts.push(node.nodeValue || '');
+    } else if (node.nodeType === 1) {
+      if (node.tagName === 'BR') parts.push('\n');
+      else for (const child of node.childNodes) visit(child);
+    }
+  };
+  visit(root);
+  return parts.join('').replace(/[ \t]+\n/g, '\n').trim();
+}
+
 function htmlToText(html) {
   const root = new DOMParser().parseFromString(html, 'text/html').body;
   const out = [];
   const walk = (el) => {
     for (const n of el.children) {
       const tag = n.tagName;
-      if (/^H[1-6]$/.test(tag)) out.push('#'.repeat(+tag[1]) + ' ' + n.textContent.trim());
-      else if (tag === 'P') { const t = n.textContent.trim(); if (t) out.push(t); }
+      if (/^H[1-6]$/.test(tag)) out.push('#'.repeat(+tag[1]) + ' ' + textWithLineBreaks(n));
+      else if (tag === 'P') { const t = textWithLineBreaks(n); if (t) out.push(t); }
       else if (tag === 'UL' || tag === 'OL') {
-        out.push([...n.querySelectorAll(':scope > li')].map((li, i) => (tag === 'OL' ? `${i + 1}. ` : '- ') + li.textContent.trim()).join('\n'));
+        out.push([...n.querySelectorAll(':scope > li')].map((li, i) => (tag === 'OL' ? `${i + 1}. ` : '- ') + textWithLineBreaks(li)).join('\n'));
       } else if (tag === 'TABLE') {
-        out.push([...n.querySelectorAll('tr')].map((tr) => [...tr.children].map((td) => td.textContent.trim()).join(' | ')).join('\n'));
+        out.push([...n.querySelectorAll('tr')].map((tr) => [...tr.children].map((td) => textWithLineBreaks(td)).join(' | ')).join('\n'));
       } else walk(n);
     }
   };
