@@ -164,14 +164,20 @@ async function pdfExtract(file, onStatus) {
 
 // DOM textContent drops soft line breaks (<br>) and silently merges DOCX lines.
 // Preserve them before the AI sees the source material.
-function textWithLineBreaks(root) {
+function textWithLineBreaks(root, preserveBlockBreaks = false) {
   const parts = [];
   const visit = (node) => {
     if (node.nodeType === 3) {
       parts.push(node.nodeValue || '');
     } else if (node.nodeType === 1) {
-      if (node.tagName === 'BR') parts.push('\n');
-      else for (const child of node.childNodes) visit(child);
+      if (node.tagName === 'BR') {
+        parts.push('\n');
+      } else {
+        for (const child of node.childNodes) visit(child);
+        // Table cells may contain several <p> elements. textContent would
+        // glue their contents together, losing boundaries in study notes.
+        if (preserveBlockBreaks && /^(P|DIV)$/.test(node.tagName)) parts.push('\n');
+      }
     }
   };
   visit(root);
@@ -189,7 +195,7 @@ function htmlToText(html) {
       else if (tag === 'UL' || tag === 'OL') {
         out.push([...n.querySelectorAll(':scope > li')].map((li, i) => (tag === 'OL' ? `${i + 1}. ` : '- ') + textWithLineBreaks(li)).join('\n'));
       } else if (tag === 'TABLE') {
-        out.push([...n.querySelectorAll('tr')].map((tr) => [...tr.children].map((td) => textWithLineBreaks(td)).join(' | ')).join('\n'));
+        out.push([...n.querySelectorAll('tr')].map((tr) => [...tr.children].map((td) => textWithLineBreaks(td, true)).join(' | ')).join('\n'));
       } else walk(n);
     }
   };
