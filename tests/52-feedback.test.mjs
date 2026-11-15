@@ -16,8 +16,11 @@ export default async ({ open, ok }) => {
   const en = await open({ settings: { uiLang: 'en' } });
   await en.page.click('[data-tab=settings]');
   const english = await en.page.locator('#feedbackCard').innerText();
-  ok(english.includes('Feedback') && english.includes('Leave feedback'),
-     'кнопка и заголовок переведены на английский');
+  // Themes visually uppercase card titles; inspect the underlying translated text.
+  const heading = (await en.page.locator('#feedbackCard .card-title').textContent()).trim();
+  const cta = (await en.page.locator('#feedbackLink').textContent()).trim();
+  ok(heading === 'Feedback' && cta === 'Leave feedback',
+     'кнопка и заголовок переведены на английский: ' + heading + ' / ' + cta);
   ok(english.includes('Do not share study materials') && !/[а-яё]/i.test(english),
      'предупреждение переведено и не содержит русского текста');
   ok(await en.page.locator('#feedbackLink').getAttribute('href') === repoUrl,
