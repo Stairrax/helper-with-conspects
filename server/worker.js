@@ -17,16 +17,55 @@
 //
 // Работает в Cloudflare Workers; настройки — переменные окружения (wrangler.toml или панель Cloudflare).
 
+import { UsageStats, recordSuccessfulUsage, readUsageDays, readUsageSignal } from './usage-stats.js';
+import { USAGE_PAGE } from './usage-page.js';
+export { UsageStats };
+
 const OPENROUTER = 'https://openrouter.ai/api/v1';
 const MAX_BODY = 12 * 1024 * 1024; // фото страниц приходят картинками в base64
+const MAX_ALLOWED_TOKENS = 16000;
+const MAX_HEALTH_IDENTITIES = 4096;
+
+// Timeouts for small JSON requests cover both response headers and body parsing.
+// For inference only the initial response headers have a deadline: once they
+// arrive, the SSE body may legitimately stream for much longer.
+const timeoutMs = (env, key, fallback) => {
+  const n = Number(opt(env, key, fallback));
+  return Number.isSafeInteger(n) && n >= 100 && n <= 120000 ? n : fallback;
+};
+function boundedTokens(value, fallback) {
+  const n = (typeof value === 'number' || (typeof value === 'string' && value.trim())) ? Number(value) : NaN;
+  return Number.isSafeInteger(n) && n > 0 ? Math.min(n, MAX_ALLOWED_TOKENS) : fallback;
+}
+async function withDeadline(ms, task) {
+  const controller = new AbortController();
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error('upstream-timeout'));
+    }, ms);
+  });
+  try {
+    // Promise.race also works if a mocked or broken fetch ignores AbortSignal.
+    return await Promise.race([Promise.resolve().then(() => task(controller.signal)), deadline]);
+  } finally {
+    clearTimeout(timer);
+    // Do not abort on success: the caller may still need to read an SSE body.
+  }
+}
 const healthCounters = new Map();
 let healthDay = '';
 function countHealth(who) {
   const day = new Date().toISOString().slice(0, 10);
   if (healthDay !== day) { healthDay = day; healthCounters.clear(); }
-  const n = (healthCounters.get(who) || 0) + 1;
-  healthCounters.set(who, n);
-  return n <= 30;
+  const n = healthCounters.get(who) || 0;
+  if (n >= 30) return false;
+  // Fail closed when the daily capacity is full; evicting would let a caller
+  // reset their rate limit simply by forcing enough new IPs into the map.
+  if (n === 0 && healthCounters.size >= MAX_HEALTH_IDENTITIES) return false;
+  healthCounters.set(who, n + 1);
+  return true;
 }
 
 let freeCache = { at: 0, list: [] }; // подобранные бесплатные модели (обновляются раз в 6 часов)
@@ -156,9 +195,10 @@ async function releaseRequest(env, device, ip, requestId, fingerprint, token, da
 async function paidKeyReady(env) {
   if (String(opt(env, 'PAID_NOTES_ENABLED', 'false')) !== 'true' || !env.OPENROUTER_PAID_KEY || env.OPENROUTER_PAID_KEY === env.OPENROUTER_KEY || !isOpenRouter(env)) return false;
   try {
-    const r = await fetch(OPENROUTER + '/key', { headers: { ...FETCH_HEADERS, Authorization: 'Bearer ' + env.OPENROUTER_PAID_KEY }, signal: AbortSignal.timeout(5000) });
-    if (!r.ok) return false;
-    const d = (await r.json()).data;
+    const d = await withDeadline(timeoutMs(env, 'KEY_CHECK_TIMEOUT_MS', 5000), async signal => {
+      const r = await fetch(OPENROUTER + '/key', { headers: { ...FETCH_HEADERS, Authorization: 'Bearer ' + env.OPENROUTER_PAID_KEY }, signal });
+      return r.ok ? (await r.json()).data : null;
+    });
     return d?.limit_reset === 'monthly' && typeof d.limit === 'number' && d.limit > 0 && d.limit <= 20 && typeof d.limit_remaining === 'number' && d.limit_remaining > 0;
   } catch { return false; }
 }
@@ -187,13 +227,16 @@ function score(m) {
 // OpenRouter стоит за защитой от ботов: запросу без User-Agent она может ответить страницей-проверкой, а не списком
 const FETCH_HEADERS = { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 (compatible; StudyHelperServer/1.0; +https://stairrax.github.io/helper-with-conspects/)' };
 
-async function loadFreeList() {
+async function loadFreeList(env) {
   let lastErr = '';
   for (let i = 0; i < 2; i++) {
     try {
-      const res = await fetch(OPENROUTER + '/models', { headers: FETCH_HEADERS });
-      if (!res.ok) { lastErr = 'models-http-' + res.status; continue; }
-      const data = await res.json();
+      const result = await withDeadline(timeoutMs(env, 'MODEL_LIST_TIMEOUT_MS', 8000), async signal => {
+        const res = await fetch(OPENROUTER + '/models', { headers: FETCH_HEADERS, signal });
+        return { status: res.status, ok: res.ok, data: res.ok ? await res.json() : null };
+      });
+      if (!result.ok) { lastErr = 'models-http-' + result.status; continue; }
+      const data = result.data;
       const list = (data.data || [])
         .filter((m) => m.id.endsWith(':free') && (m.architecture?.output_modalities || ['text']).includes('text'))
         .sort((a, b) => score(b) - score(a))
@@ -201,16 +244,16 @@ async function loadFreeList() {
         .map((m) => m.id);
       if (list.length) return { list, error: '' };
       lastErr = 'models-empty';
-    } catch {
-      lastErr = 'models-unreachable';
+    } catch (err) {
+      lastErr = err?.message === 'upstream-timeout' ? 'models-timeout' : 'models-unreachable';
     }
   }
   return { list: [], error: lastErr };
 }
 
-async function freeModels() {
+async function freeModels(env) {
   if (freeCache.list.length && Date.now() - freeCache.at < 6 * 3600e3) return freeCache.list;
-  const { list, error } = await loadFreeList();
+  const { list, error } = await loadFreeList(env);
   modelsError = error;
   if (list.length) { freeCache = { at: Date.now(), list }; return list; }
   // не получилось обновить — лучше работать со старым списком, чем отвечать «недоступно»
@@ -219,7 +262,7 @@ async function freeModels() {
 
 async function models(env) {
   const v = String(opt(env, 'MODELS', 'free')).trim();
-  if (v === 'free') return freeModels();
+  if (v === 'free') return freeModels(env);
   return v.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
@@ -311,7 +354,7 @@ function aiResponse(res, model, stream, headers, budget) {
 }
 
 /** Пробует запасные модели Workers AI по очереди. null — запасного нет, в запросе фото или все отказали (причина — в aiLast). */
-async function viaAI(env, body, maxTokens, headers) {
+async function viaAI(env, body, maxTokens, headers, onTimeout = () => {}) {
   if (!env.AI) return null;
   const models = aiModels(env);
   const messages = models.length ? plainMessages(body.messages) : null;
@@ -323,16 +366,36 @@ async function viaAI(env, body, maxTokens, headers) {
   if (skip.length < models.length) models.splice(0, models.length, ...models.filter((m) => !skip.includes(m)));
   // у моделей свой потолок длины ответа: если отказались из-за него — пробуем покороче
   const budgets = [...new Set([maxTokens, Math.min(maxTokens, 4096)])];
+  // One total deadline for all fallback model attempts, not one per model.
+  // A timeout is ambiguous: the model may have processed the request already.
+  const fallbackDeadline = Date.now() + timeoutMs(env, 'FALLBACK_AI_TIMEOUT_MS', 60000);
   for (const model of models) {
     for (const budget of budgets) {
+      const remaining = fallbackDeadline - Date.now();
+      if (remaining <= 0) {
+        aiLast = 'fallback-timeout';
+        onTimeout();
+        return null;
+      }
       try {
-        const res = await env.AI.run(model, { messages, max_tokens: budget, stream, ...(typeof body.temperature === 'number' ? { temperature: body.temperature } : {}) });
+        // Workers AI binding has no universally supported abort option.
+        // The deadline bounds this Worker path even if AI.run never resolves.
+        const res = await withDeadline(remaining, () => env.AI.run(model, {
+          messages, max_tokens: budget, stream,
+          ...(typeof body.temperature === 'number' ? { temperature: body.temperature } : {}),
+        }));
         const out = aiResponse(res, model, stream, headers, budget);
         if (out) { aiLast = 'ok ' + model; return out; }
         aiLast = 'empty ' + model;
         aiTried.push({ model, error: 'пустой ответ' });
         break;
       } catch (e) {
+        if (e?.message === 'upstream-timeout') {
+          aiLast = (model + ': timeout').slice(0, 200);
+          aiTried.push({ model, budget, error: 'timeout' });
+          onTimeout();
+          return null; // never automatically retry an ambiguous generation
+        }
         const msg = String(e?.message || e);
         aiLast = (model + ': ' + msg).slice(0, 200);
         aiTried.push({ model, budget, error: msg.slice(0, 160) });
@@ -363,10 +426,13 @@ async function health(req, env) {
     }
     if (env.OPENROUTER_KEY && isOpenRouter(env)) {
       try {
-        const r = await fetch(OPENROUTER + '/key', { headers: { ...FETCH_HEADERS, Authorization: 'Bearer ' + env.OPENROUTER_KEY } });
-        out.keyCheck = { status: r.status };
-        if (r.ok) {
-          const d = (await r.json().catch(() => ({}))).data || {};
+        const result = await withDeadline(timeoutMs(env, 'KEY_CHECK_TIMEOUT_MS', 5000), async signal => {
+          const r = await fetch(OPENROUTER + '/key', { headers: { ...FETCH_HEADERS, Authorization: 'Bearer ' + env.OPENROUTER_KEY }, signal });
+          return { status: r.status, data: r.ok ? (await r.json().catch(() => ({}))).data || {} : {} };
+        });
+        out.keyCheck = { status: result.status };
+        if (result.status >= 200 && result.status < 300) {
+          const d = result.data;
           out.keyCheck.freeTier = d.is_free_tier !== false; // true — ключ без пополнения: у бесплатных моделей общий лимит на день
           if (typeof d.limit_remaining === 'number') out.keyCheck.limitRemaining = d.limit_remaining;
         }
@@ -384,13 +450,47 @@ async function health(req, env) {
 }
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const path = url.pathname.replace(/^\/v1(?=\/)/, '');
     const c = cors(req, env);
 
     if (req.method === 'OPTIONS') return new Response(null, { status: c.ok ? 204 : 403, headers: c.headers });
     if (path === '/' || path === '') return new Response('ok', { headers: c.headers });
+    // The public signal contains only a boolean. It never exposes counts,
+    // device identifiers, study materials or the owner-only dashboard data.
+    if (req.method === 'GET' && path === '/usage-signal') {
+      const data = await readUsageSignal(env).catch(() => null);
+      return json(200, { enabled: !!data, observed: !!data?.observed },
+        { 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' });
+    }
+    if (req.method === 'GET' && path === '/usage') {
+      return new Response(USAGE_PAGE, { headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'Referrer-Policy': 'no-referrer',
+        'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'",
+      } });
+    }
+    if (req.method === 'GET' && path === '/usage/data') {
+      const secret = String(env.USAGE_ADMIN_TOKEN || '');
+      const supplied = req.headers.get('Authorization') || '';
+      const expected = 'Bearer ' + secret;
+      // Constant-time comparison of digests: never put the owner token in URLs.
+      const sha = async (value) => new Uint8Array(await crypto.subtle.digest(
+        'SHA-256', new TextEncoder().encode(value),
+      ));
+      const [a, b] = await Promise.all([sha(supplied), sha(expected)]);
+      let difference = 0;
+      for (let i = 0; i < a.length; i++) difference |= a[i] ^ b[i];
+      if (!secret || difference !== 0) return json(401, { error: 'Owner token required' },
+        { 'Cache-Control': 'no-store' });
+      const data = await readUsageDays(env).catch(() => null);
+      return json(data ? 200 : 503, data || { error: 'Usage storage unavailable' },
+        { 'Cache-Control': 'no-store' });
+    }
     // /health — для владельца: что сервер видит из того места, куда обратились (можно открыть в браузере на телефоне)
     if (req.method === 'GET' && path === '/health') return health(req, env);
     if (!c.ok) return fail(403, 'origin', 'Этот сервер работает только для приложения «Помощник по учёбе».', c.headers);
@@ -461,10 +561,11 @@ export default {
       return fail(429, 'daily_limit', msg, c.headers);
     }
 
+    let fallbackTimedOut = false;
     const failedBeforeAnswer = async (response) => {
       // Only explicit upstream rejections are safe to release automatically.
       // A fetch exception or interrupted 200/stream is ambiguous: retain dedup.
-      if (requestId && quota.token) {
+      if (requestId && quota.token && !fallbackTimedOut) {
         try {
           const released = await releaseRequest(env, device, ip, requestId, fingerprint, quota.token, reservationDay);
           if (!released) console.warn('Could not match request reservation for release');
@@ -472,15 +573,31 @@ export default {
       }
       return response;
     };
-    const maxTokens = +opt(env, 'MAX_TOKENS', 16000);
+    // This counts successful HTTP responses only, not proof that a human
+    // completed a note. Deployment probes use kd-deploy-check and are excluded.
+    const track = async (response) => {
+      const origin = req.headers.get('Origin') || '';
+      if (response?.ok && c.ok && origin.startsWith('https://') &&
+          /^kd-[0-9a-f]{24}$/.test(device) && env.USAGE_STATS) {
+        const write = recordSuccessfulUsage(env, device, purpose)
+          .catch((e) => console.warn('Anonymous usage update failed', e));
+        if (ctx?.waitUntil) ctx.waitUntil(write);
+        else await write;
+      }
+      return response;
+    };
+    const maxTokens = boundedTokens(opt(env, 'MAX_TOKENS', 16000), MAX_ALLOWED_TOKENS);
+    const requestedTokens = boundedTokens(body.max_tokens, maxTokens);
+    const tokenBudget = Math.min(requestedTokens, maxTokens);
     // Вопросы сначала отправляем в Cloudflare. Для изображений viaAI возвращает null.
-    const backup = () => viaAI(env, body, Math.min(+body.max_tokens || maxTokens, maxTokens), c.headers);
+    const backup = () => viaAI(env, body, tokenBudget, c.headers, () => { fallbackTimedOut = true; });
     if (body.kd_purpose === 'question') {
       const answer = await backup();
-      if (answer) return answer;
+      if (answer) return track(answer);
+      if (fallbackTimedOut) return fail(504, 'timeout', 'Запасной ИИ слишком долго не отвечает. Попробуйте позже.', c.headers, 'fallback-timeout');
     }
 
-    if (!env.OPENROUTER_KEY) return (await backup()) || failedBeforeAnswer(fail(503, 'unavailable', DOWN_TEXT, c.headers));
+    if (!env.OPENROUTER_KEY) return track((await backup()) || await failedBeforeAnswer(fail(503, 'unavailable', DOWN_TEXT, c.headers)));
 
     let list;
     try { list = await models(env); } catch { list = []; }
@@ -488,12 +605,12 @@ export default {
     if (isOpenRouter(env)) list = list.filter((id) => id.endsWith(':free'));
     const paid = body.kd_purpose === 'notes' && await paidKeyReady(env);
     if (paid) list = ['google/gemini-2.5-flash-lite', ...list].slice(0, 3);
-    if (!list.length) return (await backup()) || failedBeforeAnswer(fail(503, 'unavailable', DOWN_TEXT, c.headers, modelsError || 'models-empty'));
+    if (!list.length) return track((await backup()) || await failedBeforeAnswer(fail(503, 'unavailable', DOWN_TEXT, c.headers, modelsError || 'models-empty')));
     const out = {
       model: list[0],
       messages: body.messages,
       temperature: typeof body.temperature === 'number' ? body.temperature : undefined,
-      max_tokens: Math.min(+body.max_tokens || maxTokens, maxTokens),
+      max_tokens: tokenBudget,
       stream: body.stream === true,
     };
     const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (paid ? env.OPENROUTER_PAID_KEY : env.OPENROUTER_KEY) };
@@ -507,29 +624,32 @@ export default {
 
     let up;
     try {
-      up = await fetch(upstream(env) + '/chat/completions', { method: 'POST', headers, body: JSON.stringify(out) });
+      // Only wait for response headers here. Keeping a deadline active after
+      // headers would prematurely interrupt legitimate long-running SSE output.
+      up = await withDeadline(timeoutMs(env, 'UPSTREAM_HEADERS_TIMEOUT_MS', 90000), signal =>
+        fetch(upstream(env) + '/chat/completions', { method: 'POST', headers, body: JSON.stringify(out), signal }));
     } catch {
-      return (await backup()) || fail(502, 'upstream', 'Сервер нейросети не отвечает. Попробуйте ещё раз.', c.headers, 'upstream-unreachable');
+      return track((await backup()) || fail(502, 'upstream', 'Сервер нейросети не отвечает. Попробуйте ещё раз.', c.headers, 'upstream-unreachable'));
     }
     // кончились деньги или лимит на ключе, ключ отозван — это забота владельца сервера, а не пользователя
-    if ([401, 402, 403].includes(up.status)) return (await backup()) || failedBeforeAnswer(fail(503, 'unavailable', DOWN_TEXT, c.headers, 'upstream-' + up.status));
+    if ([401, 402, 403].includes(up.status)) return track((await backup()) || await failedBeforeAnswer(fail(503, 'unavailable', DOWN_TEXT, c.headers, 'upstream-' + up.status)));
     // у бесплатных моделей дневной лимит на весь ключ — когда он кончился, повторять бессмысленно
     if (up.status === 429) {
       const text = await up.text();
-      if (/per-day|daily/i.test(text)) return (await backup()) || failedBeforeAnswer(fail(429, 'daily_limit', LIMIT_TEXT, c.headers));
+      if (/per-day|daily/i.test(text)) return track((await backup()) || await failedBeforeAnswer(fail(429, 'daily_limit', LIMIT_TEXT, c.headers)));
       return failedBeforeAnswer(new Response(text, { status: 429, headers: { ...c.headers, 'Content-Type': 'application/json', 'Retry-After': up.headers.get('Retry-After') || '20' } }));
     }
     // сбой на стороне нейросети — пробуем запасную
-    if (up.status >= 500) { const alt = await backup(); if (alt) return alt; }
+    if (up.status >= 500) { const alt = await backup(); if (alt) return track(alt); }
     // Explicitly rejected upstream requests free the logical request and its quota.
     // A successful response remains reserved, including while a stream is in flight.
     if (up.status >= 400) {
       await failedBeforeAnswer(null);
     }
     // ответ (и потоковый тоже) отдаём как есть
-    return new Response(up.body, {
+    return track(new Response(up.body, {
       status: up.status,
       headers: { ...c.headers, 'Content-Type': up.headers.get('Content-Type') || 'application/json', 'Cache-Control': 'no-store' },
-    });
+    }));
   },
 };
