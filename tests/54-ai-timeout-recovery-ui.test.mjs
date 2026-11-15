@@ -5,7 +5,7 @@ export default async ({ open, ok }) => {
     freeProxy: 'https://free-proxy.test', titles: ['Тема'],
   });
   let first = true;
-  await page.route(/free-proxy\\.test/, (route) => {
+  await page.route(/free-proxy\.test/, (route) => {
     if (route.request().method() === 'POST' && first) {
       first = false;
       return route.fulfill({
