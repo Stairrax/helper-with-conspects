@@ -10,7 +10,7 @@ export default async ({ open, prepare, FINANCE, ok }) => {
   ok(await page.evaluate(() => window.__spoken[0].startsWith('Тема:')), 'диктовка начинается с названия темы');
   const chunk = await page.evaluate(() => window.__spoken.at(-1));
 
-  await page.dispatchEvent('#stopBtn', 'pointerdown');
+  await page.click('#stopBtn');
   ok(await page.evaluate(() => !window.speechSynthesis.speaking), '«СТОП» сразу обрывает речь');
   await page.waitForTimeout(150); // надпись обновляется со следующим кадром
   ok(/Слушаю/.test(await page.textContent('#dictState')), 'после «СТОП» приложение слушает вопрос');
