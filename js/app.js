@@ -1519,7 +1519,6 @@ function renderDictation() {
   $('dictMsg').textContent = dict.message || '';
   $('heard').textContent = dict.heard && st !== 'idle' ? `«${dict.heard}»` : '';
 
-  const dictating = DICTATING.includes(st);
   const pausedLike = PAUSED.includes(st);
   // Одна тематическая кнопка для остановки и продолжения. Короткая надпись
   // помещается на круглых кнопках «Авроры» и «Чернил».
