@@ -4,6 +4,16 @@ export default async ({ open, ok }) => {
     settings: { provider: 'free', apiKey: '', coverageCheck: false, selfCheck: false },
     freeProxy: 'https://free-proxy.test', titles: ['Тема'],
   });
+  const deadlines = await page.evaluate(async () => {
+    const { defaultGenerationTimeoutMs } = await import('./js/openai.js');
+    return [
+      defaultGenerationTimeoutMs('notes', 'https://free-proxy.test'),
+      defaultGenerationTimeoutMs('notes', 'https://openrouter.ai/api/v1'),
+      defaultGenerationTimeoutMs('question', 'https://free-proxy.test'),
+    ];
+  });
+  ok(JSON.stringify(deadlines) === JSON.stringify([240000, 180000, 120000]),
+    'free notes allow server fallback to finish; direct notes and questions keep shorter deadlines');
   let first = true;
   await page.route(/free-proxy\.test/, (route) => {
     if (route.request().method() === 'POST' && first) {
