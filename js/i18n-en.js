@@ -48,6 +48,11 @@ export const EXACT = {
   'Не удалось сохранить изменения: место в браузере закончилось. Не закрывайте страницу. Освободите место и попробуйте сохранить снова. Если резервная копия создаётся, проверьте её: последние несохранённые изменения могут не попасть в неё.': 'Changes could not be saved: browser storage is full. Keep this tab open. Free up space and try saving again. If you create a backup, verify it: recent unsaved changes may not be included.',
   'Хранилище браузера не отвечает. Последние изменения могут пропасть при закрытии страницы. Не закрывайте вкладку. Резервная копия может быть неполной или не создаться — не считайте её подтверждением сохранения.': 'Browser storage is unavailable. Recent changes may be lost if you close this tab. Keep it open. A backup may be incomplete or fail to export — do not assume it means your data was saved.',
   'На сегодня достаточно — продолжим завтра': 'Enough for today — continue tomorrow',
+  // обратная связь в настройках
+  'Обратная связь': 'Feedback',
+  'Нашли ошибку или появилась идея? Расскажите разработчику.': 'Found a bug or have an idea? Tell the developer.',
+  'Оставить отзыв': 'Leave feedback',
+  'Откроется GitHub (нужен аккаунт). Не публикуйте учебные материалы, личные данные и API-ключи.': 'Opens GitHub (an account is required). Do not share study materials, personal information or API keys.',
   // вкладки и общее
   'Материал': 'Material', 'План': 'Plan', 'Диктовка': 'Dictation', 'Настройки': 'Settings', 'Повторение': 'Review',
   'Предмет': 'Subject', 'Помощник по учёбе': 'Study Helper', 'Учёба': 'Study Helper',
