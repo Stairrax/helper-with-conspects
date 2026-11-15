@@ -1519,11 +1519,20 @@ function renderDictation() {
   $('dictMsg').textContent = dict.message || '';
   $('heard').textContent = dict.heard && st !== 'idle' ? `«${dict.heard}»` : '';
 
-  const dictating = DICTATING.includes(st);
   const pausedLike = PAUSED.includes(st);
-  $('playIcon').setAttribute('href', dictating ? '#i-pause' : '#i-play');
-  $('playBtn').setAttribute('aria-label', dictating ? 'Пауза' : 'Продолжить');
-  ['playBtn', 'repeatBtn', 'nextBtn', 'moreBtn'].forEach((id) => { $(id).disabled = !project; });
+  // Одна тематическая кнопка для остановки и продолжения. Короткая надпись
+  // помещается на круглых кнопках «Авроры» и «Чернил».
+  const mainLabel = st === 'ticketEnd' ? 'Ещё'
+    : st === 'topicEnd' || pausedLike || st === 'thinking' || st === 'answering' ? 'Дальше'
+      : st === 'idle' || st === 'finished' ? 'Старт' : 'СТОП / ВОПРОС';
+  const mainDescription = st === 'ticketEnd' ? 'Ещё билет'
+    : st === 'topicEnd' ? 'Следующая тема'
+      : st === 'idle' || st === 'finished' ? 'Начать диктовку'
+        : dict.mode === 'review' && pausedLike ? 'Продолжить повторение'
+          : pausedLike || st === 'thinking' || st === 'answering' ? 'Продолжить диктовку' : 'СТОП / ВОПРОС';
+  $('stopBtn').textContent = T(mainLabel);
+  $('stopBtn').setAttribute('aria-label', T(mainDescription));
+  ['repeatBtn', 'nextBtn', 'moreBtn'].forEach((id) => { $(id).disabled = !project; });
   $('stopBtn').classList.toggle('listening', st === 'listening');
   $('retryTopicBtn').classList.toggle('hidden', !(st === 'waiting' && t?.status === 'error'));
 
@@ -1538,8 +1547,6 @@ function renderDictation() {
   $('breakCard').classList.toggle('hidden', st !== 'break');
   $('qaPanel').classList.toggle('hidden', !qaOpen);
   $('tab-dictate').classList.toggle('qa-open', !!qaOpen);
-  $('continueBtn').classList.toggle('hidden', (!pausedLike && !['thinking', 'answering'].includes(st)) || st === 'break');
-  $('continueBtn').textContent = st === 'topicEnd' ? 'Следующая тема' : st === 'ticketEnd' ? 'Ещё билет' : dict.mode === 'review' ? 'Продолжить повторение' : 'Продолжить диктовку';
   const qa = progress?.qa || [];
   const last = qa[qa.length - 1];
   const showAnswer = last && (['thinking', 'answering', 'confirm'].includes(st) || (pausedLike && Date.now() - last.t < 10 * 60000));
@@ -1604,25 +1611,22 @@ $('seek').addEventListener('change', (e) => {
 
 function onStop(e) {
   e?.preventDefault();
-  if (!project && dict.state === 'idle') { toast('Сначала составьте план'); return; }
+  if (!project) { toast('Сначала составьте план'); return; }
   navigator.vibrate?.(30);
-  dict.interrupt('question');
+  const st = dict.state;
+  if (st === 'ticketEnd') dict.startTicket();
+  else if (PAUSED.includes(st) || st === 'thinking' || st === 'answering') dict.resume();
+  else if (st === 'idle' || st === 'finished') dict.start();
+  else dict.interrupt('question');
   if (activeTab !== 'dictate') switchTab('dictate');
-  if (!srSupported || dict.micError) $('questionInput').focus();
+  if (dict.state === 'listening' && (!srSupported || dict.micError)) $('questionInput').focus();
 }
-$('stopBtn').addEventListener('pointerdown', onStop);
-$('stopBtn').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') onStop(e); });
-
-$('playBtn').addEventListener('click', () => {
-  if (DICTATING.includes(dict.state)) dict.interrupt('pause');
-  else dict.start();
-});
-$('continueBtn').addEventListener('click', () => (dict.state === 'ticketEnd' ? dict.startTicket() : dict.resume()));
+// Обычный click работает и с касанием, и с клавиатурой, без двойного срабатывания.
+$('stopBtn').addEventListener('click', onStop);
 $('longDone').addEventListener('click', () => dict.finishLong());
 $('quizDontKnow').addEventListener('click', () => dict.submitText('не знаю'));
 $('quizSkip').addEventListener('click', () => dict.next());
 $('stopReviewBtn').addEventListener('click', () => dict.stopReview());
-$('breakSkip').addEventListener('click', () => dict.resume());
 // обратный отсчёт перерыва и экзамена на время
 setInterval(() => {
   if (dict.quiz?.endsAt && QUIZ.includes(dict.state) && activeTab === 'dictate') renderDictation();

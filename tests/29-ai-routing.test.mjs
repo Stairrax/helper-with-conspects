@@ -46,7 +46,7 @@ export default async ({ ok, open, prepare, FINANCE }) => {
   ok(purposes.length > 0 && purposes.every((p) => p === 'notes'), 'план и конспект отправляются с категорией подготовки');
   await page.click('#startBtn');
   await page.waitForFunction(() => window.__spoken.length >= 2 && window.speechSynthesis.speaking, null, { timeout: 10000 });
-  await page.dispatchEvent('#stopBtn', 'pointerdown');
+  await page.click('#stopBtn');
   await page.waitForTimeout(150);
   await say('почему проценты растут', true, 200);
   await page.waitForFunction(() => /Продолжаем/.test(window.__spoken.at(-1) || ''), null, { timeout: 10000 });
