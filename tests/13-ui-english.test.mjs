@@ -62,7 +62,7 @@ export default async ({ open, prepare, ok }) => {
 
   // обратно на русский — перезагрузка, интерфейс по-русски, открыты настройки
   await page.evaluate(() => { const r = document.querySelector('input[name=uiLang][value=ru]'); r.checked = true; r.dispatchEvent(new Event('change')); });
-  await page.waitForTimeout(1200);
+  await page.waitForFunction(() => window.__kdReady && document.documentElement.lang === 'ru' && document.body.dataset.tab === 'settings');
   ok((await page.textContent('[data-tab=settings]')).includes('Настройки'), 'интерфейс снова русский');
   ok(await page.evaluate(() => document.body.dataset.tab) === 'settings', 'после смены языка открыты настройки');
 };

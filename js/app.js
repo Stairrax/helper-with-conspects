@@ -142,6 +142,7 @@ function toast(msg, ms = 2600) {
 let activeTab = 'load';
 const TITLES = { load: 'Материал', plan: 'План', dictate: 'Диктовка', settings: 'Настройки' };
 function switchTab(name) {
+  const needsScroll = window.scrollY !== 0;
   activeTab = name;
   try { localStorage.setItem('kd.lastTab', name); } catch { /* ignore */ }
   document.body.dataset.tab = name;
@@ -149,8 +150,8 @@ function switchTab(name) {
   $('iosBarTitle').textContent = TITLES[name];
   document.querySelectorAll('.navbar button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab').forEach((s) => s.classList.toggle('active', s.id === 'tab-' + name));
-  window.scrollTo({ top: 0 });
   render();
+  if (needsScroll) window.scrollTo({ top: 0 });
 }
 document.querySelectorAll('.navbar button').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
@@ -689,6 +690,14 @@ function renderStats() {
   ].filter(Boolean).join(' ');
 }
 
+// Compare the generated markup, since the English UI can translate DOM text in place.
+const renderedMarkup = new WeakMap();
+function updateMarkup(el, markup) {
+  if (renderedMarkup.get(el) === markup) return;
+  el.innerHTML = markup;
+  renderedMarkup.set(el, markup);
+}
+
 function renderPlan() {
   const has = !!project;
   renderStats();
@@ -736,7 +745,7 @@ function renderPlan() {
 
   const pos = new Map(project.plan.order.map((id, i) => [id, i]));
   let n = 0;
-  $('planList').innerHTML = project.plan.order.map((id, i) => {
+  updateMarkup($('planList'), project.plan.order.map((id, i) => {
     const t = byId.get(id);
     if (!t) return '';
     const skipped = !!project.plan.skipped[id];
@@ -812,7 +821,7 @@ function renderPlan() {
       </button>
       ${detail}
     </li>`;
-  }).join('');
+  }).join(''));
 }
 
 $('planList').addEventListener('click', (e) => {
@@ -1446,6 +1455,16 @@ const PAUSED = ['paused', 'listening', 'confirm', 'topicEnd', 'break', 'ticketEn
 const DICTATING = ['speaking', 'gap', 'waiting', 'reviewing', 'spelling'];
 const QUIZ = ['quiz', 'quizListen', 'quizGrade', 'longListen'];
 
+let historyCount = 0;
+function renderQuestionHistory() {
+  const markup = $('historyCard').open && historyCount
+    ? (progress?.qa || []).slice(0, historyCount).reverse()
+      .map((x) => `<div class="item"><div class="q">${esc(x.q)}</div><div class="a">${esc(x.a)}</div></div>`).join('')
+    : '';
+  updateMarkup($('qaHistory'), markup);
+}
+$('historyCard').addEventListener('toggle', renderQuestionHistory);
+
 function renderDictation() {
   const st = dict.state;
   document.body.dataset.dict = st; // оформлению: «СТОП» дышит, пока голос говорит
@@ -1554,11 +1573,10 @@ function renderDictation() {
   $('answer').classList.toggle('hidden', !showAnswer && !fb);
   if (fb) $('answer').innerHTML = `<div class="q">${T('Ваш ответ:')} ${esc(fb.answer)}</div>${esc(fb.entry.a || '…')}`;
   else if (showAnswer) $('answer').innerHTML = `<div class="q">${esc(last.q)}</div>${esc(last.a || '…')}`;
-  const older = showAnswer ? qa.slice(0, -1) : qa;
-  $('historyCard').classList.toggle('hidden', !older.length);
-  $('historyTitle').textContent = `Предыдущие вопросы (${older.length})`;
-  $('qaHistory').innerHTML = older.slice().reverse()
-    .map((x) => `<div class="item"><div class="q">${esc(x.q)}</div><div class="a">${esc(x.a)}</div></div>`).join('');
+  historyCount = qa.length - (showAnswer ? 1 : 0);
+  $('historyCard').classList.toggle('hidden', !historyCount);
+  $('historyTitle').textContent = `Предыдущие вопросы (${historyCount})`;
+  renderQuestionHistory();
 
   // общий прогресс
   if (project) {
