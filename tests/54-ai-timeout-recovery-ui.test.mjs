@@ -15,8 +15,10 @@ export default async ({ open, ok }) => {
   ok(JSON.stringify(deadlines) === JSON.stringify([240000, 180000, 120000]),
     'free notes allow server fallback to finish; direct notes and questions keep shorter deadlines');
   let first = true;
+  const intercepted = [];
   // Fail the topic-segmentation request, not an incidental warm-up/API call.
   await page.route(/free-proxy\.test/, (route) => {
+    intercepted.push({ url: route.request().url(), method: route.request().method(), hasBlocks: (route.request().postData() || '').includes('пронумерованные блоки') });
     if (route.request().method() === 'POST' && first &&
         (route.request().postData() || '').includes('пронумерованные блоки')) {
       first = false;
@@ -42,8 +44,10 @@ export default async ({ open, ok }) => {
       analyzeDisabled: document.getElementById('analyzeBtn')?.disabled,
       currentTab: document.body.dataset.tab,
       sourceCount: document.querySelectorAll('#sourceList li').length,
+      provider: JSON.parse(localStorage.getItem('kd.settings') || '{}').provider,
+      proxy: localStorage.getItem('kd.freeProxy'),
     }));
-    throw new Error('Timeout recovery UI missing: ' + JSON.stringify(snapshot) + ' (' + e.message + ')');
+    throw new Error('Timeout recovery UI missing: ' + JSON.stringify({ ...snapshot, intercepted }) + ' (' + e.message + ')');
   }
   ok((await page.textContent('#analyzeStatus')).includes('fallback-timeout'), 'показан диагностический код сервера');
   ok((await page.textContent('#analyzeStatus')).includes('Материалы не нужно добавлять заново'),
