@@ -31,7 +31,14 @@ export default async ({ open, ok }) => {
     return route.fallback();
   });
   await page.click('#addTextBtn');
-  await page.fill('#pasteText', 'Сложный процент начисляется на накопленную сумму. Бюджет включает доходы и расходы.');
+  // Several paragraphs are essential: a single toBlocks() block bypasses
+  // segmentPart() entirely, so an error in segmentation would never be tested.
+  const material = Array.from({ length: 12 }, (_, i) =>
+    `Раздел ${i + 1}. Сложный процент начисляется на накопленную сумму. Бюджет включает доходы и расходы. Рассмотрим пример для темы ${i + 1}.`
+  ).join('\\n\\n');
+  const count = await page.evaluate(async (text) => (await import('./js/analyze.js')).toBlocks(text).length, material);
+  ok(count > 1, 'fixture contains multiple blocks, so topic segmentation must call the AI');
+  await page.fill('#pasteText', material);
   await page.fill('#pasteTitle', 'Финансовая грамотность');
   await page.click('#pasteAdd');
   await page.click('#analyzeBtn');
