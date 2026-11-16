@@ -142,6 +142,7 @@ function toast(msg, ms = 2600) {
 let activeTab = 'load';
 const TITLES = { load: 'Материал', plan: 'План', dictate: 'Диктовка', settings: 'Настройки' };
 function switchTab(name) {
+  const needsScroll = window.scrollY !== 0;
   activeTab = name;
   try { localStorage.setItem('kd.lastTab', name); } catch { /* ignore */ }
   document.body.dataset.tab = name;
@@ -149,8 +150,8 @@ function switchTab(name) {
   $('iosBarTitle').textContent = TITLES[name];
   document.querySelectorAll('.navbar button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab').forEach((s) => s.classList.toggle('active', s.id === 'tab-' + name));
-  window.scrollTo({ top: 0 });
   render();
+  if (needsScroll) window.scrollTo({ top: 0 });
 }
 document.querySelectorAll('.navbar button').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
@@ -264,7 +265,14 @@ $('prepAllBtn').addEventListener('click', () => {
   render();
 });
 $('limitKeyBtn').addEventListener('click', () => wizard.open(1));
-$('analyzeStatus').addEventListener('click', (e) => { if (e.target.closest('[data-own-key]')) wizard.open(1); });
+$('analyzeStatus').addEventListener('click', (e) => {
+  if (e.target.closest('[data-own-key]')) wizard.open(1);
+  else if (e.target.closest('[data-retry-analysis]')) $('analyzeBtn').click();
+  else if (e.target.closest('[data-check-connection]')) {
+    switchTab('settings');
+    $('netCheckBtn').click();
+  }
+});
 // ошибочные темы перезапускаются автоматически
 setInterval(() => { if (project && !gen.running && gen.pick(project)) gen.loop(); }, 15000);
 
@@ -641,10 +649,23 @@ $('analyzeBtn').addEventListener('click', async () => {
     gen.loop();
   } catch (e) {
     if (!current() || e.name === 'AbortError') return;
-    logLine('Ошибка: ' + (e.message || e), 'err');
-    $('analyzeStatus').innerHTML = `<span style="color:var(--danger)">${esc(e.message || e)}</span>` + (e.code === 'DAILY_LIMIT'
-      ? `<br><span class="muted small">${esc(T('Сохранённые результаты распознавания и разбора можно использовать при следующей попытке. Или подключите свой ключ.'))}</span> <button class="btn text" data-own-key>${esc(T('Подключить свой ключ'))}</button>`
-      : '');
+    const message = e.message || String(e);
+    logLine('Ошибка: ' + message, 'err');
+    // Не оставляем пользователя на тупиковом экране при временном отказе ИИ.
+    // Автоматически повторять неоднозначный запрос нельзя: провайдер мог уже
+    // обработать его. Повтор — только по явному действию пользователя.
+    const temporary = e.code === 'REQUEST_TIMEOUT' || e.code === 'NETWORK' ||
+      /\(код: (?:fallback-timeout|upstream-unreachable)\)/.test(message);
+    const diagnostic = e.code === 'REQUEST_TIMEOUT' ? ' <code>REQUEST_TIMEOUT</code>' : '';
+    const retryHelp = temporary
+      ? `<div class="muted small mt">${esc(T('Материалы не нужно добавлять заново. Уже сохранённые результаты разбора будут использованы при следующей попытке.'))}</div>` +
+        `<div class="row wrap mt8"><button class="btn tonal" data-retry-analysis>${esc(T('Повторить составление плана'))}</button>` +
+        `<button class="btn text" data-check-connection>${esc(T('Проверить связь'))}</button></div>`
+      : '';
+    $('analyzeStatus').innerHTML = `<span style="color:var(--danger)">${esc(T(message))}</span>${diagnostic}` +
+      (e.code === 'DAILY_LIMIT'
+        ? `<br><span class="muted small">${esc(T('Сохранённые результаты распознавания и разбора можно использовать при следующей попытке. Или подключите свой ключ.'))}</span> <button class="btn text" data-own-key>${esc(T('Подключить свой ключ'))}</button>`
+        : retryHelp);
   } finally {
     if (my === analysisEpoch) {
       analysisController = null;
@@ -687,6 +708,14 @@ function renderStats() {
     seq.length ? `Пройдено тем в этом предмете: ${done} из ${seq.length}.` : '',
     ex ? `Последний экзамен: ${String(Math.round(ex.right * 10) / 10).replace('.', ',')} из ${ex.n} (${pct}%), ${new Date(ex.at).toLocaleDateString(loc, { day: 'numeric', month: 'long' })}.` : '',
   ].filter(Boolean).join(' ');
+}
+
+// Compare the generated markup, since the English UI can translate DOM text in place.
+const renderedMarkup = new WeakMap();
+function updateMarkup(el, markup) {
+  if (renderedMarkup.get(el) === markup) return;
+  el.innerHTML = markup;
+  renderedMarkup.set(el, markup);
 }
 
 function renderPlan() {
@@ -736,7 +765,7 @@ function renderPlan() {
 
   const pos = new Map(project.plan.order.map((id, i) => [id, i]));
   let n = 0;
-  $('planList').innerHTML = project.plan.order.map((id, i) => {
+  updateMarkup($('planList'), project.plan.order.map((id, i) => {
     const t = byId.get(id);
     if (!t) return '';
     const skipped = !!project.plan.skipped[id];
@@ -812,7 +841,7 @@ function renderPlan() {
       </button>
       ${detail}
     </li>`;
-  }).join('');
+  }).join(''));
 }
 
 $('planList').addEventListener('click', (e) => {
@@ -1446,6 +1475,16 @@ const PAUSED = ['paused', 'listening', 'confirm', 'topicEnd', 'break', 'ticketEn
 const DICTATING = ['speaking', 'gap', 'waiting', 'reviewing', 'spelling'];
 const QUIZ = ['quiz', 'quizListen', 'quizGrade', 'longListen'];
 
+let historyCount = 0;
+function renderQuestionHistory() {
+  const markup = $('historyCard').open && historyCount
+    ? (progress?.qa || []).slice(0, historyCount).reverse()
+      .map((x) => `<div class="item"><div class="q">${esc(x.q)}</div><div class="a">${esc(x.a)}</div></div>`).join('')
+    : '';
+  updateMarkup($('qaHistory'), markup);
+}
+$('historyCard').addEventListener('toggle', renderQuestionHistory);
+
 function renderDictation() {
   const st = dict.state;
   const seq = project ? activeSeq(project) : [];
@@ -1545,11 +1584,10 @@ function renderDictation() {
   $('answer').classList.toggle('hidden', !showAnswer && !fb);
   if (fb) $('answer').innerHTML = `<div class="q">${T('Ваш ответ:')} ${esc(fb.answer)}</div>${esc(fb.entry.a || '…')}`;
   else if (showAnswer) $('answer').innerHTML = `<div class="q">${esc(last.q)}</div>${esc(last.a || '…')}`;
-  const older = showAnswer ? qa.slice(0, -1) : qa;
-  $('historyCard').classList.toggle('hidden', !older.length);
-  $('historyTitle').textContent = `Предыдущие вопросы (${older.length})`;
-  $('qaHistory').innerHTML = older.slice().reverse()
-    .map((x) => `<div class="item"><div class="q">${esc(x.q)}</div><div class="a">${esc(x.a)}</div></div>`).join('');
+  historyCount = qa.length - (showAnswer ? 1 : 0);
+  $('historyCard').classList.toggle('hidden', !historyCount);
+  $('historyTitle').textContent = `Предыдущие вопросы (${historyCount})`;
+  renderQuestionHistory();
 
   // общий прогресс
   if (project) {

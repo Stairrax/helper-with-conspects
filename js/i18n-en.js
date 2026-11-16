@@ -35,6 +35,8 @@ export const EXACT = {
   'Некоторые пункты не покрыты': 'Some points remain uncovered',
   'Проверка полноты не удалась': 'Completeness check failed',
   'Полнота не проверена': 'Completeness not checked',
+  'Материалы не нужно добавлять заново. Уже сохранённые результаты разбора будут использованы при следующей попытке.': 'You do not need to add your materials again. Previously saved analysis results will be reused on your next attempt.',
+  'Повторить составление плана': 'Retry creating the plan',
   'Тема готовится': 'Preparing topic',
   'Ошибка подготовки темы': 'Topic preparation failed',
   'Распознавание повторится при составлении плана.': 'Recognition will run again when you create the plan.',
