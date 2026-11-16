@@ -47,6 +47,8 @@ export default async ({ ok, open, prepare, FINANCE }) => {
   await page.click('#startBtn');
   await page.waitForFunction(() => window.__spoken.length >= 2 && window.speechSynthesis.speaking, null, { timeout: 10000 });
   await page.click('#stopBtn');
+  await page.click('#openQuestionBtn');
+  await page.click('#questionMic');
   await page.waitForTimeout(150);
   await say('почему проценты растут', true, 200);
   await page.waitForFunction(() => /Продолжаем/.test(window.__spoken.at(-1) || ''), null, { timeout: 10000 });

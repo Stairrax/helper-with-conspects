@@ -271,16 +271,20 @@ details.mini[open] summary::after { transform: rotate(-90deg); }
 /* ---------- СТОП ---------- */
 .stopbar {
   position: fixed; left: 0; right: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: center; gap: 12px;
   bottom: calc(var(--nav-h) + var(--safe-b)); padding: 8px 16px;
   background: linear-gradient(to top, var(--bg) 75%, transparent);
 }
 .stop {
-  display: block; width: 100%; max-width: 680px; margin: 0 auto; height: calc(var(--stop-h) - 16px);
+  display: block; width: 100%; min-width: 0; max-width: 680px; margin: 0; height: calc(var(--stop-h) - 16px);
   border: 0; border-radius: 34px; background: var(--stop); color: #fff;
   font-size: 24px; font-weight: 700; letter-spacing: .04em; user-select: none;
 }
 .stop:active { filter: brightness(1.15); transform: scale(.985); }
 .stop.listening { background: var(--listen); }
+.stopbar .stop.resuming { font-size: clamp(14px, 4.4vw, 18px); }
+:is([data-theme="aurora"], [data-theme="ink"]) .stopbar .stop.resuming { font-size: 14px; }
+#openQuestionBtn { flex: 0 0 auto; white-space: nowrap; }
 .stop { --ripple-ring: #ff9a9c; --ripple-ring2: #ffd3d4; }
 .stop.listening { --ripple-ring: #ef8fdc; --ripple-ring2: #f9cdf0; }
 

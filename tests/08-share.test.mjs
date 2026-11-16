@@ -8,7 +8,7 @@ export default async ({ open, prepare, FINANCE, ok }) => {
   await prepare(page, FINANCE, 'Финансы');
   await page.click('#startBtn');
   await page.waitForFunction(() => window.__spoken.length >= 1, null, { timeout: 10000 });
-  await say('стоп');
+  await say('у меня вопрос');
   await page.fill('#questionInput', 'МОЙ-ЛИЧНЫЙ-ВОПРОС почему так');
   await page.click('#askBtn');
   await page.waitForTimeout(1200);

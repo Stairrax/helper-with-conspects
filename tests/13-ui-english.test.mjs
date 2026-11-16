@@ -52,6 +52,7 @@ export default async ({ open, prepare, ok }) => {
   ok(!left.length, 'диктовка без русского: ' + left.join(' | '));
   ok(/^Topic 1 of 2/.test(await page.textContent('#topicNum')), 'номер темы: ' + await page.textContent('#topicNum'));
   await page.click('#stopBtn');
+  await page.click('#openQuestionBtn');
   await page.waitForTimeout(300);
   ok(/Listening/.test(await page.textContent('#dictState')), 'состояние после СТОП: ' + await page.textContent('#dictState'));
   await page.click('[data-tab=settings]');

@@ -288,6 +288,7 @@ const SPELL = w('по буквам|как пишется|как это пише�
 export function matchCommand(text) {
   const t = norm(text);
   if (!t) return null;
+  if (/^(?:(?:стоп |stop )?(?:у меня вопрос|есть вопрос|хочу задать вопрос|i have a question)|задать вопрос|ask a question)$/.test(t)) return 'question';
   if (t.split(' ').length <= 6 && SPELL.test(t)) return 'spell';
   if (t.split(' ').length > 4) return null;
   for (const [name, re] of COMMANDS) if (re.test(t)) return name;

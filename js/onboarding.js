@@ -148,8 +148,8 @@ export function initOnboarding(hooks) {
     const ru = getVoices().some((v) => (en ? /^en/i : /^ru/i).test(v.lang));
     stopSpeaking();
     const r = await speak(en
-      ? 'Hi! I will dictate your notes. If something is unclear, say “stop” and ask a question.'
-      : 'Привет! Я буду диктовать ваш конспект. Если что-то непонятно — скажите «стоп» и задайте вопрос.', { rate: hooks.getSettings().rate });
+      ? 'Hi! I will dictate your notes. If something is unclear, say “I have a question”.'
+      : 'Привет! Я буду диктовать ваш конспект. Если что-то непонятно — скажите «у меня вопрос».', { rate: hooks.getSettings().rate });
     st.textContent = r === 'error'
       ? (IOS ? 'Голос не воспроизвёлся. Проверьте громкость и что переключатель «Без звука» сбоку iPhone выключен.' : 'Голос не воспроизвёлся. Проверьте громкость и что в Android установлен «Синтезатор речи Google».')
       : ru ? 'Если голос слышно — всё в порядке.'
@@ -170,8 +170,8 @@ export function initOnboarding(hooks) {
     st.className = 'ob-status ok';
     stopSpeaking();
     speak(hooks.getSettings().contentLang === 'en'
-      ? 'Hi! This is the voice that will dictate your notes. If something is unclear, say “stop” and ask a question.'
-      : 'Привет! Этим голосом я буду диктовать ваш конспект — если что-то непонятно, скажите «стоп» и задайте вопрос.', { rate: hooks.getSettings().rate });
+      ? 'Hi! This is the voice that will dictate your notes. If something is unclear, say “I have a question”.'
+      : 'Привет! Этим голосом я буду диктовать ваш конспект — если что-то непонятно, скажите «у меня вопрос».', { rate: hooks.getSettings().rate });
   });
 
   $('obMic').addEventListener('click', async () => {

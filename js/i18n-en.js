@@ -7,6 +7,18 @@ const pl = (n, one, many) => `${n} ${+n === 1 ? one : many}`;
 const VOICE = { Бая: 'Baya', Ксения: 'Xenia', Ксюша: 'Ksyusha', Айдар: 'Aidar', Евгений: 'Evgeny', Ирина: 'Irina', Дмитрий: 'Dmitri', Денис: 'Denis', Руслан: 'Ruslan' };
 
 export const EXACT = {
+  'Стоп': 'Stop',
+  'Стоп / продолжить': 'Stop / continue',
+  'Задать вопрос': 'Ask a question',
+  'Включить микрофон': 'Turn microphone on',
+  'Выключить микрофон': 'Turn microphone off',
+  'По кнопке микрофона': 'With the microphone button',
+  'Для голосового вопроса нажмите значок микрофона рядом с полем ввода.': 'To ask by voice, tap the microphone next to the text field.',
+  'Bluetooth-наушники: микрофон по кнопке': 'Bluetooth headphones: microphone on demand',
+  'Bluetooth-наушники: чтобы голос звучал чисто, а не «как по телефону», микрофон включается только по кнопке микрофона в поле вопроса.': 'With Bluetooth headphones, turn on the microphone in the question field to keep playback clear the rest of the time.',
+  '— поставить на паузу;': '— pause;',
+  '— задать вопрос': '— ask a question',
+  'Откройте приложение в Chrome; пока можно пользоваться «Задать вопрос» и вводить вопросы текстом.': 'Open the app in Chrome. You can still use “Ask a question” and type.',
   'Насколько вы были уверены?': 'How confident were you?',
   'Знал': 'Knew it', 'Сомневался': 'Unsure', 'Угадал': 'Guessed',
   'Цитата из оригинала': 'Quote from the original',
