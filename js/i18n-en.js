@@ -12,6 +12,8 @@ export const EXACT = {
   'Задать вопрос': 'Ask a question',
   'Включить микрофон': 'Turn microphone on',
   'Выключить микрофон': 'Turn microphone off',
+  'Введите вопрос или включите микрофон': 'Type a question or turn on the microphone',
+  'Введите вопрос': 'Type a question',
   'По кнопке микрофона': 'With the microphone button',
   'Для голосового вопроса нажмите значок микрофона рядом с полем ввода.': 'To ask by voice, tap the microphone next to the text field.',
   'Bluetooth-наушники: микрофон по кнопке': 'Bluetooth headphones: microphone on demand',

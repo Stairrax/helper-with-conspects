@@ -1508,7 +1508,8 @@ function renderDictation() {
   $('chunkBox').classList.toggle('hidden-text', !settings.showText && !!chunk && !own);
   $('toggleText').textContent = settings.showText ? 'Скрыть текст' : 'Показать текст';
 
-  $('dictState').textContent = st === 'idle' && progress?.review?.ids?.length ? `Нажмите ▶ — продолжу повторение (${progress.review.i + 1} из ${progress.review.ids.length})`
+  $('dictState').textContent = st === 'listening' && !dict.micOn ? T(srSupported ? 'Введите вопрос или включите микрофон' : 'Введите вопрос')
+    : st === 'idle' && progress?.review?.ids?.length ? `Нажмите ▶ — продолжу повторение (${progress.review.i + 1} из ${progress.review.ids.length})`
     : st === 'idle' && progress?.spoken > 0 && t && chunk ? 'Нажмите ▶ — продолжу с этого места'
       : dict.listenOnly && (st === 'speaking' || st === 'gap') ? 'Читаю подряд, без пауз'
         : dict.listenOnly && st === 'finished' ? 'Конспект прослушан'

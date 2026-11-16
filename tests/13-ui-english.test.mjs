@@ -54,7 +54,7 @@ export default async ({ open, prepare, ok }) => {
   await page.click('#stopBtn');
   await page.click('#openQuestionBtn');
   await page.waitForTimeout(300);
-  ok(/Listening/.test(await page.textContent('#dictState')), 'состояние после СТОП: ' + await page.textContent('#dictState'));
+  ok(/Type a question or turn on the microphone/.test(await page.textContent('#dictState')), 'после открытия вопроса приложение предлагает ввод текста');
   await page.click('[data-tab=settings]');
   await page.waitForTimeout(150);
   left = await page.evaluate(leftovers, true);
