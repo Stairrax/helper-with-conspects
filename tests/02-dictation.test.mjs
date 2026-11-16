@@ -16,6 +16,7 @@ export default async ({ open, prepare, FINANCE, ok }) => {
   ok(await page.locator('body').getAttribute('data-dict') === 'paused', 'после «Стоп» диктовка стоит на паузе');
   await page.click('#openQuestionBtn');
   await page.click('#questionMic');
+  await page.waitForFunction(() => document.getElementById('questionMic').getAttribute('aria-pressed') === 'true');
 
   await say('почему вклад растёт всё быстрее', true, 200);
   await page.waitForFunction(() => /Продолжаем/.test(window.__spoken.at(-1) || ''), null, { timeout: 10000 });
