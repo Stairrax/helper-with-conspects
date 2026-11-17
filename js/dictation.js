@@ -132,7 +132,7 @@ export class Dictation {
     // подключили или отключили Bluetooth-наушники — сразу решаем, слушать ли микрофон без «СТОП»
     onBtChange(() => {
       if (!this.micForced && !this.micFree()) this.rec.stop();
-      else if (this.micFree() && !['idle', 'finished'].includes(this.state)) this.mic(false);
+      else if (this.micFree() && !['idle', 'finished', 'paused', 'listening'].includes(this.state)) this.mic(false);
       this.h.emit();
     });
     setInterval(() => {
@@ -353,6 +353,11 @@ export class Dictation {
   micAfterResume() {
     this.micForced = false;
     if (!this.micFree()) this.rec.stop();
+  }
+
+  stopMic() {
+    this.micForced = false;
+    this.rec.stop();
   }
 
   /** Пока звучит голос, микрофон выключен (если не включено «Слушать, пока говорю»). after — через сколько включить снова. */
@@ -819,7 +824,7 @@ export class Dictation {
     this.consumed.add(r.id);
     const cmd = matchCommand(text);
     if (!this.longBuf) {
-      if (cmd === 'stop' || cmd === 'pause') return this.interrupt(cmd === 'stop' ? 'question' : 'pause');
+      if (cmd === 'stop' || cmd === 'pause') return this.interrupt('pause');
       if (cmd === 'repeat') return this.resolveWaiter({ type: 'repeat' });
       if (cmd === 'next' || cmd === 'skipTopic') return this.resolveWaiter({ type: 'skip' });
       if (isDontKnow(text)) return this.resolveWaiter({ type: 'dontknow' });
@@ -1146,7 +1151,11 @@ export class Dictation {
       if (kind === 'question') { this.mic(true); this.set(st, 'Задайте вопрос голосом или текстом'); }
       return;
     }
-    this.mic(true);
+    if (kind === 'question') this.mic(true);
+    else {
+      this.clearQuestion();
+      this.stopMic();
+    }
     this.set(kind === 'pause' ? 'paused' : 'listening');
     if (guess && DICTATING.includes(st)) {
       this.autoTimer = setTimeout(() => {
@@ -1299,8 +1308,9 @@ export class Dictation {
 
   command(cmd, text = '') {
     switch (cmd) {
-      case 'stop': return this.interrupt('question');
+      case 'stop':
       case 'pause': return this.interrupt('pause');
+      case 'question': return this.interrupt('question');
       case 'next': return this.next();
       // «записал/готово»: в паузе — дальше; пока читается новый кусок — ничего не пропускаем
       case 'written':
@@ -1396,7 +1406,7 @@ export class Dictation {
 
     if (st === 'quizListen') {
       if (!this.qBuf) {
-        if (cmd === 'stop' || cmd === 'pause') return this.interrupt(cmd === 'stop' ? 'question' : 'pause');
+        if (cmd === 'stop' || cmd === 'pause') return this.interrupt('pause');
         if (cmd === 'repeat') return this.resolveWaiter({ type: 'repeat' });
         if (cmd === 'next') return this.resolveWaiter({ type: 'skip' });
         if (cmd === 'written') return; // дописывали последний кусок — это не ответ
@@ -1407,7 +1417,8 @@ export class Dictation {
     }
     if (st === 'ticketEnd') {
       if (isYes(text) || cmd === 'next' || cmd === 'continue' || cmd === 'written') return this.startTicket();
-      if (isNo(text) || cmd === 'stop' || cmd === 'pause') return this.set('paused');
+      if (cmd === 'question') return this.command(cmd, text);
+      if (isNo(text) || cmd === 'stop' || cmd === 'pause') return this.interrupt('pause');
       if (words.length >= 2) return this.addQuestionPart(stripCue(text));
       return;
     }

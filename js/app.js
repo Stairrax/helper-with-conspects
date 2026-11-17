@@ -265,7 +265,14 @@ $('prepAllBtn').addEventListener('click', () => {
   render();
 });
 $('limitKeyBtn').addEventListener('click', () => wizard.open(1));
-$('analyzeStatus').addEventListener('click', (e) => { if (e.target.closest('[data-own-key]')) wizard.open(1); });
+$('analyzeStatus').addEventListener('click', (e) => {
+  if (e.target.closest('[data-own-key]')) wizard.open(1);
+  else if (e.target.closest('[data-retry-analysis]')) $('analyzeBtn').click();
+  else if (e.target.closest('[data-check-connection]')) {
+    switchTab('settings');
+    $('netCheckBtn').click();
+  }
+});
 // ошибочные темы перезапускаются автоматически
 setInterval(() => { if (project && !gen.running && gen.pick(project)) gen.loop(); }, 15000);
 
@@ -642,10 +649,23 @@ $('analyzeBtn').addEventListener('click', async () => {
     gen.loop();
   } catch (e) {
     if (!current() || e.name === 'AbortError') return;
-    logLine('Ошибка: ' + (e.message || e), 'err');
-    $('analyzeStatus').innerHTML = `<span style="color:var(--danger)">${esc(e.message || e)}</span>` + (e.code === 'DAILY_LIMIT'
-      ? `<br><span class="muted small">${esc(T('Сохранённые результаты распознавания и разбора можно использовать при следующей попытке. Или подключите свой ключ.'))}</span> <button class="btn text" data-own-key>${esc(T('Подключить свой ключ'))}</button>`
-      : '');
+    const message = e.message || String(e);
+    logLine('Ошибка: ' + message, 'err');
+    // Не оставляем пользователя на тупиковом экране при временном отказе ИИ.
+    // Автоматически повторять неоднозначный запрос нельзя: провайдер мог уже
+    // обработать его. Повтор — только по явному действию пользователя.
+    const temporary = e.code === 'REQUEST_TIMEOUT' || e.code === 'NETWORK' ||
+      /\(код: (?:fallback-timeout|upstream-unreachable)\)/.test(message);
+    const diagnostic = e.code === 'REQUEST_TIMEOUT' ? ' <code>REQUEST_TIMEOUT</code>' : '';
+    const retryHelp = temporary
+      ? `<div class="muted small mt">${esc(T('Материалы не нужно добавлять заново. Уже сохранённые результаты разбора будут использованы при следующей попытке.'))}</div>` +
+        `<div class="row wrap mt8"><button class="btn tonal" data-retry-analysis>${esc(T('Повторить составление плана'))}</button>` +
+        `<button class="btn text" data-check-connection>${esc(T('Проверить связь'))}</button></div>`
+      : '';
+    $('analyzeStatus').innerHTML = `<span style="color:var(--danger)">${esc(T(message))}</span>${diagnostic}` +
+      (e.code === 'DAILY_LIMIT'
+        ? `<br><span class="muted small">${esc(T('Сохранённые результаты распознавания и разбора можно использовать при следующей попытке. Или подключите свой ключ.'))}</span> <button class="btn text" data-own-key>${esc(T('Подключить свой ключ'))}</button>`
+        : retryHelp);
   } finally {
     if (my === analysisEpoch) {
       analysisController = null;
@@ -1467,7 +1487,6 @@ $('historyCard').addEventListener('toggle', renderQuestionHistory);
 
 function renderDictation() {
   const st = dict.state;
-  document.body.dataset.dict = st; // оформлению: «СТОП» дышит, пока голос говорит
   const seq = project ? activeSeq(project) : [];
   const topicId = dict.resumePos && st !== 'topicEnd' ? dict.resumePos.topicId : progress?.topicId;
   // во время самопроверки и повторения в шапке — проверяемая тема
@@ -1528,7 +1547,8 @@ function renderDictation() {
   $('chunkBox').classList.toggle('hidden-text', !settings.showText && !!chunk && !own);
   $('toggleText').textContent = settings.showText ? 'Скрыть текст' : 'Показать текст';
 
-  $('dictState').textContent = st === 'idle' && progress?.review?.ids?.length ? `Нажмите ▶ — продолжу повторение (${progress.review.i + 1} из ${progress.review.ids.length})`
+  $('dictState').textContent = st === 'listening' && !dict.micOn ? T(srSupported ? 'Введите вопрос или включите микрофон' : 'Введите вопрос')
+    : st === 'idle' && progress?.review?.ids?.length ? `Нажмите ▶ — продолжу повторение (${progress.review.i + 1} из ${progress.review.ids.length})`
     : st === 'idle' && progress?.spoken > 0 && t && chunk ? 'Нажмите ▶ — продолжу с этого места'
       : dict.listenOnly && (st === 'speaking' || st === 'gap') ? 'Читаю подряд, без пауз'
         : dict.listenOnly && st === 'finished' ? 'Конспект прослушан'
@@ -1539,24 +1559,15 @@ function renderDictation() {
   $('heard').textContent = dict.heard && st !== 'idle' ? `«${dict.heard}»` : '';
 
   const pausedLike = PAUSED.includes(st);
-  // Одна тематическая кнопка для остановки и продолжения. Короткая надпись
-  // помещается на круглых кнопках «Авроры» и «Чернил».
-  const mainLabel = st === 'ticketEnd' ? 'Ещё'
-    : st === 'topicEnd' || pausedLike || st === 'thinking' || st === 'answering' ? 'Дальше'
-      : st === 'idle' || st === 'finished' ? 'Старт' : 'СТОП / ВОПРОС';
-  const mainDescription = st === 'ticketEnd' ? 'Ещё билет'
-    : st === 'topicEnd' ? 'Следующая тема'
-      : st === 'idle' || st === 'finished' ? 'Начать диктовку'
-        : dict.mode === 'review' && pausedLike ? 'Продолжить повторение'
-          : pausedLike || st === 'thinking' || st === 'answering' ? 'Продолжить диктовку' : 'СТОП / ВОПРОС';
-  $('stopBtn').textContent = T(mainLabel);
-  $('stopBtn').setAttribute('aria-label', T(mainDescription));
   ['repeatBtn', 'nextBtn', 'moreBtn'].forEach((id) => { $(id).disabled = !project; });
-  $('stopBtn').classList.toggle('listening', st === 'listening');
   $('retryTopicBtn').classList.toggle('hidden', !(st === 'waiting' && t?.status === 'error'));
 
   // панель вопроса — только когда диктовка остановлена
   const qaOpen = pausedLike || ['thinking', 'answering', 'quiz', 'quizListen', 'quizGrade', 'longListen'].includes(st) || (st === 'finished' && progress?.qa?.length);
+  $('questionRow').classList.toggle('hidden', st === 'paused' || st === 'break');
+  $('questionMic').classList.toggle('hidden', !srSupported || !['listening', 'quizListen', 'longListen'].includes(st));
+  $('questionMic').setAttribute('aria-pressed', String(!!dict.micOn));
+  $('questionMic').setAttribute('aria-label', T(dict.micOn ? 'Выключить микрофон' : 'Включить микрофон'));
   $('quizBtns').classList.toggle('hidden', st !== 'quizListen' && st !== 'longListen');
   $('longDone').classList.toggle('hidden', st !== 'longListen');
   $('quizSkip').textContent = st === 'longListen' ? 'Пропустить' : 'Пропустить вопрос';
@@ -1635,12 +1646,22 @@ function onStop(e) {
   if (st === 'ticketEnd') dict.startTicket();
   else if (PAUSED.includes(st) || st === 'thinking' || st === 'answering') dict.resume();
   else if (st === 'idle' || st === 'finished') dict.start();
-  else dict.interrupt('question');
+  else if (st === 'longListen' && dict.longBuf.trim()) dict.finishLong();
+  else dict.interrupt('pause');
   if (activeTab !== 'dictate') switchTab('dictate');
-  if (dict.state === 'listening' && (!srSupported || dict.micError)) $('questionInput').focus();
 }
 // Обычный click работает и с касанием, и с клавиатурой, без двойного срабатывания.
 $('stopBtn').addEventListener('click', onStop);
+$('openQuestionBtn').addEventListener('click', () => {
+  dict.interrupt('text-question');
+  if (activeTab !== 'dictate') switchTab('dictate');
+  render();
+  $('questionInput').focus();
+});
+$('questionMic').addEventListener('click', () => {
+  if (dict.micOn) dict.stopMic();
+  else dict.mic(true);
+});
 $('longDone').addEventListener('click', () => dict.finishLong());
 $('quizDontKnow').addEventListener('click', () => dict.submitText('не знаю'));
 $('quizSkip').addEventListener('click', () => dict.next());
@@ -1864,7 +1885,7 @@ $('askBtn').addEventListener('click', sendQuestion);
 $('questionInput').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuestion(); } });
 $('questionInput').addEventListener('focus', () => {
   // начали печатать вопрос — останавливаем диктовку и сами её не продолжаем
-  if (['speaking', 'gap', 'waiting', 'topicEnd', 'reviewing'].includes(dict.state)) dict.interrupt('question');
+  if (['speaking', 'gap', 'waiting', 'topicEnd', 'reviewing'].includes(dict.state)) dict.interrupt('text-question');
   dict.cancelAutoResume();
 });
 
@@ -2055,7 +2076,7 @@ function micMode() {
 }
 function micHint(mode) {
   return {
-    stop: 'Звук всегда обычный. Микрофон включается только после кнопки «СТОП» или кнопки на наушниках: задайте вопрос или скажите «продолжай». Дальше / повтор — кнопками на экране или на наушниках.',
+    stop: 'Для голосового вопроса нажмите значок микрофона рядом с полем ввода.',
     gaps: 'Можно говорить «записал», «повтори», задавать вопросы — в паузах между кусками; пока звучит голос, микрофон выключен.',
     always: 'Можно перебить голосом посреди фразы. На Android голос из-за этого обрывается и звучит «как по телефону».',
   }[mode];
@@ -2299,7 +2320,8 @@ document.querySelectorAll('input[name=micMode]').forEach((r) => r.addEventListen
   settings.voiceCommands = r.value !== 'stop';
   settings.listenWhileSpeaking = r.value === 'always';
   saveSettings(settings);
-  if (!settings.voiceCommands) { if (!dict.micForced) dict.rec.stop(); } else if (dict.state !== 'idle' && dict.state !== 'finished') dict.mic(false);
+  if (!settings.voiceCommands) { if (!dict.micForced) dict.rec.stop(); }
+  else if (!['idle', 'finished', 'paused', 'listening'].includes(dict.state)) dict.mic(false);
   // если сейчас звучит голос — сразу включаем или выключаем микрофон
   if (dict.holdDepth) dict.rec.hold(!settings.listenWhileSpeaking);
   renderSettings();
@@ -2843,16 +2865,33 @@ $('resumeCard').addEventListener('click', () => { switchTab('dictate'); dict.sta
 
 let btBannerHidden = false; // подсказку про Bluetooth-наушники закрыли до перезапуска
 
+function renderDictationControls() {
+  const st = dict.state;
+  document.body.dataset.dict = st;
+  const start = st === 'idle' || st === 'finished';
+  const resume = PAUSED.includes(st) || st === 'thinking' || st === 'answering';
+  const label = st === 'ticketEnd' ? 'Ещё' : start ? 'Старт' : resume ? 'Продолжить' : 'Стоп';
+  let description = label;
+  if (st === 'ticketEnd') description = 'Ещё билет';
+  else if (st === 'topicEnd') description = 'Следующая тема';
+  else if (start) description = 'Начать диктовку';
+  else if (resume) description = dict.mode === 'review' ? 'Продолжить повторение' : 'Продолжить диктовку';
+  $('stopBtn').textContent = T(label);
+  $('stopBtn').setAttribute('aria-label', T(description));
+  $('stopBtn').classList.toggle('listening', st === 'listening');
+  $('stopBtn').classList.toggle('resuming', label === 'Продолжить');
+  $('openQuestionBtn').classList.toggle('hidden', !['paused', 'topicEnd', 'break', 'ticketEnd'].includes(st));
+  const visible = !!project && (activeTab === 'dictate' || !start);
+  $('stopBar').classList.toggle('hidden', !visible);
+  document.body.classList.toggle('has-stop', visible);
+}
+
 function render() {
+  renderDictationControls();
   if (activeTab === 'plan') renderPlan();
   if (activeTab === 'dictate') renderDictation();
   if (activeTab === 'load') renderResume();
   $('micState').classList.toggle('on', !!dict.micOn);
-  // СТОП: всегда на экране диктовки, на других — пока идёт диктовка
-  const active = !['idle', 'finished'].includes(dict.state);
-  const showStop = !!project && (activeTab === 'dictate' || active);
-  $('stopBar').classList.toggle('hidden', !showStop);
-  document.body.classList.toggle('has-stop', showStop);
   const bt = dict.btMicOff && !!project && !btBannerHidden;
   $('btBanner').classList.toggle('hidden', !bt);
   $('headphonesTip').classList.toggle('hidden', bt || tipHidden() || !srSupported || !project);
@@ -2863,7 +2902,7 @@ function renderWarnings() {
   const warn = [];
   if (!ttsSupported) warn.push(IOS ? 'Этот браузер не поддерживает синтез речи. Откройте приложение в Safari.' : 'Этот браузер не поддерживает синтез речи. Откройте приложение в Chrome на Android.');
   if (!srSupported) {
-    warn.push('Этот браузер не распознаёт речь — голосовые команды недоступны. Откройте приложение в Chrome; пока можно пользоваться кнопкой «СТОП / ВОПРОС» и писать вопросы.');
+    warn.push(T('Этот браузер не распознаёт речь — голосовые команды недоступны.') + ' ' + T('Откройте приложение в Chrome; пока можно пользоваться «Задать вопрос» и вводить вопросы текстом.'));
   }
   if (location.protocol !== 'https:' && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
     warn.push('Страница открыта не по HTTPS — микрофон и установка приложения работать не будут. Разместите приложение на GitHub Pages или Netlify.');

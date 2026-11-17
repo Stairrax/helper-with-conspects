@@ -33,7 +33,7 @@ export default async ({ open, prepare, FINANCE, ok }) => {
   ok(await page.evaluate(() => document.getElementById('fxSheet').classList.contains('hidden')), '«закрой формулы»');
 
   const settings = () => page.evaluate(() => JSON.parse(localStorage.getItem('kd.settings')));
-  await say('стоп');
+  await say('у меня вопрос');
   const n = await page.evaluate(() => window.__spoken.length);
   await say('какая сейчас тема');
   ok(/Тема 1 из 2/.test(await page.evaluate((n) => window.__spoken.slice(n).join(' '), n)), '«какая сейчас тема» — ответ голосом');

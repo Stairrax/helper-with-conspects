@@ -21,8 +21,8 @@ export default async ({ open, prepare, ok }) => {
   await say('show formulas');
   ok(await page.isVisible('#fxSheet .fx-list'), '«show formulas»');
   await say('close formulas');
-  await say('stop', true, 300);
-  ok(await page.evaluate(() => !window.speechSynthesis.speaking) && /Слушаю/.test(await page.textContent('#dictState')), '«stop»');
+  await say('I have a question', true, 300);
+  ok(await page.evaluate(() => !window.speechSynthesis.speaking) && /Слушаю/.test(await page.textContent('#dictState')), '«I have a question» останавливает диктовку и включает голосовой ввод');
   await page.evaluate(() => { window.__dur = 0; });
   await say('why does the amount grow faster', true, 200);
   await page.waitForFunction(() => /Shall we continue/.test(window.__spoken.at(-1) || ''), null, { timeout: 10000 });

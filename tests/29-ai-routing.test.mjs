@@ -47,7 +47,9 @@ export default async ({ ok, open, prepare, FINANCE }) => {
   await page.click('#startBtn');
   await page.waitForFunction(() => window.__spoken.length >= 2 && window.speechSynthesis.speaking, null, { timeout: 10000 });
   await page.click('#stopBtn');
-  await page.waitForTimeout(150);
+  await page.click('#openQuestionBtn');
+  await page.click('#questionMic');
+  await page.waitForFunction(() => document.getElementById('questionMic').getAttribute('aria-pressed') === 'true');
   await say('почему проценты растут', true, 200);
   await page.waitForFunction(() => /Продолжаем/.test(window.__spoken.at(-1) || ''), null, { timeout: 10000 });
   ok(purposes.includes('question'), 'вопрос во время диктовки отправляется отдельно от подготовки');

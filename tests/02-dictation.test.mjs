@@ -13,7 +13,10 @@ export default async ({ open, prepare, FINANCE, ok }) => {
   await page.click('#stopBtn');
   ok(await page.evaluate(() => !window.speechSynthesis.speaking), '«СТОП» сразу обрывает речь');
   await page.waitForTimeout(150); // надпись обновляется со следующим кадром
-  ok(/Слушаю/.test(await page.textContent('#dictState')), 'после «СТОП» приложение слушает вопрос');
+  ok(await page.locator('body').getAttribute('data-dict') === 'paused', 'после «Стоп» диктовка стоит на паузе');
+  await page.click('#openQuestionBtn');
+  await page.click('#questionMic');
+  await page.waitForFunction(() => document.getElementById('questionMic').getAttribute('aria-pressed') === 'true');
 
   await say('почему вклад растёт всё быстрее', true, 200);
   await page.waitForFunction(() => /Продолжаем/.test(window.__spoken.at(-1) || ''), null, { timeout: 10000 });
@@ -24,6 +27,8 @@ export default async ({ open, prepare, FINANCE, ok }) => {
 
   await say('стоп', true, 300);
   ok(await page.evaluate(() => !window.speechSynthesis.speaking), 'голосовое «стоп»');
+  await page.click('#stopBtn');
+  await page.waitForFunction(() => window.speechSynthesis.speaking);
   await say('пропусти тему', true, 600);
   ok(/Тема: Сложный процент/.test(await page.evaluate(() => window.__spoken.join('|'))), '«пропусти тему» — следующая тема');
 

@@ -97,7 +97,9 @@ for (const [scheme, look, mine] of [['dark', 'aurora', ['dictate', 'answer']], [
   if (want('dictate')) await shot(page, `dictate-${look}.png`);
 
   await page.click('#stopBtn');
-  await page.waitForTimeout(300);
+  await page.click('#openQuestionBtn');
+  await page.click('#questionMic');
+  await page.waitForFunction(() => document.getElementById('questionMic').getAttribute('aria-pressed') === 'true');
   await say(page, QUESTION);
   await page.waitForFunction(() => /Продолжаем/.test(document.getElementById('dictState').textContent), null, { timeout: 20000 });
   await page.evaluate(() => scrollTo(0, document.body.scrollHeight));

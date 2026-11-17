@@ -29,6 +29,7 @@ export default async ({ open, prepare, FINANCE, ok }) => {
   await page.click('#startBtn');
   await page.waitForFunction(() => window.speechSynthesis.speaking);
   await page.click('#stopBtn');
+  await page.click('#openQuestionBtn');
   ok(await page.locator('#qaHistory .item').count() === 0, 'при входе закрытая история не создаёт элементы');
   await page.click('#historyTitle');
   await page.waitForFunction(() => document.querySelector('#qaHistory .a')?.textContent === 'Сохранённый ответ');

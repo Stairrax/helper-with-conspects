@@ -228,7 +228,7 @@
       <div id="srWarn" class="banner warn hidden"></div>
       <div id="btBanner" class="banner hidden">
         <svg class="ic"><use href="#i-headphones"/></svg>
-        <span>Bluetooth-наушники: чтобы голос звучал чисто, а не «как по телефону», микрофон включается только после «СТОП» или кнопки на наушниках.</span>
+        <span>Bluetooth-наушники: чтобы голос звучал чисто, а не «как по телефону», микрофон включается только по кнопке микрофона в поле вопроса.</span>
         <button id="btBannerClose" class="icon-btn small" aria-label="Скрыть"><svg><use href="#i-close"/></svg></button>
       </div>
       <div id="headphonesTip" class="banner hidden">
@@ -270,8 +270,9 @@
 
       <div id="qaPanel" class="qa hidden">
         <div id="answer" data-no-i18n class="answer hidden"></div>
-        <div class="ask-row">
+        <div id="questionRow" class="ask-row">
           <textarea id="questionInput" rows="1" placeholder="Спросите голосом или напишите"></textarea>
+          <button id="questionMic" class="icon-btn" aria-label="Включить микрофон" aria-pressed="false"><svg><use href="#i-mic"/></svg></button>
           <button id="askBtn" class="icon-btn filled" aria-label="Спросить"><svg><use href="#i-send"/></svg></button>
         </div>
         <div id="quizBtns" class="row hidden mt8">
@@ -422,12 +423,12 @@
         </div>
         <div class="card-title mt">Микрофон</div>
         <div class="seg">
-          <label><input type="radio" name="micMode" value="stop"><span>После «СТОП»</span></label>
+          <label><input type="radio" name="micMode" value="stop"><span>По кнопке микрофона</span></label>
           <label><input type="radio" name="micMode" value="gaps"><span>В паузах</span></label>
           <label><input type="radio" name="micMode" value="always"><span>Всегда</span></label>
         </div>
         <p class="hint" id="micHint"></p>
-        <label class="switch" id="btRow"><span>Bluetooth-наушники: микрофон только после «СТОП»<small id="btState"></small></span><input id="btStopOnly" type="checkbox"><i></i></label>
+        <label class="switch" id="btRow"><span>Bluetooth-наушники: микрофон по кнопке<small id="btState"></small></span><input id="btStopOnly" type="checkbox"><i></i></label>
         <label class="switch" id="bargeInRow"><span>Прерывать при любой моей речи<small>только в наушниках</small></span><input id="bargeIn" type="checkbox"><i></i></label>
         <div class="card-title mt">Пауза после куска</div>
         <div class="seg">
@@ -457,7 +458,7 @@
             <kbd>←</kbd><span>повторить кусок</span>
             <kbd>Shift + →</kbd><span>следующая тема</span>
             <kbd>Shift + ←</kbd><span>предыдущая тема</span>
-            <kbd>S</kbd><span>СТОП / вопрос</span>
+            <kbd>S</kbd><span>Стоп / продолжить</span>
             <kbd>F</kbd><span>формулы</span>
             <kbd>+ / −</kbd><span>быстрее / медленнее</span>
             <kbd>1–4</kbd><span>вкладки</span>
@@ -467,7 +468,7 @@
         <details class="mini">
           <summary>Голосовые команды</summary>
           <ul class="cmds" data-lang="ru">
-            <li><b data-no-i18n>стоп</b> — остановить и задать вопрос; <b data-no-i18n>пауза</b> — просто пауза</li>
+            <li><b data-no-i18n>стоп</b> — поставить на паузу; <b data-no-i18n>у меня вопрос</b> — задать вопрос</li>
             <li><b data-no-i18n>продолжай</b> — с прерванного куска</li>
             <li><b data-no-i18n>дальше</b>, <b data-no-i18n>повтори</b>, <b data-no-i18n>повтори тему</b>, <b data-no-i18n>пропусти тему</b></li>
             <li><b data-no-i18n>медленнее</b>, <b data-no-i18n>быстрее</b></li>
@@ -540,6 +541,7 @@
 
   <div id="stopBar" class="stopbar hidden">
     <button id="stopBtn" class="stop" aria-label="Начать диктовку">Старт</button>
+    <button id="openQuestionBtn" class="btn tonal hidden">Задать вопрос</button>
   </div>
 
   <nav class="navbar" role="tablist">
@@ -789,37 +791,37 @@
   <script type="importmap">
   {
     "imports": {
-      "./js/abbr.js": "./js/abbr.js?v=102",
-      "./js/ai.js": "./js/ai.js?v=102",
-      "./js/analyze.js": "./js/analyze.js?v=102",
-      "./js/topic-identity.js": "./js/topic-identity.js?v=102",
-      "./js/source-trace.js": "./js/source-trace.js?v=102",
-      "./js/review-schedule.js": "./js/review-schedule.js?v=102",
-      "./js/anthropic.js": "./js/anthropic.js?v=102",
-      "./js/app.js": "./js/app.js?v=102",
-      "./js/commands.js": "./js/commands.js?v=102",
-      "./js/lecture.js": "./js/lecture.js?v=102",
-      "./js/config.js": "./js/config.js?v=102",
-      "./js/stats.js": "./js/stats.js?v=102",
-      "./js/cheatsheet.js": "./js/cheatsheet.js?v=102",
-      "./js/calendar.js": "./js/calendar.js?v=102",
-      "./js/mcq.js": "./js/mcq.js?v=102",
-      "./js/audiobook.js": "./js/audiobook.js?v=102",
-      "./js/tickets.js": "./js/tickets.js?v=102",
-      "./js/i18n.js": "./js/i18n.js?v=102",
-      "./js/i18n-en.js": "./js/i18n-en.js?v=102",
-      "./js/platform.js": "./js/platform.js?v=102",
-      "./js/dictation.js": "./js/dictation.js?v=102",
-      "./js/extract.js": "./js/extract.js?v=102",
-      "./js/gemini.js": "./js/gemini.js?v=102",
-      "./js/media.js": "./js/media.js?v=102",
-      "./js/neural.js": "./js/neural.js?v=102",
-      "./js/onboarding.js": "./js/onboarding.js?v=102",
-      "./js/request.js": "./js/request.js?v=102",
-      "./js/openai.js": "./js/openai.js?v=102",
-      "./js/ripple.js": "./js/ripple.js?v=102",
-      "./js/speech.js": "./js/speech.js?v=102",
-      "./js/storage.js": "./js/storage.js?v=102"
+      "./js/abbr.js": "./js/abbr.js?v=103",
+      "./js/ai.js": "./js/ai.js?v=103",
+      "./js/analyze.js": "./js/analyze.js?v=103",
+      "./js/topic-identity.js": "./js/topic-identity.js?v=103",
+      "./js/source-trace.js": "./js/source-trace.js?v=103",
+      "./js/review-schedule.js": "./js/review-schedule.js?v=103",
+      "./js/anthropic.js": "./js/anthropic.js?v=103",
+      "./js/app.js": "./js/app.js?v=103",
+      "./js/commands.js": "./js/commands.js?v=103",
+      "./js/lecture.js": "./js/lecture.js?v=103",
+      "./js/config.js": "./js/config.js?v=103",
+      "./js/stats.js": "./js/stats.js?v=103",
+      "./js/cheatsheet.js": "./js/cheatsheet.js?v=103",
+      "./js/calendar.js": "./js/calendar.js?v=103",
+      "./js/mcq.js": "./js/mcq.js?v=103",
+      "./js/audiobook.js": "./js/audiobook.js?v=103",
+      "./js/tickets.js": "./js/tickets.js?v=103",
+      "./js/i18n.js": "./js/i18n.js?v=103",
+      "./js/i18n-en.js": "./js/i18n-en.js?v=103",
+      "./js/platform.js": "./js/platform.js?v=103",
+      "./js/dictation.js": "./js/dictation.js?v=103",
+      "./js/extract.js": "./js/extract.js?v=103",
+      "./js/gemini.js": "./js/gemini.js?v=103",
+      "./js/media.js": "./js/media.js?v=103",
+      "./js/neural.js": "./js/neural.js?v=103",
+      "./js/onboarding.js": "./js/onboarding.js?v=103",
+      "./js/request.js": "./js/request.js?v=103",
+      "./js/openai.js": "./js/openai.js?v=103",
+      "./js/ripple.js": "./js/ripple.js?v=103",
+      "./js/speech.js": "./js/speech.js?v=103",
+      "./js/storage.js": "./js/storage.js?v=103"
     }
   }
   </script>
@@ -853,7 +855,7 @@
       setTimeout(function () { window.__kdFail('долго не запускается'); }, 20000);
     })();
   </script>
-  <script type="module" src="js/app.js?v=102"></script>
+  <script type="module" src="js/app.js?v=103"></script>
   <div id="printArea" class="cheatsheet" data-no-i18n></div>
 </body>
 </html>

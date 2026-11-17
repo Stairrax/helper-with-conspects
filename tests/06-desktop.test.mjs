@@ -23,7 +23,8 @@ export default async ({ open, prepare, FINANCE, ok }) => {
   await page.keyboard.press('Escape'); await page.waitForTimeout(200);
   ok(await page.evaluate(() => document.getElementById('fxSheet').classList.contains('hidden')), 'Esc — закрыть');
   await page.keyboard.press('KeyS'); await page.waitForTimeout(200);
-  ok(/Слушаю/.test(await state()), 'S — СТОП / вопрос');
+  ok(await page.locator('body').getAttribute('data-dict') === 'paused', 'S ставит диктовку на паузу');
+  await page.click('#openQuestionBtn');
   await page.focus('#questionInput'); await page.keyboard.type('s 2');
   ok((await page.inputValue('#questionInput')) === 's 2' && await page.evaluate(() => document.body.dataset.tab) === 'dictate', 'в поле вопроса клавиши печатают');
 };

@@ -91,8 +91,17 @@ function extract(data) {
   return { text: String(text || ''), finish: ch.finish_reason || '' };
 }
 
+// The free proxy can wait up to 90s for OpenRouter headers, then spend up to
+// 60s on Workers AI fallback, plus model discovery and network overhead.
+// A 180s client deadline can abort a still-valid fallback before it replies.
+// Keep shorter deadlines for direct-key requests and interactive questions.
+export function defaultGenerationTimeoutMs(purpose, baseUrl) {
+  if (purpose !== 'notes') return 120000;
+  return isFreeProxy(baseUrl) ? 240000 : 180000;
+}
+
 export async function generate(opts) {
-  return withDeadline(opts, opts.purpose === 'notes' ? 180000 : 120000, generateRequest);
+  return withDeadline(opts, defaultGenerationTimeoutMs(opts.purpose, opts.baseUrl), generateRequest);
 }
 async function generateRequest(opts) {
   const { apiKey, baseUrl, onStatus = () => {}, retries = 5, signal } = opts;
