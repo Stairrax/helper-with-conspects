@@ -25,16 +25,16 @@
 
 <table>
   <tr>
-    <td align="center"><img src="screenshots/demo-aurora.gif" width="300" alt="Оформление «Аврора»: диктовка обрывается по «стоп», приложение отвечает на вопрос и продолжает"></td>
-    <td align="center"><img src="screenshots/demo-ink.gif" width="300" alt="Оформление «Чернила»: «стоп», вопрос и ответ"></td>
+    <td align="center"><img src="screenshots/demo-aurora.gif" width="300" alt="Оформление «Аврора»: пауза, отдельная кнопка «Задать вопрос», ответ и продолжение"></td>
+    <td align="center"><img src="screenshots/demo-ink.gif" width="300" alt="Оформление «Чернила»: пауза, отдельная кнопка «Задать вопрос», ответ и продолжение"></td>
   </tr>
   <tr>
-    <td align="center"><sub>«Аврора» (тёмная тема телефона): «стоп», вопрос, ответ</sub></td>
-    <td align="center"><sub>«Чернила» (светлая тема телефона): то же самое</sub></td>
+    <td align="center"><sub>«Аврора» · тёмная тема</sub></td>
+    <td align="center"><sub>«Чернила» · светлая тема</sub></td>
   </tr>
 </table>
 
-<sub>В роликах звук заменён субтитрами: сверху — что говорит приложение и что говорит человек.</sub>
+<sub>После «Стоп» появляется кнопка «Задать вопрос». В роликах звук заменён субтитрами, над экраном также подписаны нажатия.</sub>
 
 <p>
   <img src="screenshots/dictate-aurora.png" width="190" alt="Диктовка («Аврора»)">

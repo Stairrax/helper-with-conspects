@@ -137,7 +137,7 @@ await welcome.page.waitForSelector('#obFinish', { state: 'visible' });
 await shot(welcome.page, 'welcome-aurora.png');
 await welcome.ctx.close();
 
-// ---------- GIF: диктовка, «стоп», вопрос, ответ, «да» — и дальше с того же места ----------
+// ---------- GIF: пауза, отдельная кнопка вопроса, ответ и продолжение ----------
 // подписи над экраном — в цветах оформления
 const CAP = {
   aurora: { bg: '#070818', text: '#eef0ff', line: '#26284a', who: '#b7abff', me: '#7ef0ee' },
@@ -176,13 +176,23 @@ await app().click('[data-tab=plan]');
 await app().evaluate(() => { scrollTo(0, 0); window.__dur = 3200; });
 await demo.page.waitForTimeout(600);
 const from = (Date.now() - demo.started) / 1000;
-const caption = async (text, ms) => { await demo.page.evaluate((t) => { window.me = t; }, text); await say(app(), text); await demo.page.waitForTimeout(ms); await demo.page.evaluate(() => { window.me = ''; }); };
+const caption = async (text, ms, action = () => say(app(), text)) => {
+  await demo.page.evaluate((t) => { window.me = t; }, text);
+  await action();
+  await demo.page.waitForTimeout(ms);
+  await demo.page.evaluate(() => { window.me = ''; });
+};
 
 await demo.page.waitForTimeout(1200);
 await app().click('#startBtn');
 await app().waitForFunction(() => document.getElementById('chunkText').textContent.includes('Их планируют') && window.speechSynthesis.speaking, null, { timeout: 20000 });
 await demo.page.waitForTimeout(1800);
-await caption('Стоп', 1500);
+await caption('Нажимаю «Стоп»', 1300, () => app().click('#stopBtn'));
+await caption('Задать вопрос', 1100, () => app().click('#openQuestionBtn'));
+await caption('Включаю микрофон', 950, async () => {
+  await app().click('#questionMic');
+  await app().waitForFunction(() => document.getElementById('questionMic').getAttribute('aria-pressed') === 'true');
+});
 await caption('Что значит «на руки»?', 1200);
 await app().waitForFunction(() => /Продолжаем/.test(document.getElementById('dictState').textContent), null, { timeout: 30000 });
 await demo.page.waitForTimeout(1500);
