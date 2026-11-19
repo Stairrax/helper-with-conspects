@@ -26,13 +26,33 @@ async function withDeadline(opts, defaultMs, run) {
     : cancelled());
   ctrl.signal.addEventListener('abort', onAbort, { once: true });
   const timer = setTimeout(() => { expired = true; ctrl.abort(); }, ms);
+  // If the model stays silent, explain the long wait instead of leaving the
+  // original progress label unchanged for minutes. Only a UI hint: never
+  // retry an ambiguous AI request or restart the deadline.
+  let slowTimer = null;
+  const scheduleSlowNotice = () => {
+    clearTimeout(slowTimer);
+    if (opts.purpose !== 'notes' || typeof opts.onStatus !== 'function') return;
+    slowTimer = setTimeout(() => {
+      slowTimer = null;
+      if (ctrl.signal.aborted) return;
+      try { opts.onStatus('Нейросеть отвечает медленнее обычного. Продолжаю ждать…'); }
+      catch { /* A progress notification must never break AI generation. */ }
+    }, 45000);
+  };
   const scoped = { ...opts, signal: ctrl.signal,
-    onStatus: (...args) => { if (!ctrl.signal.aborted) opts.onStatus?.(...args); },
+    onStatus: (...args) => {
+      if (ctrl.signal.aborted) return;
+      opts.onStatus?.(...args);
+      scheduleSlowNotice();
+    },
     onText: (...args) => { if (!ctrl.signal.aborted) opts.onText?.(...args); },
   };
+  scheduleSlowNotice();
   try { return await Promise.race([Promise.resolve().then(() => run(scoped)), stopped]); }
   finally {
     clearTimeout(timer);
+    clearTimeout(slowTimer);
     opts.signal?.removeEventListener('abort', abort);
     ctrl.signal.removeEventListener('abort', onAbort);
     ctrl.abort();
