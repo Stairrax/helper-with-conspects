@@ -7,6 +7,14 @@ const pl = (n, one, many) => `${n} ${+n === 1 ? one : many}`;
 const VOICE = { Бая: 'Baya', Ксения: 'Xenia', Ксюша: 'Ksyusha', Айдар: 'Aidar', Евгений: 'Evgeny', Ирина: 'Irina', Дмитрий: 'Dmitri', Денис: 'Denis', Руслан: 'Ruslan' };
 
 export const EXACT = {
+  'Учебный план': 'Study plan',
+  'Подготавливаю конспект': 'Preparing your notes',
+  'Этапы подготовки': 'Preparation stages',
+  'Темы': 'Topics',
+  'План готов': 'Plan ready',
+  'Не удалось составить план': 'Could not create the plan',
+  'Подготовка прервана': 'Preparation interrupted',
+  'Сохраняю план…': 'Saving the plan…',
   'Нейросеть отвечает медленнее обычного. Продолжаю ждать…': 'The AI is taking longer than usual. Still waiting…',
   'Стоп': 'Stop',
   'Стоп / продолжить': 'Stop / continue',
