@@ -16,17 +16,19 @@ const TYPES = {
 };
 
 /** Раздаёт папку репозитория, как GitHub Pages. */
-export function startServer(port = 0) {
+export function startServer(port = 0, root = ROOT, mount = '/') {
   const server = http.createServer((req, res) => {
     const url = decodeURIComponent(new URL(req.url, 'http://x').pathname);
-    let file = path.join(ROOT, url);
-    if (!file.startsWith(ROOT)) { res.writeHead(403); return res.end(); }
+    if (!url.startsWith(mount)) { res.writeHead(404); return res.end(); }
+    let file = path.resolve(root, '.' + '/' + url.slice(mount.length));
+    const relative = path.relative(root, file);
+    if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) { res.writeHead(403); return res.end(); }
     if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');
     if (!fs.existsSync(file)) { res.writeHead(404); return res.end('not found'); }
     res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-cache' });
     fs.createReadStream(file).pipe(res);
   });
-  return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve({ server, base: `http://127.0.0.1:${server.address().port}/` })));
+  return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve({ server, base: `http://127.0.0.1:${server.address().port}${mount}` })));
 }
 
 /** Имитация speechSynthesis и SpeechRecognition: window.__spoken — что сказано, window.__say(текст) — «сказал человек». */

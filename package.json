@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "start": "node tests/serve.mjs",
-    "test": "node tests/run.mjs"
+    "test": "node tests/run.mjs",
+    "build": "node scripts/build.mjs",
+    "preview": "node scripts/preview.mjs"
   },
   "devDependencies": {
     "lamejs": "^1.2.1",

@@ -1,0 +1,36 @@
+name: Release build preview
+on:
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - 'tests/60-release-build.test.mjs'
+      - 'js/**'
+      - 'css/**'
+      - 'index.html'
+      - 'sw.js'
+      - 'fonts/**'
+      - 'manifest.webmanifest'
+      - '.github/workflows/release-preview.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install chromium
+      - run: node tests/run.mjs 60-release-build
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-preview
+          path: dist/
+          include-hidden-files: true
+          retention-days: 7
