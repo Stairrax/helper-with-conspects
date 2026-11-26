@@ -2885,9 +2885,12 @@ function renderResume() {
   const seq = activeSeq(project);
   const done = seq.filter((x) => progress.done?.[x.id]).length;
   const rv = progress.review;
+  const n = t?.chunks?.length || 0;
+  const at = Math.max(0, Number.isFinite(progress.chunk) ? Math.trunc(progress.chunk) : 0);
+  const place = n ? (at >= n ? 'все фрагменты прочитаны' : `кусок ${at + 1} из ${n}`) : '';
   $('resumeText').textContent = rv?.ids?.length
     ? `Повторение: тема ${Math.min(rv.i + 1, rv.ids.length)} из ${rv.ids.length}`
-    : t ? `«${t.title}», кусок ${progress.chunk + 1} из ${t.chunks?.length || '?'} · пройдено тем ${done} из ${seq.length}`
+    : t ? `«${t.title}»${place ? ', ' + place : ''} · пройдено тем ${done} из ${seq.length}`
       : `Пройдено тем ${done} из ${seq.length}`;
 }
 $('resumeCard').addEventListener('click', () => { switchTab('dictate'); dict.start(); });
