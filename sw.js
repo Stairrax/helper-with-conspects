@@ -2,7 +2,7 @@
 // Запросы к API нейросетей никогда не кэшируются.
 
 // При выпуске новой версии поднимайте VERSION и ?v= в index.html (importmap и app.js) — одно и то же число.
-const VERSION = 'kd-v105';
+const VERSION = 'kd-v108';
 const SHELL = [
   './',
   'js/request.js',
@@ -63,7 +63,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== VERSION && k !== 'kd-cdn' && k !== 'kd-voices' && k !== 'kd-fonts' && k !== 'kd-meta').map((k) => caches.delete(k)))) // скачанный голос не удаляем
+      .then((keys) => Promise.all(keys.filter(k => /^kd-v\d+$/.test(k) && k !== VERSION).map((k) => caches.delete(k)))) // скачанный голос не удаляем
       .then(() => self.clients.claim()),
   );
 });
@@ -88,7 +88,7 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  if (url.origin !== self.location.origin) return;
+  if (url.origin !== self.location.origin || !url.href.startsWith(self.registration.scope)) return;
   // шрифты темы «Неон» не меняются — храним отдельно, чтобы не скачивать заново с каждой версией
   if (url.pathname.includes('/fonts/')) {
     e.respondWith(caches.open('kd-fonts').then(async (c) => {
@@ -104,7 +104,7 @@ self.addEventListener('fetch', (e) => {
   if (url.pathname.includes('/voices/')) return;
 
   // Свои файлы: сначала сеть (чтобы обновления приходили сразу), при офлайне — кэш.
-  // cache: 'no-cache' — всегда сверяемся с сервером: файлы разных версий не перемешаются.
+  // cache: 'no-cache' — сверяемся с сервером перед использованием HTTP-кэша.
   const fresh = req.mode === 'navigate' ? fetch(req.url, { cache: 'no-cache' }) : fetch(req, { cache: 'no-cache' });
   e.respondWith(
     fresh
@@ -114,8 +114,13 @@ self.addEventListener('fetch', (e) => {
         if (req.mode === 'navigate' && res.redirected) return new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers });
         return res;
       })
-      .catch(async () => (await caches.match(req, { ignoreSearch: true })) ||
-        (req.mode === 'navigate' ? caches.match('index.html') : Response.error())),
+      .catch(async () => {
+        const cache = await caches.open(VERSION);
+        const version = url.searchParams.get('v');
+        if (version !== null && 'kd-v' + version !== VERSION) return Response.error();
+        return (await cache.match(req, { ignoreSearch: true })) ||
+          (req.mode === 'navigate' ? (await cache.match('index.html')) || Response.error() : Response.error());
+      }),
   );
 });
 
