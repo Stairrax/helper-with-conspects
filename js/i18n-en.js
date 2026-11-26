@@ -603,6 +603,8 @@ export const PATTERNS = [
   [/^Карточек: (\d+)\. В Anki: Файл → Импорт → этот файл\.$/, 'Cards: $1. In Anki: File → Import → this file.'],
   [/^Повторение: тема (\d+) из (\d+)$/, 'Review: topic $1 of $2'],
   [/^«(.+)», кусок (\d+) из (.+) · пройдено тем (\d+) из (\d+)$/, '“$1”, piece $2 of $3 · topics done $4 of $5'],
+  [/^«(.+)», все фрагменты прочитаны · пройдено тем (\d+) из (\d+)$/, '“$1”, all pieces read · topics done $2 of $3'],
+  [/^«(.+)» · пройдено тем (\d+) из (\d+)$/, '“$1” · topics done $2 of $3'],
   [/^Пройдено тем (\d+) из (\d+)$/, 'Topics done $1 of $2'],
   [/^Сбой диктовки: (.*?)\. Нажмите «Продолжить»\.$/, (m, tr) => `Dictation failed: ${tr(m[1])}. Press “Continue”.`],
   [/^Ошибка подготовки темы: (.*)$/, (m, tr) => 'Topic preparation error: ' + tr(m[1])],
