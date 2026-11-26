@@ -128,8 +128,10 @@ export function saveProgress(p, id) {
 }
 
 export function clearProgress(id) {
-  if (restoring) return false;
-  try { localStorage.removeItem(progressKey(id)); } catch { /* ignore */ }
+  const key = progressKey(id);
+  if (restoring) return storageResult(key, false);
+  try { localStorage.removeItem(key); return storageResult(key, true); }
+  catch { return storageResult(key, false); }
 }
 
 // ---------- Предметы ----------
@@ -221,15 +223,25 @@ export async function idbGet(key) {
 }
 
 const writes = new Map();
+let backupGate = Promise.resolve();
+
+function enqueue(keys, run) {
+  const pending = [...new Set([backupGate, ...keys.map(key => writes.get(key))])];
+  const operation = Promise.all(pending).then(run);
+  for (const key of keys) writes.set(key, operation);
+  const clean = () => {
+    for (const key of keys) if (writes.get(key) === operation) writes.delete(key);
+  };
+  operation.then(clean, clean);
+  return operation;
+}
+
 export function idbSet(key, value) {
   if (restoring || key === RESTORE_JOURNAL) return Promise.resolve(storageResult('idb:' + key, false));
   let snapshot;
   try { snapshot = structuredClone(value); }
   catch { return Promise.resolve(storageResult('idb:' + key, false)); }
-  const write = (writes.get(key) || Promise.resolve()).then(() => writeIDB(key, snapshot));
-  writes.set(key, write);
-  write.finally(() => { if (writes.get(key) === write) writes.delete(key); });
-  return write;
+  return enqueue([key], () => writeIDB(key, snapshot));
 }
 
 async function writeIDB(key, value) {
@@ -290,28 +302,41 @@ export function settingsForBackup(source) {
 }
 
 /** Экспорт данных: настройки без API-ключей, предметы, конспекты, прогресс. */
-export async function makeBackup() {
+export async function makeBackup(liveSnapshot) {
   if (restoring) throw new Error('Restore in progress; reload required');
-  const backup = await captureBackup();
+  const backup = await captureBackup(liveSnapshot);
   // Keep the private rollback snapshot intact; redact only the exported copy.
   const raw = backup.localStorage['kd.settings'];
   if (raw) backup.localStorage['kd.settings'] = JSON.stringify(settingsForBackup(JSON.parse(raw)));
   return backup;
 }
-async function captureBackup() {
-  await Promise.all([...writes.values()]);
-  const ls = {};
-  for (let i = 0; i < localStorage.length; i++) {
-    const k = localStorage.key(i);
-    if (k?.startsWith('kd.') && k !== 'kd.backupAt') ls[k] = localStorage.getItem(k);
+async function captureBackup(liveSnapshot) {
+  const pending = [...new Set([backupGate, ...writes.values()])];
+  let release;
+  backupGate = new Promise(resolve => { release = resolve; });
+  try {
+    await Promise.all(pending);
+    const live = liveSnapshot ? structuredClone(liveSnapshot()) : null;
+    const ls = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k?.startsWith('kd.') && k !== 'kd.backupAt') ls[k] = localStorage.getItem(k);
+    }
+    const at = Date.now();
+    const idb = await idbEntries();
+    for (const [key, value] of Object.entries(ls)) {
+      if (key.startsWith('kd.idb.')) idb[key.slice('kd.idb.'.length)] = JSON.parse(value);
+    }
+    if (live) {
+      Object.assign(idb, live.idb);
+      Object.assign(ls, live.localStorage);
+      for (const key of Object.keys(ls)) if (key.startsWith('kd.idb.')) delete ls[key];
+    }
+    storageResult('backup', true);
+    return { app: BACKUP_APP, version: 1, at, localStorage: ls, idb };
+  } finally {
+    release();
   }
-  const idb = await idbEntries();
-  // Include fallback records even when IDB is available but still holds old data.
-  for (const [key, value] of Object.entries(ls)) {
-    if (key.startsWith('kd.idb.')) idb[key.slice('kd.idb.'.length)] = JSON.parse(value);
-  }
-  storageResult('backup', true);
-  return { app: BACKUP_APP, version: 1, at: Date.now(), localStorage: ls, idb };
 }
 
 /** Заменяет все данные приложения содержимым копии. */
@@ -353,8 +378,32 @@ export async function restoreBackup(data) {
   }
 }
 
-export async function idbDel(key) {
-  if (restoring || key === RESTORE_JOURNAL) return false;
-  try { await tx('readwrite', (s) => s.delete(key)); } catch { /* ignore */ }
-  try { localStorage.removeItem('kd.idb.' + key); } catch { /* ignore */ }
+export function idbDel(key) {
+  return idbDelMany([key]);
+}
+
+export function idbDelMany(input) {
+  const keys = [...new Set(input)];
+  if (restoring || keys.includes(RESTORE_JOURNAL)) return Promise.resolve(false);
+  return enqueue(keys, async () => {
+    try {
+      await tx('readwrite', store => {
+        for (const key of keys) store.delete(key);
+      });
+    } catch {
+      for (const key of keys) storageResult('idb:' + key, false);
+      return false;
+    }
+    let ok = true;
+    for (const key of keys) {
+      try {
+        localStorage.removeItem('kd.idb.' + key);
+        storageResult('idb:' + key, true);
+      } catch {
+        storageResult('idb:' + key, false);
+        ok = false;
+      }
+    }
+    return ok;
+  });
 }
