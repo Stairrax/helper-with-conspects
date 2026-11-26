@@ -7,6 +7,7 @@ const pl = (n, one, many) => `${n} ${+n === 1 ? one : many}`;
 const VOICE = { Бая: 'Baya', Ксения: 'Xenia', Ксюша: 'Ksyusha', Айдар: 'Aidar', Евгений: 'Evgeny', Ирина: 'Irina', Дмитрий: 'Dmitri', Денис: 'Denis', Руслан: 'Ruslan' };
 
 export const EXACT = {
+  'Не удалось полностью удалить предмет. Проверьте хранилище и попробуйте снова.': 'The subject could not be fully deleted. Check storage and try again.',
   'Учебный план': 'Study plan',
   'Подготавливаю конспект': 'Preparing your notes',
   'Этапы подготовки': 'Preparation stages',

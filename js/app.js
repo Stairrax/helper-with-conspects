@@ -1,7 +1,7 @@
 // Интерфейс приложения: материал, план, диктовка, настройки.
 
 import {
-  loadSettings, saveSettings, loadProgress, saveProgress, clearProgress, idbGet, idbSet, idbDel, loadSubjects, saveSubjects,
+  loadSettings, saveSettings, loadProgress, saveProgress, clearProgress, idbGet, idbSet, idbDel, idbDelMany, loadSubjects, saveSubjects,
   makeBackup, restoreBackup, settingsForBackup, storageFailures, storageFailureReasons,
 } from './storage.js';
 import { fileToSource } from './extract.js';
@@ -59,6 +59,7 @@ let progress = null;
 let subjectEpoch = 0;
 let loadedSubject = null;
 let switchingSubject = false;
+let deletingSubject = null;
 let analysisEpoch = 0;
 let analysisController = null;
 function setAnalysisView(state, stage) {
@@ -101,6 +102,7 @@ function freshProgress(projectId) {
 let saveProjectTimer = null;
 const unsavedProjects = new Map();
 function saveProject() {
+  if (deletingSubject === cur()) return;
   clearTimeout(saveProjectTimer);
   const id = cur(), p = project;
   if (p && id) unsavedProjects.set(id, { id, p });
@@ -109,15 +111,15 @@ function saveProject() {
 /** Записать конспект немедленно: при закрытии приложения и смене предмета отложенная запись пропала бы. */
 async function flushProject() {
   clearTimeout(saveProjectTimer);
-  const results = await Promise.all([...unsavedProjects.values()].map(async (s) => {
+  const results = await Promise.all([...unsavedProjects.values()].filter(s => s.id !== deletingSubject).map(async (s) => {
     const ok = await idbSet('project:' + s.id, s.p);
     if (ok && unsavedProjects.get(s.id) === s) unsavedProjects.delete(s.id);
     return ok;
   }));
   return results.every(Boolean);
 }
-const saveSources = () => idbSet('sources:' + cur(), sources);
-const persistProgress = () => { if (progress) { saveProgress(progress, cur()); syncDueSoon(); } };
+const saveSources = () => deletingSubject === cur() ? Promise.resolve(false) : idbSet('sources:' + cur(), sources);
+const persistProgress = () => { if (progress && deletingSubject !== cur()) { saveProgress(progress, cur()); syncDueSoon(); } };
 
 const STORAGE_QUOTA_WARNING = 'Не удалось сохранить изменения: место в браузере закончилось. Не закрывайте страницу. Освободите место и попробуйте сохранить снова. Если резервная копия создаётся, проверьте её: последние несохранённые изменения могут не попасть в неё.';
 const STORAGE_UNAVAILABLE_WARNING = 'Хранилище браузера не отвечает. Последние изменения могут пропасть при закрытии страницы. Не закрывайте вкладку. Резервная копия может быть неполной или не создаться — не считайте её подтверждением сохранения.';
@@ -207,12 +209,12 @@ const gen = {
       (settings.formulasApart !== false ? reach.find((t) => t.status === 'ready' && t.formulas === undefined && !t.fxFailed) : null) || null;
   },
   async loop() {
-    if (this.running || !project || analysisController) return;
+    if (this.running || !project || analysisController || deletingSubject) return;
     this.running = true;
     try {
       for (;;) {
         const p = project;
-        if (!p || analysisController) break;
+        if (!p || analysisController || deletingSubject) break;
         const t = this.pick(p);
         if (!t) break;
         if (t.status === 'ready') {
@@ -2422,21 +2424,21 @@ function renderBackupInfo() {
 
 $('backupBtn').addEventListener('click', async () => {
   try {
-    // сначала записываем всё несохранённое
-    persistProgress();
-    if (project) await idbSet('project:' + cur(), project);
-    await saveSources();
-    const data = await makeBackup();
-    // If disk writes failed, the download must still include the live projects.
-    for (const { id, p } of unsavedProjects.values()) data.idb['project:' + id] = p;
-    if (project) data.idb['project:' + cur()] = project;
-    data.idb['sources:' + cur()] = sources;
-    data.localStorage['kd.subjects'] = JSON.stringify(subjects);
-    // Do not reinsert live API keys after makeBackup() redacted stored settings.
-    data.localStorage['kd.settings'] = JSON.stringify(settingsForBackup(settings));
-    if (progress) data.localStorage['kd.progress:' + cur()] = JSON.stringify(progress);
-    // Fallbacks are already consolidated in data.idb; stale duplicates must not override it on restore.
-    for (const key of Object.keys(data.localStorage)) if (key.startsWith('kd.idb.')) delete data.localStorage[key];
+    const data = await makeBackup(() => {
+      if (switchingSubject || deletingSubject) throw new Error('Subject transition');
+      flushStats();
+      const id = cur();
+      const idb = Object.create(null);
+      for (const entry of unsavedProjects.values()) idb['project:' + entry.id] = entry.p;
+      if (project) idb['project:' + id] = project;
+      idb['sources:' + id] = sources;
+      const localStorage = {
+        'kd.subjects': JSON.stringify(subjects),
+        'kd.settings': JSON.stringify(settingsForBackup(settings)),
+      };
+      if (progress) localStorage['kd.progress:' + id] = JSON.stringify(progress);
+      return { idb, localStorage };
+    });
     const day = new Date().toISOString().slice(0, 10);
     const file = new File([JSON.stringify(data)], `diktor-backup-${day}.json`, { type: 'application/json' });
     if (await shareOrDownload(file)) {
@@ -2766,6 +2768,7 @@ function renderSubject() {
 }
 
 async function openSubject(id) {
+  if (deletingSubject) return;
   const epoch = ++subjectEpoch;
   switchingSubject = true;
   invalidateAnalysis();
@@ -2802,6 +2805,7 @@ async function openSubject(id) {
     renderSources();
     renderBudget();
     render();
+    return true;
   } catch (err) {
     if (!loadedSubject) throw err;
     if (epoch === subjectEpoch) toast(T('Не удалось открыть предмет. Попробуйте снова.'), 6000);
@@ -2830,17 +2834,40 @@ function renameSubject() {
 
 async function deleteSubject() {
   const s = curSubject();
-  if (!s || !confirm(`Удалить предмет «${s.title}» вместе с планом, конспектами и прогрессом?`)) return;
-  invalidateAnalysis();
-  await idbDel('project:' + s.id);
-  await idbDel('sources:' + s.id);
-  await idbDel('analysis-cache:' + s.id);
-  clearProgress(s.id);
-  subjects.list = subjects.list.filter((x) => x.id !== s.id);
-  if (!subjects.list.length) subjects.list.push({ id: 's' + uid(), title: T('Предмет 1') });
-  await openSubject(subjects.list[0].id);
-  switchTab('load');
-  toast('Предмет удалён');
+  if (switchingSubject || deletingSubject || !s || !confirm(`Удалить предмет «${s.title}» вместе с планом, конспектами и прогрессом?`)) return;
+  const wasInert = document.body.inert;
+  deletingSubject = s.id;
+  document.body.inert = true;
+  let removed = false;
+  try {
+    invalidateAnalysis();
+    resetDictation();
+    dict.rec.stop();
+    disableMedia();
+    if (!await idbDelMany(['project:' + s.id, 'sources:' + s.id, 'analysis-cache:' + s.id]) || !clearProgress(s.id)) {
+      throw new Error('Delete failed');
+    }
+    unsavedProjects.delete(s.id);
+    removed = true;
+    subjects.list = subjects.list.filter(x => x.id !== s.id);
+    if (!subjects.list.length) subjects.list.push({ id: 's' + uid(), title: T('Предмет 1') });
+    subjects.current = subjects.list[0].id;
+    project = null;
+    progress = null;
+    sources = [];
+    loadedSubject = null;
+    const saved = saveSubjects(subjects);
+    deletingSubject = null;
+    if (!await openSubject(subjects.current) || !saved) throw new Error('Subject switch failed');
+    switchTab('load');
+    toast('Предмет удалён');
+  } catch {
+    toast(T('Не удалось полностью удалить предмет. Проверьте хранилище и попробуйте снова.'), 6000);
+  } finally {
+    deletingSubject = null;
+    document.body.inert = wasInert;
+    if (!removed) { render(); gen.loop(); }
+  }
 }
 
 /** Первый запуск новой версии: переносим единственный проект в список предметов. */
