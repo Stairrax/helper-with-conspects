@@ -61,9 +61,28 @@ let loadedSubject = null;
 let switchingSubject = false;
 let analysisEpoch = 0;
 let analysisController = null;
+function setAnalysisView(state, stage) {
+  const card = $('analyzeCard');
+  card.dataset.state = state;
+  const titles = {
+    working: 'Подготавливаю конспект',
+    ready: 'План готов',
+    error: 'Не удалось составить план',
+    cancelled: 'Подготовка прервана',
+  };
+  $('analyzeTitle').textContent = T(titles[state]);
+  for (const item of card.querySelectorAll('.analysis-steps li')) {
+    if (item.dataset.stage === stage) item.setAttribute('aria-current', 'step');
+    else if (stage || state === 'ready') item.removeAttribute('aria-current');
+  }
+}
+
 function invalidateAnalysis() {
   analysisEpoch++;
-  if (analysisController) $('analyzeStatus').textContent = T('Материалы изменились. Составьте план заново.');
+  if (analysisController) {
+    setAnalysisView('cancelled');
+    $('analyzeStatus').textContent = T('Материалы изменились. Составьте план заново.');
+  }
   if (analysisController && project) saveProject();
   analysisController?.abort();
   analysisController = null;
@@ -579,6 +598,7 @@ $('analyzeBtn').addEventListener('click', async () => {
   const btn = $('analyzeBtn');
   btn.disabled = true;
   $('analyzeCard').classList.remove('hidden');
+  setAnalysisView('working', 'material');
   $('analyzeLog').innerHTML = '';
   $('analyzeBar').style.width = '2%';
   $('analyzeStatus').textContent = 'Начинаю…';
@@ -606,9 +626,10 @@ $('analyzeBtn').addEventListener('click', async () => {
       log: (msg, frac) => {
         if (!current()) return;
         if (frac !== undefined) {
-          $('analyzeBar').style.width = Math.round(frac * 100) + '%';
-          if (msg !== lastStep) { logLine(msg); lastStep = msg; }
-          $('analyzeStatus').textContent = msg;
+          setAnalysisView('working', frac >= .8 ? 'plan' : frac >= .3 ? 'topics' : 'material');
+          $('analyzeBar').style.width = Math.round(Math.min(frac, .9) * 100) + '%';
+          if (msg !== lastStep && frac < 1) { logLine(msg); lastStep = msg; }
+          $('analyzeStatus').textContent = frac >= 1 ? T('Сохраняю план…') : msg;
         } else $('analyzeStatus').textContent = msg;
       },
     });
@@ -644,11 +665,21 @@ $('analyzeBtn').addEventListener('click', async () => {
       saveSubjects(subjects);
       renderSubject();
     }
+    setAnalysisView('ready');
+    $('analyzeBar').style.width = '100%';
+    $('analyzeStatus').textContent = T('План готов. Куски для диктовки готовятся в фоне.');
+    logLine('План готов. Куски для диктовки готовятся в фоне.');
     toast(`Найдено тем: ${p.topics.length}`);
     switchTab('plan');
     gen.loop();
   } catch (e) {
-    if (!current() || e.name === 'AbortError') return;
+    if (!current()) return;
+    if (e.name === 'AbortError') {
+      setAnalysisView('cancelled');
+      $('analyzeStatus').textContent = T('Подготовка прервана');
+      return;
+    }
+    setAnalysisView('error');
     const message = e.message || String(e);
     logLine('Ошибка: ' + message, 'err');
     // Не оставляем пользователя на тупиковом экране при временном отказе ИИ.
