@@ -1679,7 +1679,7 @@ function onStop(e) {
   else if (st === 'idle' || st === 'finished') dict.start();
   else if (st === 'longListen' && dict.longBuf.trim()) dict.finishLong();
   else dict.interrupt('pause');
-  if (activeTab !== 'dictate') switchTab('dictate');
+  if (activeTab !== 'dictate' && !['speaking', 'gap', 'waiting', 'paused', 'reviewing'].includes(st)) switchTab('dictate');
 }
 // Обычный click работает и с касанием, и с клавиатурой, без двойного срабатывания.
 $('stopBtn').addEventListener('click', onStop);
@@ -2910,8 +2910,17 @@ function renderDictationControls() {
   else if (st === 'topicEnd') description = 'Следующая тема';
   else if (start) description = 'Начать диктовку';
   else if (resume) description = dict.mode === 'review' ? 'Продолжить повторение' : 'Продолжить диктовку';
-  $('stopBtn').textContent = T(label);
-  $('stopBtn').setAttribute('aria-label', T(description));
+  const compact = activeTab !== 'dictate';
+  const finishAnswer = st === 'longListen' && dict.longBuf.trim();
+  const icon = st === 'topicEnd' || st === 'ticketEnd' ? 'next'
+    : finishAnswer ? 'check' : start || resume ? 'play' : 'pause';
+  const accessibleLabel = compact
+    ? finishAnswer ? 'Готово' : icon === 'pause' ? 'Пауза' : description
+    : description;
+  $('stopLabel').textContent = T(label);
+  $('stopIcon').setAttribute('href', '#i-' + icon);
+  $('stopBtn').setAttribute('aria-label', T(accessibleLabel));
+  $('stopBtn').title = T(accessibleLabel);
   $('stopBtn').classList.toggle('listening', st === 'listening');
   $('stopBtn').classList.toggle('resuming', label === 'Продолжить');
   $('openQuestionBtn').classList.toggle('hidden', !['paused', 'topicEnd', 'break', 'ticketEnd'].includes(st));

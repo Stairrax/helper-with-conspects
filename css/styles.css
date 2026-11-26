@@ -592,3 +592,25 @@ body.ios .android-only, body:not(.ios) .ios-only { display: none !important; }
   .analysis-card .analysis-orb::before, .analysis-card .analysis-dots i { animation: none !important; }
   .analysis-card .progress > div { transition: none !important; }
 }
+
+
+.dict-control-icon { display: none; }
+:root:not([data-theme="aurora"]):not([data-theme="ink"]) body[data-tab="dictate"] #stopBtn { width: min(86%, 580px); flex: 0 1 auto; }
+body.has-stop:not([data-tab="dictate"]) { --stop-h: 76px; }
+body:not([data-tab="dictate"]) #stopBar {
+  left: auto; right: max(16px, env(safe-area-inset-right)); bottom: calc(var(--nav-h) + var(--safe-b, 0px) + 8px);
+  width: max-content; max-width: calc(100vw - 32px); padding: 6px; gap: 6px; border: 1px solid var(--line);
+  border-radius: 30px; background: var(--surface2); box-shadow: 0 6px 24px rgba(0, 0, 0, .16);
+}
+body:not([data-tab="dictate"]) #stopBar .dict-control-label { display: none; }
+body:not([data-tab="dictate"]) #stopBar .dict-control-icon { display: block; width: 24px; height: 24px; }
+body:not([data-tab="dictate"]) #stopBar :is(#stopBtn, #openQuestionBtn) {
+  display: grid; place-items: center; width: 48px; height: 48px; min-width: 48px; min-height: 48px;
+  max-width: 48px; padding: 0; flex: 0 0 48px; border-radius: 50%; box-shadow: none; animation: none; text-shadow: none;
+}
+body:not([data-tab="dictate"]) #stopBar #stopBtn { background: var(--accent); color: var(--on-accent); border: 0; }
+body:not([data-tab="dictate"]) #stopBar #openQuestionBtn { background: var(--accent-soft); color: var(--accent); border: 0; }
+body:not([data-tab="dictate"]) #stopBar .question-icon::before { content: "?"; font: 700 24px/24px system-ui, sans-serif; }
+@media (min-width: 900px) {
+  body:not([data-tab="dictate"]) #stopBar { right: max(24px, env(safe-area-inset-right)); }
+}

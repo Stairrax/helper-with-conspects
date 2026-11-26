@@ -1,6 +1,11 @@
 export default async ({ open, prepare, FINANCE, ok }) => {
   const { page } = await open({ settings: { selfCheck: false, retellAfter: false, mode: 'one', formulasApart: false } });
   await prepare(page, FINANCE);
+  await page.waitForFunction(async () => {
+    const { loadSubjects, idbGet } = await import('./js/storage.js');
+    const project = await idbGet('project:' + loadSubjects().current);
+    return project?.topics?.length > 0 && project.topics.every(t => t.status === 'ready' && t.chunks?.length);
+  });
   const seed = await page.evaluate(async () => {
     const { loadSubjects, idbGet } = await import('./js/storage.js');
     const { activeSeq } = await import('./js/analyze.js');
